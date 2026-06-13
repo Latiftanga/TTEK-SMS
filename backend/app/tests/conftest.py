@@ -26,6 +26,7 @@ from app.main import app
 from app.models import school, auth, staff, academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
 from app.models.academic import AcademicTerm, AcademicYear, Class
 from app.models.attendance import DayType, SchoolCalendar
+from app.models.school import SmsConfig, SmsProvider
 from app.models.auth import LoginType, User
 from app.models.fees import FeeStructure, FeeType, StudentFeeRecord
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType

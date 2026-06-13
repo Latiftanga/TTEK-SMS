@@ -81,7 +81,7 @@ ttek-sms/
 ```
 
 ## Current phase
-Phase: 10 — Offline Sync
+Phase: 11 — SMS Notifications
 Status: COMPLETE
 Started: 2026-06-13
 
@@ -153,6 +153,7 @@ docker compose exec api pytest -v
 - Phase 8 — Attendance (2026-06-13)
 - Phase 9 — Assessments & Scoring (2026-06-13)
 - Phase 10 — Offline Sync (2026-06-13)
+- Phase 11 — SMS Notifications (2026-06-13)
 
 ## Phase 6 checklist
 - [x] schemas/fees.py — FeeType, FeeStructure, BulkAssignResult, FeeRecordRead, FeeSummaryRead, FeePayment, FeeDiscount (XOR validator), InstalmentPlan
@@ -276,6 +277,51 @@ Key constraint: offline_session_started_at is sent with every outbox item. If Sc
 
 ### Phase 10 milestone
 Offline score submissions safely merged. Conflicts surfaced to the teacher for manual resolution. Double-resolve rejected with 409.
+
+## Phase 11 — SMS Notifications (COMPLETE)
+Dependency: Phase 10 ✓
+
+Milestone: Per-school SMS provider selection, credential management, automatic parent notifications, and manual send live.
+
+Key design: Each school independently chooses and configures its SMS provider. Only one provider is active at a time. Activating a new provider deactivates all others automatically.
+
+### Architecture
+- SmsDriver ABC + 5 concrete drivers (AfricasTalking, Hubtel, Arkesel, WiGal, Twilio) in services/sms_driver.py
+- Credentials: api_key (always required) + api_secret (where needed per provider) — stored in sms_config table, never returned by any GET endpoint
+- Phone normalization: Ghana 0XXXXXXXXX → +233XXXXXXXXX (E.164 format)
+- SmsLog table: every send attempt logged with status, error, entity_type/entity_id for traceability
+- Fire-and-forget pattern: notification functions catch all exceptions — SMS failure never rolls back a fee payment, attendance mark, or assessment publish
+
+### Checklist
+- [x] models/school.py — SmsStatus enum + SmsLog model added
+- [x] alembic/versions/a3f9c1e87b20 — sms_log table migration
+- [x] services/sms_driver.py — SmsDriver ABC, SmsResult, 5 drivers, _normalize_phone(), build_driver() factory
+- [x] services/sms_notifications.py — get_active_driver(), _primary_guardian_phone(), _log_result(), notify_fee_receipt(), notify_attendance_absent(), notify_report_published(), send_manual()
+- [x] services/school_config.py — list_sms_configs(), activate_sms_provider() (deactivates others), delete_sms_config()
+- [x] schemas/sms.py — SmsActivateRequest, SmsSendRequest (160-char validator), SmsSendResult, SmsSendResponse, SmsLogRead
+- [x] routers/sms.py — 6 endpoints: POST/GET configs, POST activate, DELETE config, POST send, GET logs
+- [x] services/fees_payment.py — notify_fee_receipt() wired after record_payment() flush
+- [x] services/attendance.py — notify_attendance_absent() wired for ABSENT marks
+- [x] services/assessment.py — notify_report_published() to all enrolled students on publish
+- [x] main.py — sms router registered
+- [x] tests/test_sms.py — phone normalization, config CRUD, activate (only one active), delete, send-no-config 503, message >160 chars 422, send-with-mock, log endpoint
+
+### Automatic notification triggers
+- Fee receipt: fires after services/fees_payment.py::record_payment() → primary guardian
+- Absence alert: fires in services/attendance.py::mark_attendance() for ABSENT status → primary guardian
+- Report published: fires in services/assessment.py::publish_assessment() → all enrolled students' primary guardians
+
+### Provider credential fields
+| Provider        | api_key           | api_secret       | sender_id      |
+|-----------------|-------------------|------------------|----------------|
+| AFRICAS_TALKING | AT API key        | AT username      | Sender name    |
+| HUBTEL          | Client ID         | Client secret    | Sender name    |
+| ARKESEL         | Arkesel API key   | (not used)       | Sender name    |
+| WIGAL           | WiGal API key     | (not used)       | Sender name    |
+| TWILIO          | Account SID       | Auth Token       | E.164 number   |
+
+### Phase 11 milestone
+Each school picks and configures its own SMS provider. Credentials stored server-side and never exposed via API. Automatic notifications fire on fee payments, absences, and report card publishing. Full audit trail in sms_log. Manual send available to school HEAD via POST /sms/send.
 
 ## Key decisions log
 See blueprint/ttek_sms_blueprint_v4.html for full decisions.

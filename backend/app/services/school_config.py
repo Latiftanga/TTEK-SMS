@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from fastapi import HTTPException, status
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.school import SchoolConfig, SmsConfig
+from app.models.school import SchoolConfig, SmsConfig, SmsProvider
 from app.schemas.school import SchoolConfigSet, SmsConfigCreate, SmsConfigRead
 
 
@@ -92,3 +93,60 @@ async def upsert_sms_config(
     db.add(sms_config)
     await db.flush()
     return SmsConfigRead.model_validate(sms_config)
+
+
+async def list_sms_configs(school_id: uuid.UUID, db: AsyncSession) -> list[SmsConfigRead]:
+    """List all SMS provider configs for the school — credentials are never returned."""
+    rows = await db.scalars(
+        select(SmsConfig)
+        .where(SmsConfig.school_id == school_id)
+        .order_by(SmsConfig.provider)
+    )
+    return [SmsConfigRead.model_validate(r) for r in rows]
+
+
+async def activate_sms_provider(
+    school_id: uuid.UUID, provider: SmsProvider, db: AsyncSession
+) -> SmsConfigRead:
+    """
+    Set one provider as active for this school.
+
+    Deactivates all other configs first (only one active provider at a time).
+    The provider must already be configured — call upsert_sms_config() first.
+    """
+    config = await db.scalar(
+        select(SmsConfig).where(
+            SmsConfig.school_id == school_id,
+            SmsConfig.provider == provider,
+        )
+    )
+    if not config:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"No {provider.value} config found for this school. "
+            "Configure the provider credentials first.",
+        )
+    await db.execute(
+        update(SmsConfig)
+        .where(SmsConfig.school_id == school_id)
+        .values(is_active=False)
+    )
+    config.is_active = True
+    await db.flush()
+    return SmsConfigRead.model_validate(config)
+
+
+async def delete_sms_config(
+    school_id: uuid.UUID, provider: SmsProvider, db: AsyncSession
+) -> None:
+    """Remove a provider configuration from this school."""
+    config = await db.scalar(
+        select(SmsConfig).where(
+            SmsConfig.school_id == school_id,
+            SmsConfig.provider == provider,
+        )
+    )
+    if not config:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "SMS config not found.")
+    await db.delete(config)
+    await db.flush()

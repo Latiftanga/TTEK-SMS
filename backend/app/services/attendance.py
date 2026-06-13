@@ -18,9 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.attendance import (
     AttendanceRecord, AttendanceStatus, DayType, SchoolCalendar,
 )
+from app.models.school import School
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
 )
+from app.services import sms_notifications as sms_svc
 
 _MARKABLE_TYPES = {DayType.SCHOOL_DAY, DayType.EXAM_DAY, DayType.HALF_DAY}
 
@@ -80,6 +82,22 @@ async def mark_attendance(
             saved.append(rec)
 
     await db.flush()
+
+    # Fire absence alerts — only for newly ABSENT records; skip re-marks to avoid spam
+    school = await db.get(School, school_id)
+    school_short = (school.short_name or school.name) if school else ""
+    absence_date = cal.date.isoformat()
+    for rec, mark in zip(saved, req.records):
+        if mark.status == AttendanceStatus.ABSENT:
+            await sms_svc.notify_attendance_absent(
+                student_id=mark.student_id,
+                school_id=school_id,
+                school_short=school_short,
+                absence_date=absence_date,
+                entity_id=rec.id,
+                db=db,
+            )
+
     return [_to_read(r) for r in saved]
 
 

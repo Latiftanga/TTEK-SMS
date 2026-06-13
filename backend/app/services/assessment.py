@@ -12,10 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessments import Assessment, AssessmentType
+from app.models.school import School
+from app.models.students import TermEnrollment
 from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead,
     AssessmentTypeCreate, AssessmentTypeRead,
 )
+from app.services import sms_notifications as sms_svc
 
 
 # ── AssessmentType ────────────────────────────────────────────────────────────
@@ -130,4 +133,29 @@ async def publish_assessment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
     a.is_published = True
     await db.flush()
+
+    # Notify guardians of all enrolled students in this class+term
+    school = await db.get(School, school_id)
+    from app.models.academic import AcademicTerm
+    term = await db.get(AcademicTerm, a.academic_term_id)
+    if school and term:
+        enrollments = await db.scalars(
+            select(TermEnrollment).where(
+                TermEnrollment.class_id == a.class_id,
+                TermEnrollment.academic_term_id == a.academic_term_id,
+                TermEnrollment.school_id == school_id,
+                TermEnrollment.is_active.is_(True),
+            )
+        )
+        for enrollment in enrollments:
+            await sms_svc.notify_report_published(
+                student_id=enrollment.student_id,
+                school_id=school_id,
+                school_short=school.short_name or school.name,
+                school_code=school.school_code,
+                term_name=term.name,
+                entity_id=a.id,
+                db=db,
+            )
+
     return _assessment_read(a)

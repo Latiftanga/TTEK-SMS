@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import enum
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -43,6 +44,11 @@ class SmsProvider(str, enum.Enum):
     ARKESEL = "ARKESEL"
     WIGAL = "WIGAL"
     TWILIO = "TWILIO"
+
+
+class SmsStatus(str, enum.Enum):
+    SENT = "SENT"
+    FAILED = "FAILED"
 
 
 class GhanaRegion(Base, UUIDPrimaryKey):
@@ -125,3 +131,30 @@ class SmsConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     school: Mapped[School] = relationship(back_populates="sms_configs")
+
+
+class SmsLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Audit record for every SMS attempted by the system.
+
+    Written whether the SMS succeeded or failed — the error_message column
+    explains failures so admins can diagnose provider issues without needing
+    to look at server logs.
+
+    entity_type + entity_id link back to what triggered the message
+    (e.g. entity_type="FEE_PAYMENT", entity_id=<payment UUID>).
+    """
+    __tablename__ = "sms_log"
+
+    provider: Mapped[SmsProvider] = mapped_column(
+        SAEnum(SmsProvider, name="smsprovider"), nullable=False
+    )
+    recipient: Mapped[str] = mapped_column(String(20), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[SmsStatus] = mapped_column(
+        SAEnum(SmsStatus, name="smsstatus", create_type=True), nullable=False
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

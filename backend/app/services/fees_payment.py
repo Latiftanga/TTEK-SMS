@@ -5,12 +5,14 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.fees import FeeDiscount, FeeInstalmentPlan, FeePayment, StudentFeeRecord
+from app.models.fees import FeeDiscount, FeeInstalmentPlan, FeePayment, FeeStructure, StudentFeeRecord
+from app.models.school import School
 from app.schemas.fees import (
     FeeDiscountCreate, FeeDiscountRead,
     FeePaymentCreate, FeePaymentRead,
     InstalmentCreate, InstalmentRead,
 )
+from app.services import sms_notifications as sms_svc
 
 
 def _to_payment_read(fp: FeePayment) -> FeePaymentRead:
@@ -59,6 +61,27 @@ async def record_payment(
     )
     db.add(payment)
     await db.flush()
+
+    # Fire-and-forget SMS receipt to primary guardian
+    school = await db.get(School, school_id)
+    fee_structure = await db.get(FeeStructure, rec.fee_structure_id)
+    if fee_structure:
+        from app.models.fees import FeeType
+        fee_type = await db.get(FeeType, fee_structure.fee_type_id)
+        fee_type_name = fee_type.name if fee_type else "fee"
+    else:
+        fee_type_name = "fee"
+    await sms_svc.notify_fee_receipt(
+        student_id=rec.student_id,
+        school_id=school_id,
+        school_short=(school.short_name or school.name) if school else "",
+        amount=req.amount_paid,
+        fee_type_name=fee_type_name,
+        balance=rec.amount_due - req.amount_paid,
+        entity_id=payment.id,
+        db=db,
+    )
+
     return _to_payment_read(payment)
 
 
