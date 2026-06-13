@@ -81,7 +81,7 @@ ttek-sms/
 ```
 
 ## Current phase
-Phase: 9 — Assessments & Scoring
+Phase: 10 — Offline Sync
 Status: COMPLETE
 Started: 2026-06-13
 
@@ -152,6 +152,7 @@ docker compose exec api pytest -v
 - Phase 7 — Report Cards & Documents (2026-06-13)
 - Phase 8 — Attendance (2026-06-13)
 - Phase 9 — Assessments & Scoring (2026-06-13)
+- Phase 10 — Offline Sync (2026-06-13)
 
 ## Phase 6 checklist
 - [x] schemas/fees.py — FeeType, FeeStructure, BulkAssignResult, FeeRecordRead, FeeSummaryRead, FeePayment, FeeDiscount (XOR validator), InstalmentPlan
@@ -252,6 +253,29 @@ Key constraints:
 
 ### Phase 9 milestone
 Teachers enter scores; HODs approve; cached_grade_label set from GradingScale on approval. Report card service already reads cached_grade_label — no changes to Phase 7 code needed.
+
+## Phase 10 — Offline Sync (COMPLETE)
+Dependency: Phase 9 ✓
+
+Milestone: Dexie WriteOutbox items processed server-side; concurrent edit conflicts detected, logged, and resolvable.
+
+Key constraint: offline_session_started_at is sent with every outbox item. If Score.submitted_at > offline_session_started_at, the server received a newer write after the session started → OfflineSyncConflict written.
+
+### Checklist
+- [x] schemas/sync.py — OutboxScoreData, OutboxItem, OutboxSyncRequest, OutboxItemResult, ConflictRead, ConflictResolveRequest
+- [x] services/sync.py — process_outbox (per-item score sync with conflict check), list_conflicts (user-scoped, unresolved only), resolve_conflict (CLIENT_WINS re-applies; SERVER_WINS/DISCARDED mark resolved; MERGED applies merged_data)
+- [x] routers/sync.py — POST /sync/outbox, GET /sync/conflicts, POST /sync/conflicts/{id}/resolve
+- [x] main.py — sync router registered
+- [x] tests/test_sync.py — new score applied, server-older applied, conflict detected, list empty + shows unresolved
+- [x] tests/test_sync_resolve.py — SERVER_WINS, CLIENT_WINS (verifies score updated), DISCARDED, double-resolve 409
+
+### Conflict resolution actions
+- CLIENT_WINS → re-applies client score via _apply_score; writes ScoreAuditLog
+- SERVER_WINS / DISCARDED → marks resolved; server data unchanged
+- MERGED → applies caller-supplied merged_data score
+
+### Phase 10 milestone
+Offline score submissions safely merged. Conflicts surfaced to the teacher for manual resolution. Double-resolve rejected with 409.
 
 ## Key decisions log
 See blueprint/ttek_sms_blueprint_v4.html for full decisions.
