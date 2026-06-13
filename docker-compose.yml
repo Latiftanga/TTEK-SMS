@@ -72,6 +72,7 @@ services:
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads
+      - worker_packages:/usr/local/lib/python3.12/site-packages  # preserve pip installs
     depends_on:
       db:
         condition: service_healthy
@@ -94,8 +95,10 @@ services:
       PUBLIC_API_URL: http://localhost:8000
     depends_on:
       - api
+    command: sh -c "npx svelte-kit sync && npm run dev"
 
 volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  worker_packages:
