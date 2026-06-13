@@ -6,7 +6,13 @@ Fixtures (school, school_admin, auth) are defined in conftest.py.
 """
 import pytest
 from httpx import AsyncClient
-from app.models.school import School
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.auth import hash_password
+from app.models.auth import LoginType, User
+from app.models.academic import SchoolLevel, SubjectCatalogue, SubjectType
+from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 
 
 # ── Academic Year ─────────────────────────────────────────────────────────────
@@ -190,3 +196,85 @@ async def test_create_and_list_subjects(client: AsyncClient, auth: dict):
     resp = await client.get("/academic/subjects", headers=auth)
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+
+
+# ── SHS / BASIC guards ────────────────────────────────────────────────────────
+
+async def _basic_school_auth(client: AsyncClient, db_session: AsyncSession) -> dict:
+    """Create a BASIC school + superadmin and return their auth headers."""
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    school = School(
+        name="Basic Test School", school_code="BASIC001",
+        school_type=SchoolType.BASIC,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(school)
+    await db_session.flush()
+    user = User(
+        login_type=LoginType.EMAIL, email="basic-admin@test.gh",
+        password_hash=hash_password("pw"), is_active=True,
+        is_superadmin=True, school_id=school.id,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": "basic-admin@test.gh", "password": "pw",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+@pytest.mark.asyncio
+async def test_basic_school_cannot_create_programme(
+    client: AsyncClient, db_session: AsyncSession
+):
+    basic_auth = await _basic_school_auth(client, db_session)
+    resp = await client.post("/academic/programmes", json={
+        "code": "GEN", "name": "General Arts",
+    }, headers=basic_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_basic_school_list_programmes_returns_empty(
+    client: AsyncClient, db_session: AsyncSession
+):
+    basic_auth = await _basic_school_auth(client, db_session)
+    resp = await client.get("/academic/programmes", headers=basic_auth)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_basic_school_cannot_create_elective_subject(
+    client: AsyncClient, db_session: AsyncSession
+):
+    basic_auth = await _basic_school_auth(client, db_session)
+    cat = SubjectCatalogue(
+        code="ELEC001", name="Elective Maths",
+        subject_type=SubjectType.ELECTIVE, level=SchoolLevel.SHS, is_active=True,
+    )
+    db_session.add(cat)
+    await db_session.flush()
+    resp = await client.post("/academic/subjects", json={
+        "catalogue_id": str(cat.id), "code": "ELEC001", "name": "Elective Maths",
+    }, headers=basic_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_shs_school_can_create_elective_subject(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    """The SHS school fixture can freely create elective subjects."""
+    cat = SubjectCatalogue(
+        code="ELEC002", name="Physics",
+        subject_type=SubjectType.ELECTIVE, level=SchoolLevel.SHS, is_active=True,
+    )
+    db_session.add(cat)
+    await db_session.flush()
+    resp = await client.post("/academic/subjects", json={
+        "catalogue_id": str(cat.id), "code": "ELEC002", "name": "Physics",
+    }, headers=auth)
+    assert resp.status_code == 201

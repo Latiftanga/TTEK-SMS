@@ -1,9 +1,12 @@
-"""Academic class service: programmes, subject catalogue, school subjects, classes,
-and teacher assignments. display_name is NEVER stored — computed on read."""
+"""Academic class service: classes, teacher and subject assignments.
+
+display_name is NEVER stored — computed on read.
+Programmes, subject catalogue, and school subjects live in academic_subjects.py.
+"""
 from __future__ import annotations
 import uuid
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import (
@@ -11,10 +14,7 @@ from app.models.academic import (
     Class,
     ClassSubject,
     ClassTeacher,
-    SchoolLevel,
     SHSProgramme,
-    Subject,
-    SubjectCatalogue,
     SubjectTeacher,
 )
 from app.schemas.academic import (
@@ -23,8 +23,6 @@ from app.schemas.academic import (
     ClassSubjectAssign,
     ClassTeacherAssign,
     ClassUpdate,
-    ProgrammeCreate,
-    SubjectCreate,
     SubjectTeacherAssign,
 )
 
@@ -58,71 +56,6 @@ def _to_class_read(cls: Class, programme_name: str | None) -> ClassRead:
         is_active=cls.is_active,
         display_name=_display_name(cls.level, cls.year_group, programme_name, cls.stream),
     )
-
-
-async def list_programmes(school_id: uuid.UUID, db: AsyncSession) -> list[SHSProgramme]:
-    rows = await db.scalars(
-        select(SHSProgramme)
-        .where(
-            or_(SHSProgramme.school_id == school_id, SHSProgramme.school_id.is_(None)),
-            SHSProgramme.is_active == True,
-        )
-        .order_by(SHSProgramme.name)
-    )
-    return list(rows)
-
-
-async def create_programme(
-    req: ProgrammeCreate,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> SHSProgramme:
-    prog = SHSProgramme(
-        school_id=school_id,
-        code=req.code.upper().strip(),
-        name=req.name.strip(),
-        is_active=True,
-    )
-    db.add(prog)
-    await db.flush()
-    return prog
-
-
-async def list_catalogue(
-    level: SchoolLevel | None,
-    db: AsyncSession,
-) -> list[SubjectCatalogue]:
-    q = select(SubjectCatalogue).where(SubjectCatalogue.is_active == True)
-    if level:
-        q = q.where(SubjectCatalogue.level == level)
-    rows = await db.scalars(q.order_by(SubjectCatalogue.name))
-    return list(rows)
-
-
-async def list_subjects(school_id: uuid.UUID, db: AsyncSession) -> list[Subject]:
-    rows = await db.scalars(
-        select(Subject)
-        .where(Subject.school_id == school_id, Subject.is_active == True)
-        .order_by(Subject.name)
-    )
-    return list(rows)
-
-
-async def create_subject(
-    req: SubjectCreate,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> Subject:
-    subj = Subject(
-        school_id=school_id,
-        catalogue_id=req.catalogue_id,
-        code=req.code.upper().strip(),
-        name=req.name.strip(),
-        is_active=True,
-    )
-    db.add(subj)
-    await db.flush()
-    return subj
 
 
 async def create_class(

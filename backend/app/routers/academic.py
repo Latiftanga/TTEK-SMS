@@ -37,6 +37,7 @@ from app.schemas.academic import (
     TermRead,
 )
 from app.services import academic_class as class_svc
+from app.services import academic_subjects as subj_svc
 from app.services import academic_year as year_svc
 
 router = APIRouter(prefix="/academic", tags=["academic"])
@@ -169,7 +170,7 @@ async def list_programmes(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    progs = await class_svc.list_programmes(school_id, db)
+    progs = await subj_svc.list_programmes(school_id, db)
     return [ProgrammeRead.model_validate(p) for p in progs]
 
 
@@ -180,7 +181,7 @@ async def create_programme(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    prog = await class_svc.create_programme(req, school_id, db)
+    prog = await subj_svc.create_programme(req, school_id, db)
     return ProgrammeRead.model_validate(prog)
 
 
@@ -190,7 +191,7 @@ async def list_catalogue(
     ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await class_svc.list_catalogue(level, db)
+    items = await subj_svc.list_catalogue(level, db)
     return [CatalogueRead.model_validate(i) for i in items]
 
 
@@ -200,7 +201,7 @@ async def list_subjects(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    subjects = await class_svc.list_subjects(school_id, db)
+    subjects = await subj_svc.list_subjects(school_id, db)
     return [SubjectRead.model_validate(s) for s in subjects]
 
 
@@ -211,7 +212,7 @@ async def create_subject(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    subj = await class_svc.create_subject(req, school_id, db)
+    subj = await subj_svc.create_subject(req, school_id, db)
     return SubjectRead.model_validate(subj)
 
 

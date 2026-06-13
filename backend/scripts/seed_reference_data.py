@@ -181,6 +181,13 @@ STAFF_POSITIONS = [
         ("fees", "view"), ("fees", "collect"), ("fees", "manage"),
         ("reports", "view"), ("reports", "generate"),
     ]),
+    ("HOUSE_MASTER", "House Master / Mistress", [
+        ("school", "view"),
+        ("students", "view"),
+        ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
+        ("attendance", "view"), ("attendance", "record"),
+        ("reports", "view"),
+    ]),
 ]
 
 
