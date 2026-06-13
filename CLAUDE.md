@@ -81,7 +81,7 @@ ttek-sms/
 ```
 
 ## Current phase
-Phase: 7 — Report Cards & Documents
+Phase: 8 — Attendance
 Status: COMPLETE
 Started: 2026-06-13
 
@@ -150,6 +150,7 @@ docker compose exec api pytest -v
 - Phase 5 — Housing (2026-06-13)
 - Phase 6 — Fees (2026-06-13)
 - Phase 7 — Report Cards & Documents (2026-06-13)
+- Phase 8 — Attendance (2026-06-13)
 
 ## Phase 6 checklist
 - [x] schemas/fees.py — FeeType, FeeStructure, BulkAssignResult, FeeRecordRead, FeeSummaryRead, FeePayment, FeeDiscount (XOR validator), InstalmentPlan
@@ -198,6 +199,30 @@ Key constraint: Report cards are NEVER stored — generated fresh from Score + B
 
 ### Phase 7 milestone
 Report cards rendered on demand by WeasyPrint. QR code on each card verifies live. Bulk class job via ARQ. Documents uploaded and tracked. Parent portal gated by Assessment.is_published.
+
+## Phase 8 — Attendance (COMPLETE)
+Dependency: Phase 7 ✓
+
+Milestone: School schedule, calendar generation, daily attendance marking, and per-student summary live.
+
+Key constraint: AttendanceRecord always uses school_calendar_id FK — never a raw date field.
+Calendar generation is idempotent; PUBLIC_HOLIDAY beats schedule; default is Mon–Fri if no SchoolSchedule rows.
+
+### Checklist
+- [x] schemas/attendance.py — ScheduleUpsert, ScheduleRead, CalendarGenerateRequest, CalendarDayRead, CalendarDayOverride, AttendanceMark, AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead
+- [x] services/attendance_calendar.py — upsert_schedule, list_schedule, generate_calendar (idempotent), list_calendar, override_calendar_day
+- [x] services/attendance.py — mark_attendance (SCHOOL_DAY/EXAM_DAY/HALF_DAY gate, upsert), list_attendance, get_summary
+- [x] routers/attendance.py — 8 endpoints: schedule CRUD, calendar generate/list/override, mark, records, summary
+- [x] main.py — attendance router registered
+- [x] tests/test_attendance.py — schedule upsert + idempotent, calendar generate (weekend check) + idempotent, list, override, mark, holiday rejected, re-mark updates, list records, summary
+
+### Business rules enforced
+- Cannot mark attendance on PUBLIC_HOLIDAY, WEEKEND, or SCHOOL_HOLIDAY days (422)
+- Re-submitting attendance for same student+calendar+period updates the record
+- period_id IS NULL for daily (whole-day) attendance
+
+### Phase 8 milestone
+School schedule configurable per weekday. Calendar generated idempotently per term with PUBLIC_HOLIDAY beating schedule. Daily attendance marked and re-markable. Per-student term summary with attendance rate.
 
 ## Key decisions log
 See blueprint/ttek_sms_blueprint_v4.html for full decisions.
