@@ -20,7 +20,7 @@ def upgrade() -> None:
         "sms_log",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("school_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("school.id", ondelete="CASCADE"), nullable=False, index=True),
+                  sa.ForeignKey("school.id", ondelete="CASCADE"), nullable=False),
         sa.Column("provider", postgresql.ENUM(
             "AFRICAS_TALKING", "HUBTEL", "ARKESEL", "WIGAL", "TWILIO",
             name="smsprovider", create_type=False,
