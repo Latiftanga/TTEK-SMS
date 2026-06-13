@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #111; }
+  .header { border-bottom: 2px solid #059669; padding-bottom: 8px; margin-bottom: 10px; text-align: center; }
+  .header h1 { font-size: 14pt; color: #059669; }
+  .header p { font-size: 8.5pt; color: #555; }
+  .title { text-align: center; font-size: 12pt; font-weight: bold; margin: 8px 0 10px; }
+  .meta { display: flex; gap: 10px; margin-bottom: 10px; }
+  .meta-box { flex: 1; border: 1px solid #ccc; padding: 5px 8px; border-radius: 3px; }
+  .meta-box label { font-size: 7.5pt; color: #888; display: block; }
+  .meta-box span { font-size: 9.5pt; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 9pt; }
+  th { background: #059669; color: #fff; padding: 5px 6px; text-align: left; font-size: 8.5pt; }
+  td { padding: 6px; border-bottom: 1px solid #e5e7eb; }
+  tr:nth-child(even) td { background: #f0fdf4; }
+  .milestone-achieved { color: #16a34a; font-weight: bold; }
+  .milestone-emerging { color: #d97706; }
+  .milestone-not-yet { color: #dc2626; }
+  .footer { margin-top: 20px; display: flex; gap: 30px; }
+  .sig-line { flex: 1; border-top: 1px solid #555; padding-top: 4px; font-size: 8pt; color: #555; text-align: center; }
+  .qr-block { text-align: right; font-size: 7pt; color: #888; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>{{ school_name }}</h1>
+  <p>Early Childhood Milestone Report</p>
+</div>
+
+<div class="title">{{ term_name }} — {{ academic_year_name }}</div>
+
+<div class="meta">
+  <div class="meta-box"><label>Child's Name</label><span>{{ student_name }}</span></div>
+  <div class="meta-box"><label>Class</label><span>{{ class_name }}</span></div>
+  <div class="meta-box"><label>Teacher</label><span>{{ class_teacher_name or "—" }}</span></div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Learning Area</th>
+      <th>Assessment</th>
+      <th style="text-align:right">Score</th>
+      <th style="text-align:right">Max</th>
+      <th>Level</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in scores %}
+    {% set pct = (s.raw_score / s.max_score * 100) if s.max_score else 0 %}
+    {% if pct >= 75 %}
+      {% set level = "Achieved" %}{% set cls = "milestone-achieved" %}
+    {% elif pct >= 50 %}
+      {% set level = "Emerging" %}{% set cls = "milestone-emerging" %}
+    {% else %}
+      {% set level = "Not Yet" %}{% set cls = "milestone-not-yet" %}
+    {% endif %}
+    <tr>
+      <td>{{ s.subject_name }}</td>
+      <td>{{ s.type_name }}</td>
+      <td style="text-align:right">{{ s.raw_score }}</td>
+      <td style="text-align:right">{{ s.max_score }}</td>
+      <td class="{{ cls }}">{{ level }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" style="text-align:center;color:#888;">No records yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p style="margin: 8px 0 4px; font-size: 8.5pt; color: #555;">
+  Attendance: {{ days_present }} of {{ total_school_days }} days.
+</p>
+
+<div class="footer">
+  <div class="sig-line">Class Teacher</div>
+  <div class="sig-line">Headteacher</div>
+  <div class="sig-line">Parent / Guardian</div>
+</div>
+
+<div class="qr-block">Verify at: /verify/{{ qr_token }}</div>
+
+</body>
+</html>
