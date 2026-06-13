@@ -81,7 +81,7 @@ ttek-sms/
 ```
 
 ## Current phase
-Phase: 8 — Attendance
+Phase: 9 — Assessments & Scoring
 Status: COMPLETE
 Started: 2026-06-13
 
@@ -151,6 +151,7 @@ docker compose exec api pytest -v
 - Phase 6 — Fees (2026-06-13)
 - Phase 7 — Report Cards & Documents (2026-06-13)
 - Phase 8 — Attendance (2026-06-13)
+- Phase 9 — Assessments & Scoring (2026-06-13)
 
 ## Phase 6 checklist
 - [x] schemas/fees.py — FeeType, FeeStructure, BulkAssignResult, FeeRecordRead, FeeSummaryRead, FeePayment, FeeDiscount (XOR validator), InstalmentPlan
@@ -223,6 +224,34 @@ Calendar generation is idempotent; PUBLIC_HOLIDAY beats schedule; default is Mon
 
 ### Phase 8 milestone
 School schedule configurable per weekday. Calendar generated idempotently per term with PUBLIC_HOLIDAY beating schedule. Daily attendance marked and re-markable. Per-student term summary with attendance rate.
+
+## Phase 9 — Assessments & Scoring (COMPLETE)
+Dependency: Phase 8 ✓
+
+Milestone: Grading scales, assessment types, assessments, and the full score entry → approval flow live.
+
+Key constraints:
+- Grade is NEVER stored on Score — resolved at approval time from the school's default GradingScale
+- cached_grade_label is set on approval; cleared when GradingScale bands change
+- ScoreAuditLog written on every score create/update
+- Re-submitting a score resets is_approved=False and clears cached_grade_label
+
+### Checklist
+- [x] schemas/assessments.py additions — GradeCreate/Read, GradingScaleCreate/Read, AssessmentTypeCreate/Read, AssessmentCreate/Read, ScoreSubmit, BulkScoreSubmit, ScoreRead, ScoreApproveRequest
+- [x] services/grading.py — GradingScale CRUD, Grade band add/delete, resolve_grade(), clear_cached_grades()
+- [x] services/assessment.py — AssessmentType CRUD, Assessment CRUD, publish_assessment()
+- [x] services/scoring.py — submit_scores (bulk upsert + audit log), approve_scores (resolve grade → cached_grade_label), list_scores
+- [x] routers/assessments.py — 13 endpoints; permissions: approve_scores / enter_scores / view
+- [x] main.py — assessments router registered
+- [x] tests/test_assessments.py — grading scale CRUD, grade band validation, assessment type dedup, assessment create/publish, score submit/range check/resubmit, approve → grade label, list scores
+
+### Permission map
+- assessments.approve_scores → grading scale management, assessment type/assessment CRUD, score approval, publish
+- assessments.enter_scores → submit scores
+- assessments.view → read-only all
+
+### Phase 9 milestone
+Teachers enter scores; HODs approve; cached_grade_label set from GradingScale on approval. Report card service already reads cached_grade_label — no changes to Phase 7 code needed.
 
 ## Key decisions log
 See blueprint/ttek_sms_blueprint_v4.html for full decisions.

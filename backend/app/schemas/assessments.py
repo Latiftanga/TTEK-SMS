@@ -4,8 +4,127 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
+
+# ── Grading scale ─────────────────────────────────────────────────────────────
+
+class GradeCreate(BaseModel):
+    min_score: Decimal
+    max_score: Decimal
+    letter_grade: str
+    label: str
+    gpa_points: Decimal | None = None
+    remarks: str | None = None
+
+    @model_validator(mode="after")
+    def range_valid(self) -> "GradeCreate":
+        if self.min_score > self.max_score:
+            raise ValueError("min_score must be ≤ max_score")
+        return self
+
+
+class GradeRead(BaseModel):
+    id: uuid.UUID
+    min_score: Decimal
+    max_score: Decimal
+    letter_grade: str
+    label: str
+    gpa_points: Decimal | None
+    remarks: str | None
+    model_config = {"from_attributes": True}
+
+
+class GradingScaleCreate(BaseModel):
+    name: str
+    description: str | None = None
+    is_default: bool = False
+
+
+class GradingScaleRead(BaseModel):
+    id: uuid.UUID
+    school_id: uuid.UUID | None
+    name: str
+    description: str | None
+    is_active: bool
+    is_default: bool
+    grades: list[GradeRead] = []
+    model_config = {"from_attributes": True}
+
+
+# ── Assessment type ───────────────────────────────────────────────────────────
+
+class AssessmentTypeCreate(BaseModel):
+    name: str
+    code: str
+    weight: Decimal
+
+
+class AssessmentTypeRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    code: str
+    weight: Decimal
+    is_active: bool
+    model_config = {"from_attributes": True}
+
+
+# ── Assessment ────────────────────────────────────────────────────────────────
+
+class AssessmentCreate(BaseModel):
+    class_id: uuid.UUID
+    subject_id: uuid.UUID
+    assessment_type_id: uuid.UUID
+    academic_term_id: uuid.UUID
+    name: str
+    max_score: Decimal
+    due_date: date | None = None
+
+
+class AssessmentRead(BaseModel):
+    id: uuid.UUID
+    school_id: uuid.UUID
+    class_id: uuid.UUID
+    subject_id: uuid.UUID
+    assessment_type_id: uuid.UUID
+    academic_term_id: uuid.UUID
+    name: str
+    max_score: Decimal
+    due_date: date | None
+    is_published: bool
+    model_config = {"from_attributes": True}
+
+
+# ── Scores ────────────────────────────────────────────────────────────────────
+
+class ScoreSubmit(BaseModel):
+    student_id: uuid.UUID
+    raw_score: Decimal
+
+
+class BulkScoreSubmit(BaseModel):
+    scores: list[ScoreSubmit]
+
+
+class ScoreRead(BaseModel):
+    id: uuid.UUID
+    assessment_id: uuid.UUID
+    student_id: uuid.UUID
+    raw_score: Decimal
+    cached_grade_label: str | None
+    is_approved: bool
+    entered_by_id: uuid.UUID
+    approved_by_id: uuid.UUID | None
+    submitted_at: datetime | None
+    approved_at: datetime | None
+    model_config = {"from_attributes": True}
+
+
+class ScoreApproveRequest(BaseModel):
+    score_ids: list[uuid.UUID]
+
+
+# ── Behaviour ─────────────────────────────────────────────────────────────────
 
 class BehaviourRecordCreate(BaseModel):
     student_id: uuid.UUID
