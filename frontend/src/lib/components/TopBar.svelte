@@ -74,7 +74,7 @@
 <header class="sticky top-0 z-40 flex h-14 items-center justify-between
                border-b border-[var(--border)] bg-[var(--card)]/90 backdrop-blur
                px-4 lg:px-6"
-        style="padding-top: env(safe-area-inset-top)">
+        style="padding-top: env(safe-area-inset-top); box-shadow: 0 1px 0 var(--border), var(--shadow-sm);">
 
   <!-- Mobile: school identity -->
   <div class="flex items-center gap-2.5 lg:hidden">
@@ -137,7 +137,8 @@
       <!-- Dropdown -->
       {#if menuOpen}
         <div class="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-[var(--border)]
-                    bg-[var(--card)] shadow-lg ring-1 ring-black/5 overflow-hidden z-50">
+                    bg-[var(--card)] overflow-hidden z-50"
+             style="box-shadow: var(--shadow-xl);">
 
           <!-- User identity header -->
           <div class="px-4 py-3 border-b border-[var(--border)]">

@@ -1,0 +1,179 @@
+import client from './client';
+
+export interface AcademicTerm {
+  id: string;
+  school_id: string;
+  academic_year_id: string;
+  term_number: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  is_current: boolean;
+}
+
+export interface AcademicYear {
+  id: string;
+  school_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  is_current: boolean;
+  terms: AcademicTerm[];
+}
+
+export interface Programme {
+  id: string;
+  school_id: string | null;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
+export interface Subject {
+  id: string;
+  school_id: string;
+  catalogue_id: string | null;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
+export interface SchoolClass {
+  id: string;
+  school_id: string;
+  academic_year_id: string;
+  level: string;
+  year_group: number;
+  programme_id: string | null;
+  programme_name: string | null;
+  stream: string | null;
+  capacity: number | null;
+  is_active: boolean;
+  display_name: string;
+}
+
+export interface ClassSubject {
+  id: string;
+  school_id: string;
+  class_id: string;
+  subject_id: string;
+  is_active: boolean;
+}
+
+export interface ClassTeacher {
+  id: string;
+  school_id: string;
+  class_id: string;
+  staff_member_id: string;
+  academic_term_id: string;
+  is_active: boolean;
+}
+
+export async function listYears(): Promise<AcademicYear[]> {
+  const { data } = await client.get<AcademicYear[]>('/academic/years');
+  return data;
+}
+
+export async function getCurrentYear(): Promise<AcademicYear | null> {
+  const { data } = await client.get<AcademicYear | null>('/academic/years/current');
+  return data;
+}
+
+export async function createYear(req: {
+  name: string;
+  start_date: string;
+  end_date: string;
+}): Promise<AcademicYear> {
+  const { data } = await client.post<AcademicYear>('/academic/years', req);
+  return data;
+}
+
+export async function setCurrentYear(yearId: string): Promise<AcademicYear> {
+  const { data } = await client.post<AcademicYear>(`/academic/years/${yearId}/set-current`);
+  return data;
+}
+
+export async function listTerms(yearId: string): Promise<AcademicTerm[]> {
+  const { data } = await client.get<AcademicTerm[]>(`/academic/years/${yearId}/terms`);
+  return data;
+}
+
+export async function createTerm(
+  yearId: string,
+  req: { term_number: number; name: string; start_date: string; end_date: string }
+): Promise<AcademicTerm> {
+  const { data } = await client.post<AcademicTerm>(`/academic/years/${yearId}/terms`, req);
+  return data;
+}
+
+export async function setCurrentTerm(termId: string): Promise<AcademicTerm> {
+  const { data } = await client.post<AcademicTerm>(`/academic/terms/${termId}/set-current`);
+  return data;
+}
+
+export async function listSubjects(): Promise<Subject[]> {
+  const { data } = await client.get<Subject[]>('/academic/subjects');
+  return data;
+}
+
+export async function createSubject(req: {
+  code: string;
+  name: string;
+  catalogue_id?: string;
+}): Promise<Subject> {
+  const { data } = await client.post<Subject>('/academic/subjects', req);
+  return data;
+}
+
+export async function listClasses(yearId: string): Promise<SchoolClass[]> {
+  const { data } = await client.get<SchoolClass[]>('/academic/classes', {
+    params: { year_id: yearId },
+  });
+  return data;
+}
+
+export async function createClass(req: {
+  academic_year_id: string;
+  level: string;
+  year_group: number;
+  programme_id?: string;
+  stream?: string;
+  capacity?: number;
+}): Promise<SchoolClass> {
+  const { data } = await client.post<SchoolClass>('/academic/classes', req);
+  return data;
+}
+
+export async function assignSubjects(
+  classId: string,
+  subjectIds: string[]
+): Promise<ClassSubject[]> {
+  const { data } = await client.post<ClassSubject[]>(`/academic/classes/${classId}/subjects`, {
+    subject_ids: subjectIds,
+  });
+  return data;
+}
+
+export async function assignClassTeacher(
+  classId: string,
+  req: { staff_member_id: string; academic_term_id: string }
+): Promise<ClassTeacher> {
+  const { data } = await client.post<ClassTeacher>(
+    `/academic/classes/${classId}/class-teacher`,
+    req
+  );
+  return data;
+}
+
+export async function assignSubjectTeacher(
+  classId: string,
+  req: { subject_id: string; staff_member_id: string; academic_term_id: string }
+): Promise<unknown> {
+  const { data } = await client.post(`/academic/classes/${classId}/subject-teachers`, req);
+  return data;
+}
+
+export async function listProgrammes(): Promise<Programme[]> {
+  const { data } = await client.get<Programme[]>('/academic/programmes');
+  return data;
+}

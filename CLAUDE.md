@@ -81,9 +81,14 @@ ttek-sms/
 ```
 
 ## Current phase
-Phase: 11 — SMS Notifications
-Status: COMPLETE
+Phase: 12 — Frontend Build
+Status: IN PROGRESS
 Started: 2026-06-13
+
+### Phase 12 sub-phases completed
+- 12a–c: SvelteKit foundation, PWA manifest, axios client, login flow, app shell, role-adaptive dashboard
+- 12d: Multi-tenant subdomain detection, custom domain support, branded login, TopBar user menu
+- 12e: Academic Setup (/admin/academic), Classes & Subjects (/admin/structure), Staff directory + detail (/admin/staff)
 
 ## Phase 0 checklist
 - [x] Folder structure created

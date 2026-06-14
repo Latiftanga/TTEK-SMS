@@ -95,6 +95,7 @@
          {collapsed ? 'w-16' : 'w-64'}
          {open ? 'translate-x-0' : '-translate-x-full'}
          lg:translate-x-0 lg:static lg:z-auto"
+  style="box-shadow: var(--shadow-md);"
 >
   <!-- ── School header ──────────────────────────────────────────────────── -->
   <div class="flex h-16 shrink-0 items-center border-b border-[var(--border)]
