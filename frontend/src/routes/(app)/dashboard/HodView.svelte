@@ -48,7 +48,7 @@
     </div>
 
     {#if data.assessments_this_term > 0}
-      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
         <p class="mb-4 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Approval progress</p>
         <div class="flex items-center gap-6">
           <div class="relative flex-shrink-0">
@@ -90,7 +90,7 @@
   <!-- RIGHT: actions -->
   <div>
     <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Actions</p>
-    <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+    <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
       <a href="/scores?filter=pending" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
         <div class="flex h-8 w-8 items-center justify-center rounded-lg
                     {data.pending_approvals > 0 ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-gray-100 dark:bg-gray-800'}">

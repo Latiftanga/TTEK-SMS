@@ -95,7 +95,7 @@
     </div>
     <button
       onclick={() => { showForm = !showForm; formError = ''; }}
-      class="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
+      class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
       style="background-color: var(--brand)"
     >
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -107,33 +107,33 @@
 
   <!-- Add staff form -->
   {#if showForm}
-    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
       <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">New Staff Member</h2>
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Staff number *</label>
           <input bind:value={form.staff_number} placeholder="e.g. T001"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">First name *</label>
           <input bind:value={form.first_name} placeholder="First name"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Last name *</label>
           <input bind:value={form.last_name} placeholder="Last name"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Middle name</label>
           <input bind:value={form.middle_name} placeholder="Middle name"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
           <select bind:value={form.gender}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
             <option value="">Select…</option>
             <option value="MALE">Male</option>
             <option value="FEMALE">Female</option>
@@ -142,22 +142,22 @@
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Phone</label>
           <input bind:value={form.phone} placeholder="0XX XXX XXXX"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Email</label>
           <input type="email" bind:value={form.email} placeholder="staff@school.edu.gh"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Department</label>
           <input bind:value={form.department} placeholder="e.g. Science"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
           <input type="date" bind:value={form.joined_date}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
         </div>
       </div>
       {#if formError}
@@ -200,29 +200,29 @@
   {#if $query.isPending}
     <div class="space-y-2">
       {#each [1,2,3,4,5] as _}
-        <div class="h-16 animate-pulse rounded-2xl bg-[var(--card)]"></div>
+        <div class="h-16 animate-pulse rounded-xl bg-[var(--card)]"></div>
       {/each}
     </div>
   {:else if $query.isError}
-    <div class="rounded-2xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-5 text-sm text-red-600 dark:text-red-400">
+    <div class="rounded-xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-600 dark:text-red-400">
       Could not load staff.
       <button onclick={() => $query.refetch()} class="ml-2 underline">Retry</button>
     </div>
   {:else if filtered().length === 0}
-    <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
       <p class="text-sm text-[var(--fg-muted)]">
         {search ? 'No staff match your search.' : 'No staff on record yet.'}
       </p>
     </div>
   {:else}
-    <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+    <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-[var(--border)] text-left">
-            <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff</th>
-            <th class="hidden px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] md:table-cell">Position</th>
-            <th class="hidden px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] lg:table-cell">Contact</th>
-            <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
+            <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff</th>
+            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] md:table-cell">Position</th>
+            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] lg:table-cell">Contact</th>
+            <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)]">
@@ -231,7 +231,7 @@
               onclick={() => goto(`/admin/staff/${s.id}`)}
               class="group cursor-pointer transition hover:bg-[var(--bg)]"
             >
-              <td class="px-5 py-3.5">
+              <td class="px-4 py-2.5">
                 <div class="flex items-center gap-3">
                   <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
                        style="background-color: {GENDER_COLORS[s.gender ?? ''] ?? 'var(--brand)'}">
@@ -243,13 +243,13 @@
                   </div>
                 </div>
               </td>
-              <td class="hidden px-5 py-3.5 text-[var(--fg-muted)] md:table-cell">
+              <td class="hidden px-5 py-2.5 text-[var(--fg-muted)] md:table-cell">
                 {s.position_name ?? '—'}
               </td>
-              <td class="hidden px-5 py-3.5 lg:table-cell">
+              <td class="hidden px-5 py-2.5 lg:table-cell">
                 <p class="text-[var(--fg-muted)]">{s.phone ?? s.email ?? '—'}</p>
               </td>
-              <td class="px-5 py-3.5">
+              <td class="px-4 py-2.5">
                 <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold
                              {s.is_active
                                ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'

@@ -175,7 +175,7 @@
       {/if}
     </div>
 
-    <div class="bg-[var(--card)] rounded-2xl shadow-sm border border-[var(--border)] p-6 space-y-4">
+    <div class="bg-[var(--card)] rounded-xl shadow-sm border border-[var(--border)] p-5 space-y-4">
 
       <!-- School code — hidden on subdomains (already known from the URL) -->
       {#if !isSubdomain}

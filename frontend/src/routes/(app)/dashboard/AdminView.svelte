@@ -64,7 +64,7 @@
 
   <!-- LEFT: class-level attendance -->
   {#if data.class_attendance.length > 0}
-    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
           Attendance · by class
@@ -104,7 +104,7 @@
   <div class="space-y-5">
 
     <!-- Fee bar -->
-    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
       <div class="mb-3 flex items-center justify-between">
         <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Term fee collection</p>
         <a href="/fees" class="text-[11px] font-semibold hover:underline" style="color: var(--brand)">
@@ -124,7 +124,7 @@
     <!-- Admin quick links -->
     <div>
       <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Administration</p>
-      <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+      <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
         {#each adminLinks as link}
           <a href={link.href} class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-[var(--bg)]">
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">

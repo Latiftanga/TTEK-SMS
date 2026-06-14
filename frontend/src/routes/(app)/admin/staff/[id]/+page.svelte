@@ -144,11 +144,11 @@
 
 {#if $query.isPending}
   <div class="space-y-4">
-    <div class="h-32 animate-pulse rounded-2xl bg-[var(--card)]"></div>
-    <div class="h-48 animate-pulse rounded-2xl bg-[var(--card)]"></div>
+    <div class="h-32 animate-pulse rounded-xl bg-[var(--card)]"></div>
+    <div class="h-48 animate-pulse rounded-xl bg-[var(--card)]"></div>
   </div>
 {:else if $query.isError}
-  <div class="rounded-2xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-5 text-sm text-red-600 dark:text-red-400">
+  <div class="rounded-xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-600 dark:text-red-400">
     Could not load staff member.
     <button onclick={() => $query.refetch()} class="ml-2 underline">Retry</button>
   </div>
@@ -156,9 +156,9 @@
   {@const s = $query.data}
 
   <!-- Profile hero -->
-  <div class="mb-6 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+  <div class="mb-6 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
     <div class="flex flex-wrap items-start gap-5 p-6">
-      <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-2xl font-bold text-white shadow-sm"
+      <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-2xl font-bold text-white shadow-sm"
            style="background-color: {s.gender === 'FEMALE' ? '#EC4899' : 'var(--brand)'}">
         {s.first_name[0]}{s.last_name[0]}
       </div>
@@ -210,7 +210,7 @@
   {#if tab === 'profile'}
     <div class="space-y-5">
       <!-- Personal details -->
-      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
         <h2 class="mb-4 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Personal details</h2>
         <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
           {#each [
@@ -234,7 +234,7 @@
       </div>
 
       <!-- Emergency contacts -->
-      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Emergency contacts</h2>
           {#if !showContactForm}
@@ -321,27 +321,27 @@
       </div>
 
       {#if showQualForm}
-        <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Institution</label>
               <input bind:value={qualForm.institution} placeholder="e.g. University of Ghana"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Qualification</label>
               <input bind:value={qualForm.qualification_type} placeholder="e.g. Bachelor's, PGCE, PhD"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Field of study</label>
               <input bind:value={qualForm.field_of_study} placeholder="e.g. Mathematics Education"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Year obtained</label>
               <input type="number" bind:value={qualForm.year_obtained} placeholder="e.g. 2018"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
           </div>
           {#if qualError}<p class="mt-2 text-xs text-red-500">{qualError}</p>{/if}
@@ -361,11 +361,11 @@
       {/if}
 
       {#if s.qualifications.length === 0}
-        <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
+        <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
           <p class="text-sm text-[var(--fg-muted)]">No qualifications recorded.</p>
         </div>
       {:else}
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
           {#each s.qualifications as q, i (q.id)}
             <div class="flex items-start gap-4 px-5 py-4 {i > 0 ? 'border-t border-[var(--border)]' : ''}">
               <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg)] text-lg">🎓</div>
@@ -401,12 +401,12 @@
       </div>
 
       {#if showLeaveForm}
-        <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Leave type</label>
               <select bind:value={leaveForm.leave_type}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
                 <option value="">Select…</option>
                 {#each LEAVE_TYPES as lt}
                   <option value={lt}>{lt}</option>
@@ -416,22 +416,22 @@
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Days count</label>
               <input type="number" bind:value={leaveForm.days_count} placeholder="Number of days"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Start date</label>
               <input type="date" bind:value={leaveForm.start_date}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">End date</label>
               <input type="date" bind:value={leaveForm.end_date}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
             <div class="sm:col-span-2">
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Reason (optional)</label>
               <textarea bind:value={leaveForm.reason} rows="2" placeholder="Reason for leave…"
-                class="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none">
+                class="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none">
               </textarea>
             </div>
           </div>
@@ -458,29 +458,29 @@
           {/each}
         </div>
       {:else if ($leaveQuery.data ?? []).length === 0}
-        <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
+        <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
           <p class="text-sm text-[var(--fg-muted)]">No leave requests on record.</p>
         </div>
       {:else}
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-[var(--border)] text-left">
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Type</th>
-                <th class="hidden px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Dates</th>
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Days</th>
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Type</th>
+                <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Dates</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Days</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-[var(--border)]">
               {#each ($leaveQuery.data ?? []) as l (l.id)}
                 <tr class="transition hover:bg-[var(--bg)]">
-                  <td class="px-5 py-3.5 font-medium text-[var(--fg)]">{l.leave_type}</td>
-                  <td class="hidden px-5 py-3.5 text-[var(--fg-muted)] sm:table-cell">
+                  <td class="px-4 py-2.5 font-medium text-[var(--fg)]">{l.leave_type}</td>
+                  <td class="hidden px-5 py-2.5 text-[var(--fg-muted)] sm:table-cell">
                     {fmtDate(l.start_date)} – {fmtDate(l.end_date)}
                   </td>
-                  <td class="px-5 py-3.5 text-[var(--fg-muted)]">{l.days_count}</td>
-                  <td class="px-5 py-3.5">
+                  <td class="px-4 py-2.5 text-[var(--fg-muted)]">{l.days_count}</td>
+                  <td class="px-4 py-2.5">
                     <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold {STATUS_STYLE[l.status] ?? ''}">
                       {l.status}
                     </span>

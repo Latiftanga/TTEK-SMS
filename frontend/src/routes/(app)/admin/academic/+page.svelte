@@ -101,7 +101,7 @@
     </div>
     <button
       onclick={() => { showYearForm = !showYearForm; yearError = ''; }}
-      class="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
+      class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
       style="background-color: var(--brand)"
     >
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -113,7 +113,7 @@
 
   <!-- New year form -->
   {#if showYearForm}
-    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
       <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">New Academic Year</h2>
       <div class="grid gap-4 sm:grid-cols-3">
         <div>
@@ -121,7 +121,7 @@
           <input
             bind:value={yearForm.name}
             placeholder="e.g. 2024/2025"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
           />
         </div>
         <div>
@@ -129,7 +129,7 @@
           <input
             type="date"
             bind:value={yearForm.start_date}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
           />
         </div>
         <div>
@@ -137,7 +137,7 @@
           <input
             type="date"
             bind:value={yearForm.end_date}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
           />
         </div>
       </div>
@@ -167,27 +167,27 @@
   {#if $yearsQuery.isPending}
     <div class="space-y-3">
       {#each [1, 2] as _}
-        <div class="h-16 animate-pulse rounded-2xl bg-[var(--card)]"></div>
+        <div class="h-16 animate-pulse rounded-xl bg-[var(--card)]"></div>
       {/each}
     </div>
   {:else if $yearsQuery.isError}
-    <div class="rounded-2xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-5 text-sm text-red-600 dark:text-red-400">
+    <div class="rounded-xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-600 dark:text-red-400">
       Could not load academic years.
       <button onclick={() => $yearsQuery.refetch()} class="ml-2 underline">Retry</button>
     </div>
   {:else if $yearsQuery.data?.length === 0}
-    <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
       <p class="text-sm text-[var(--fg-muted)]">No academic years yet. Create your first one above.</p>
     </div>
   {:else}
     <div class="space-y-3">
       {#each ($yearsQuery.data ?? []) as year (year.id)}
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
           <!-- Year header row -->
           <button
             type="button"
             onclick={() => toggle(year.id)}
-            class="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-[var(--bg)]"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-[var(--bg)]"
           >
             <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
                  style="background-color: var(--brand); opacity: {year.is_current ? 1 : 0.5}">
@@ -225,7 +225,7 @@
 
           <!-- Expanded terms -->
           {#if expandedYearId === year.id}
-            <div class="border-t border-[var(--border)] px-5 py-4 space-y-3">
+            <div class="border-t border-[var(--border)] px-4 py-3 space-y-3">
               {#each year.terms.slice().sort((a: { term_number: number }, b: { term_number: number }) => a.term_number - b.term_number) as term (term.id)}
                 <div class="flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
                   <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"

@@ -98,14 +98,14 @@
   style="box-shadow: var(--shadow-md);"
 >
   <!-- ── School header ──────────────────────────────────────────────────── -->
-  <div class="flex h-16 shrink-0 items-center border-b border-[var(--border)]
+  <div class="flex h-14 shrink-0 items-center border-b border-[var(--border)]
               {collapsed ? 'flex-col justify-center gap-1 py-2' : 'gap-3 px-4'}">
     <!-- Logo / initials -->
     {#if $school?.logoUrl}
       <img src={$school.logoUrl} alt={$school.name}
-           class="h-9 w-9 shrink-0 rounded-xl object-contain ring-1 ring-[var(--border)]" />
+           class="h-8 w-8 shrink-0 rounded-lg object-contain ring-1 ring-[var(--border)]" />
     {:else}
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white"
            style="background-color: var(--brand)">
         {schoolInitials()}
       </div>
@@ -114,10 +114,10 @@
     {#if !collapsed}
       <!-- School name + motto -->
       <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-bold text-[var(--fg)] leading-snug" title={$school?.name}>
+        <p class="truncate text-sm font-semibold text-[var(--fg)] leading-snug" title={$school?.name}>
           {$school?.shortName ?? $school?.name ?? 'My School'}
         </p>
-        <p class="truncate text-[10px] text-[var(--fg-muted)] italic">
+        <p class="truncate text-[10px] text-[var(--fg-muted)]">
           {$school?.motto ?? ($school ? 'School Management' : 'TTEK-SMS')}
         </p>
       </div>
@@ -148,8 +148,8 @@
         onclick={onclose}
         title={collapsed ? item.label : undefined}
         aria-current={active ? 'page' : undefined}
-        class="group flex items-center rounded-xl transition-all duration-150
-               {collapsed ? 'justify-center py-2.5' : 'gap-3 py-2.5 text-sm'}
+        class="group flex items-center rounded-lg transition-all duration-150
+               {collapsed ? 'justify-center py-2' : 'gap-2.5 py-2 text-sm'}
                {active
                  ? 'font-semibold pl-2.5 pr-3 border-l-[3px]'
                  : 'font-medium pl-3 pr-3 border-l-[3px] border-transparent text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]'}"

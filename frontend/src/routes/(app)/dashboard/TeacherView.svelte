@@ -60,7 +60,7 @@
         ? Math.round((cls.present_today / cls.student_count) * 100) : 0}
       {@const low = cls.attendance_marked_today && pct < 75}
 
-      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
         <p class="mb-4 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Your Class</p>
         <div class="flex items-center gap-5">
           <div class="relative flex-shrink-0">
@@ -116,7 +116,7 @@
         {/if}
       </div>
     {:else}
-      <div class="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center text-sm text-[var(--fg-muted)]">
+      <div class="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center text-sm text-[var(--fg-muted)]">
         No class assigned to you this term.
       </div>
     {/if}
@@ -142,7 +142,7 @@
     <!-- Task list -->
     <div>
       <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Today's tasks</p>
-      <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+      <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
         {#each tasks as task}
           <a href={task.href} class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-[var(--bg)]">
             <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
@@ -173,7 +173,7 @@
         <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
           Absent today · {data.my_class!.absent_students.length}
         </p>
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
           {#each data.my_class!.absent_students as s}
             <div class="flex items-center gap-3.5 px-5 py-3">
               <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/50 text-[11px] font-bold text-red-600 dark:text-red-400">

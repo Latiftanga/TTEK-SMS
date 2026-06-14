@@ -177,7 +177,7 @@
       <div class="flex justify-end">
         <button
           onclick={() => { showClassForm = !showClassForm; classError = ''; }}
-          class="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+          class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           style="background-color: var(--brand)"
         >
           <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -188,14 +188,14 @@
       </div>
 
       {#if showClassForm}
-        <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
           <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">New Class</h2>
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Level</label>
               <select
                 bind:value={classForm.level}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none"
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none"
               >
                 <option value="">Select level…</option>
                 {#each CLASS_LEVELS as lvl}
@@ -208,7 +208,7 @@
               <input
                 type="number"
                 bind:value={classForm.year_group}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none"
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none"
               />
             </div>
             <div>
@@ -216,7 +216,7 @@
               <input
                 bind:value={classForm.stream}
                 placeholder="e.g. A, Gold"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
               />
             </div>
             <div>
@@ -225,7 +225,7 @@
                 type="number"
                 bind:value={classForm.capacity}
                 placeholder="e.g. 40"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
               />
             </div>
           </div>
@@ -260,30 +260,30 @@
       {:else if !selectedYearId}
         <p class="text-sm text-[var(--fg-muted)]">Select an academic year to view classes.</p>
       {:else if ($classesQuery.data ?? []).length === 0}
-        <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
+        <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
           <p class="text-sm text-[var(--fg-muted)]">No classes for this year yet.</p>
         </div>
       {:else}
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-[var(--border)] text-left">
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Class</th>
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Year group</th>
-                <th class="hidden px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Capacity</th>
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Class</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Year group</th>
+                <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Capacity</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
                 <th class="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-[var(--border)]">
               {#each ($classesQuery.data ?? []).sort((a: SchoolClass, b: SchoolClass) => a.display_name.localeCompare(b.display_name)) as cls (cls.id)}
                 <tr class="group transition hover:bg-[var(--bg)]">
-                  <td class="px-5 py-3.5 font-medium text-[var(--fg)]">{cls.display_name}</td>
-                  <td class="px-5 py-3.5 text-[var(--fg-muted)]">{cls.year_group}</td>
-                  <td class="hidden px-5 py-3.5 text-[var(--fg-muted)] sm:table-cell">
+                  <td class="px-4 py-2.5 font-medium text-[var(--fg)]">{cls.display_name}</td>
+                  <td class="px-4 py-2.5 text-[var(--fg-muted)]">{cls.year_group}</td>
+                  <td class="hidden px-5 py-2.5 text-[var(--fg-muted)] sm:table-cell">
                     {cls.capacity ?? '—'}
                   </td>
-                  <td class="px-5 py-3.5">
+                  <td class="px-4 py-2.5">
                     <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold
                                  {cls.is_active
                                    ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'
@@ -291,7 +291,7 @@
                       {cls.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td class="px-5 py-3.5 text-right">
+                  <td class="px-4 py-2.5 text-right">
                     <button
                       onclick={() => { assigningClassId = cls.id; selectedSubjectIds = new Set(); }}
                       class="text-xs font-medium text-[var(--fg-muted)] opacity-0 transition group-hover:opacity-100 hover:text-[var(--fg)]"
@@ -313,7 +313,7 @@
       <div class="flex justify-end">
         <button
           onclick={() => { showSubjectForm = !showSubjectForm; subjectError = ''; }}
-          class="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+          class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           style="background-color: var(--brand)"
         >
           <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -324,7 +324,7 @@
       </div>
 
       {#if showSubjectForm}
-        <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
           <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">New Subject</h2>
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -332,7 +332,7 @@
               <input
                 bind:value={subjectForm.code}
                 placeholder="e.g. MATH"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
               />
             </div>
             <div>
@@ -340,7 +340,7 @@
               <input
                 bind:value={subjectForm.name}
                 placeholder="e.g. Mathematics"
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
               />
             </div>
           </div>
@@ -373,25 +373,25 @@
           {/each}
         </div>
       {:else if ($subjectsQuery.data ?? []).length === 0}
-        <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
+        <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
           <p class="text-sm text-[var(--fg-muted)]">No subjects yet.</p>
         </div>
       {:else}
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-[var(--border)] text-left">
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Code</th>
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Name</th>
-                <th class="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Code</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Name</th>
+                <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-[var(--border)]">
               {#each ($subjectsQuery.data ?? []).sort((a: Subject, b: Subject) => a.name.localeCompare(b.name)) as subj (subj.id)}
                 <tr class="transition hover:bg-[var(--bg)]">
-                  <td class="px-5 py-3.5 font-mono text-xs text-[var(--fg-muted)]">{subj.code}</td>
-                  <td class="px-5 py-3.5 font-medium text-[var(--fg)]">{subj.name}</td>
-                  <td class="px-5 py-3.5">
+                  <td class="px-4 py-2.5 font-mono text-xs text-[var(--fg-muted)]">{subj.code}</td>
+                  <td class="px-4 py-2.5 font-medium text-[var(--fg)]">{subj.name}</td>
+                  <td class="px-4 py-2.5">
                     <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold
                                  {subj.is_active
                                    ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'
