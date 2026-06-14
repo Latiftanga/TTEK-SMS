@@ -92,7 +92,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      PUBLIC_API_URL: http://localhost:8000
+      PUBLIC_API_URL: http://api:8000
     depends_on:
       - api
     command: sh -c "npx svelte-kit sync && npm run dev"

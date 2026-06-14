@@ -100,6 +100,10 @@ class School(Base, UUIDPrimaryKey, TimestampMixin):
     # subdomain: URL-safe slug used for per-school routing, e.g. "presec" →
     #   presec.ttek-sms.com.  Must be lowercase, hyphens allowed, 3-50 chars.
     subdomain: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
+    # custom_domain: a school-owned domain pointing to this platform, e.g.
+    #   portal.presec.com.  School sets a CNAME to the platform; superadmin
+    #   registers it here.  Must be globally unique.
+    custom_domain: Mapped[str | None] = mapped_column(String(253), unique=True, nullable=True, index=True)
     # brand_color: single hex colour the school admin picks.  The frontend
     #   derives the full light/dark palette from this value — admins can't
     #   break the UI by choosing a bad colour combination.

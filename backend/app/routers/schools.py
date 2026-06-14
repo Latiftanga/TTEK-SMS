@@ -34,6 +34,7 @@ from app.schemas.school import (
     DistrictRead,
     RegionRead,
     SchoolBranding,
+    SchoolByDomainResult,
     SchoolConfigSet,
     SchoolCreate,
     SchoolRead,
@@ -86,6 +87,35 @@ async def get_school_branding(
     can be displayed to the user before they log in.
     """
     return await school_svc.get_school_branding(subdomain, db)
+
+
+# ── Custom domain resolution (no auth — called before login) ─────────────────
+
+@router.get("/by-domain", response_model=SchoolByDomainResult)
+async def get_school_by_custom_domain(
+    h: str = Query(..., description="Full hostname, e.g. portal.presec.com"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Resolve a custom domain to its school and return branding + routing identifiers.
+
+    No authentication required — called on mount when the browser is on a
+    school-owned domain (e.g. portal.presec.com) rather than the platform
+    subdomain (presec.ttek-sms.com).
+    """
+    return await school_svc.get_school_by_custom_domain(h, db)
+
+
+# ── Authenticated branding (after login, school not yet in localStorage) ───────
+
+@router.get("/my-branding", response_model=SchoolBranding)
+async def get_my_school_branding(
+    ids: tuple = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return branding data for the currently authenticated user's school."""
+    _user_id, school_id = ids
+    return await school_svc.get_school_branding_by_id(school_id, db)
 
 
 # ── School registration (superadmin only) ─────────────────────────────────────

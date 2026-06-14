@@ -241,6 +241,60 @@ async def upload_school_logo(
 
 # ── Public branding ───────────────────────────────────────────────────────────
 
+async def get_school_branding_by_id(school_id: uuid.UUID, db: AsyncSession) -> SchoolBranding:
+    """Return branding data for an authenticated user's own school."""
+    school = await db.get(School, school_id)
+    if not school:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="School not found.",
+        )
+    return SchoolBranding(
+        school_name=school.name,
+        short_name=school.short_name,
+        school_type=school.school_type,
+        motto=school.motto,
+        logo_url=_logo_url(school.logo_path),
+        brand_color=school.brand_color,
+        school_code=school.school_code,
+    )
+
+
+async def get_school_by_custom_domain(domain: str, db: AsyncSession) -> "SchoolByDomainResult":
+    """
+    Resolve a custom domain to its school and return branding + routing info.
+
+    Called before login when the browser is on a school-owned domain
+    (e.g. portal.presec.com) rather than the platform subdomain.
+    No authentication required.
+
+    Raises:
+        404  No active school is registered for this custom domain.
+    """
+    from app.schemas.school import SchoolByDomainResult  # local import avoids circular
+    school = await db.scalar(
+        select(School).where(
+            School.custom_domain == domain.lower().strip(),
+            School.is_active.is_(True),
+        )
+    )
+    if not school:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No school is registered for the domain '{domain}'.",
+        )
+    return SchoolByDomainResult(
+        school_name=school.name,
+        short_name=school.short_name,
+        school_type=school.school_type,
+        motto=school.motto,
+        logo_url=_logo_url(school.logo_path),
+        brand_color=school.brand_color,
+        school_code=school.school_code,
+        subdomain=school.subdomain,
+    )
+
+
 async def get_school_branding(subdomain: str, db: AsyncSession) -> SchoolBranding:
     """
     Return public branding data for the given subdomain.
@@ -269,6 +323,7 @@ async def get_school_branding(subdomain: str, db: AsyncSession) -> SchoolBrandin
         motto=school.motto,
         logo_url=_logo_url(school.logo_path),
         brand_color=school.brand_color,
+        school_code=school.school_code,
     )
 
 

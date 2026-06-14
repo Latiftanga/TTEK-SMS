@@ -1,0 +1,24 @@
+{
+  "name": "TTEK School Management",
+  "short_name": "TTEK-SMS",
+  "description": "Ghana GES-aligned School Management System",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8f7f4",
+  "theme_color": "#1e40af",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

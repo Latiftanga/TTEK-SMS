@@ -38,6 +38,7 @@ class UserRead(BaseModel):
     staff_member_id: uuid.UUID | None
     student_id: uuid.UUID | None
     last_login_at: datetime | None
+    display_name: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -99,9 +99,21 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Return the profile of the currently authenticated user."""
+    from sqlalchemy import select
+    from app.models.staff import StaffMember
+
     user_id, _ = ids
     user = await db.get(User, user_id)
-    return UserRead.model_validate(user)
+    result = UserRead.model_validate(user)
+
+    if user.staff_member_id:
+        staff = await db.get(StaffMember, user.staff_member_id)
+        if staff:
+            result.display_name = f"{staff.first_name} {staff.last_name}"
+    elif user.is_superadmin:
+        result.display_name = "Platform Admin"
+
+    return result
 
 
 @router.post("/change-password", status_code=204)

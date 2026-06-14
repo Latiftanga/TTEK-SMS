@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/*
+  dark: prefix activates when <html> has .dark class.
+  JS in theme.ts manages the class based on user preference
+  (light / dark / system). System mode watches prefers-color-scheme.
+*/
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-brand: var(--brand, #1e40af);
+  --color-brand-light: var(--brand-light, #dbeafe);
+  --color-surface: var(--bg, #f8f7f4);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Colour tokens ────────────────────────────────────────────────────────── */
+:root {
+  --brand: #1e40af;
+  --brand-rgb: 30, 64, 175;
+  --brand-light: #dbeafe;
+
+  /* Page & surface colours */
+  --bg: #f8f7f4;
+  --card: #ffffff;
+  --fg: #111827;
+  --fg-muted: #4b5563;
+  --border: #e5e7eb;
+  --input-bg: #ffffff;
+  --hover: #f3f4f6;
+  --nav-active-bg: rgba(var(--brand-rgb), 0.12);
+  --nav-active-color: var(--brand);
+  /* legacy alias */
+  --surface: #f8f7f4;
+}
+
+:root.dark {
+  --bg: #141824;
+  --card: #1e2436;
+  --fg: #f1f5f9;
+  --fg-muted: #94a3b8;
+  --border: #334155;
+  --input-bg: #242b3d;
+  --hover: #242b3d;
+  --nav-active-bg: rgba(var(--brand-rgb), 0.28);
+  --nav-active-color: var(--brand-light);
+  --surface: #141824;
+}
+
+html, body {
+  height: 100%;
+  font-family: theme(--font-sans);
+  background-color: var(--bg);
+  color: var(--fg);
+  color-scheme: light dark;
+}
+
+/* Smooth colour transitions when brand or theme changes */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+}
+
+/* Focus ring uses brand colour */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbars: invisible at rest, revealed on hover/scroll ─────────────── */
+/* Webkit (Chrome, Safari, Edge, mobile WebKit) */
+::-webkit-scrollbar            { width: 5px; height: 5px; }
+::-webkit-scrollbar-track      { background: transparent; }
+::-webkit-scrollbar-thumb      {
+  background: transparent;
+  border-radius: 9999px;
+  transition: background 0.2s;
+}
+/* Show while hovering the scrollable container */
+*:hover::-webkit-scrollbar-thumb          { background: rgba(0,0,0,0.18); }
+.dark *:hover::-webkit-scrollbar-thumb    { background: rgba(255,255,255,0.15); }
+/* Slightly darker while actively dragging the thumb */
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active          { background: rgba(0,0,0,0.32) !important; }
+.dark ::-webkit-scrollbar-thumb:hover,
+.dark ::-webkit-scrollbar-thumb:active    { background: rgba(255,255,255,0.28) !important; }
+
+/* Firefox */
+*      { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover { scrollbar-color: rgba(0,0,0,0.18) transparent; }
+.dark *:hover { scrollbar-color: rgba(255,255,255,0.15) transparent; }

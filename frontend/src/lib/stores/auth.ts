@@ -9,6 +9,7 @@ export interface CurrentUser {
   student_id: string | null;
   is_superadmin: boolean;
   login_type: 'EMAIL' | 'PHONE' | 'ADMISSION_ID';
+  display_name: string | null;
 }
 
 interface AuthState {
@@ -36,6 +37,7 @@ function createAuth() {
     setAuth(user: CurrentUser, accessToken: string, refreshToken: string) {
       const offlineSessionStartedAt = new Date().toISOString();
       set({ user, accessToken, schoolId: user.school_id, offlineSessionStartedAt });
+      localStorage.setItem('access_token', accessToken);
       localStorage.setItem('refresh_token', refreshToken);
       localStorage.setItem('offline_session_started_at', offlineSessionStartedAt);
     },
@@ -52,6 +54,7 @@ function createAuth() {
 
     clearAuth() {
       set(EMPTY);
+      localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('offline_session_started_at');
     },

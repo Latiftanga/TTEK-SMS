@@ -6,5 +6,7 @@ export const ssr = false;
 export function load() {
   if (!browser) return {};
   const token = localStorage.getItem('access_token');
-  redirect(302, token ? '/dashboard' : '/login');
+  // Authenticated school staff go straight to the app
+  if (token) redirect(302, '/dashboard');
+  // No token → show platform (superadmin) login
 }

@@ -7,6 +7,13 @@ export interface SchoolBranding {
   motto: string | null;
   logo_url: string | null;
   brand_color: string;
+  school_code: string;
+}
+
+/** Extends SchoolBranding with routing identifiers returned for custom domain resolution. */
+export interface SchoolByDomainResult extends SchoolBranding {
+  school_code: string;
+  subdomain: string | null;
 }
 
 /** Public endpoint — no auth required. */
@@ -15,13 +22,34 @@ export async function getSchoolBranding(subdomain: string): Promise<SchoolBrandi
   return data;
 }
 
-/** Apply the school's brand color as a CSS custom property on <html>. */
+/**
+ * Resolve a custom domain to its school branding + routing identifiers.
+ * Public endpoint — no auth required. Called before login on custom-domain deployments.
+ */
+export async function getSchoolByDomain(hostname: string): Promise<SchoolByDomainResult> {
+  const { data } = await client.get<SchoolByDomainResult>('/schools/by-domain', {
+    params: { h: hostname },
+  });
+  return data;
+}
+
+/** Authenticated endpoint — returns the current user's school branding. */
+export async function getMySchoolBranding(): Promise<SchoolBranding> {
+  const { data } = await client.get<SchoolBranding>('/schools/my-branding');
+  return data;
+}
+
+/** Apply the school's brand color as CSS custom properties on <html>. */
 export function applyBranding(branding: SchoolBranding) {
   const root = document.documentElement;
-  root.style.setProperty('--brand', branding.brand_color);
-
-  // Compute a light tint (mix with white at 90%) for backgrounds
-  root.style.setProperty('--brand-light', hexTint(branding.brand_color, 0.9));
+  const hex = branding.brand_color;
+  root.style.setProperty('--brand', hex);
+  root.style.setProperty('--brand-light', hexTint(hex, 0.9));
+  // RGB triplet for rgba(var(--brand-rgb), 0.1) usage in components
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  root.style.setProperty('--brand-rgb', `${r}, ${g}, ${b}`);
 }
 
 function hexTint(hex: string, lightness: number): string {

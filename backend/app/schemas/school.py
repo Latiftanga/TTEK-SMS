@@ -9,6 +9,7 @@ from app.models.school import SchoolType, SmsProvider
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
+_DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 
 
 class SchoolCreate(BaseModel):
@@ -24,6 +25,7 @@ class SchoolCreate(BaseModel):
     motto: str | None = None
     established_year: int | None = None
     subdomain: str | None = None
+    custom_domain: str | None = None
     brand_color: str = "#1e40af"
     has_boarding: bool = False
 
@@ -40,6 +42,16 @@ class SchoolCreate(BaseModel):
         v = v.lower().strip()
         if not _SUBDOMAIN_RE.match(v):
             raise ValueError("subdomain must be 3-50 lowercase letters, numbers, or hyphens")
+        return v
+
+    @field_validator("custom_domain")
+    @classmethod
+    def custom_domain_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.lower().strip()
+        if not _DOMAIN_RE.match(v):
+            raise ValueError("custom_domain must be a valid fully-qualified domain name")
         return v
 
     @field_validator("brand_color")
@@ -61,6 +73,7 @@ class SchoolUpdate(BaseModel):
     is_active: bool | None = None
     has_boarding: bool | None = None
     subdomain: str | None = None
+    custom_domain: str | None = None
     brand_color: str | None = None
 
     @field_validator("subdomain")
@@ -71,6 +84,16 @@ class SchoolUpdate(BaseModel):
         v = v.lower().strip()
         if not _SUBDOMAIN_RE.match(v):
             raise ValueError("subdomain must be 3-50 lowercase letters, numbers, or hyphens")
+        return v
+
+    @field_validator("custom_domain")
+    @classmethod
+    def custom_domain_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.lower().strip()
+        if not _DOMAIN_RE.match(v):
+            raise ValueError("custom_domain must be a valid fully-qualified domain name")
         return v
 
     @field_validator("brand_color")
@@ -117,6 +140,7 @@ class SchoolRead(BaseModel):
     is_active: bool
     has_boarding: bool
     subdomain: str | None
+    custom_domain: str | None
     brand_color: str
 
     model_config = {"from_attributes": True}
@@ -128,6 +152,9 @@ class SchoolBranding(BaseModel):
 
     No auth required.  Contains only what the login screen needs — no
     internal IDs, contact details, or sensitive config.
+
+    school_code is included because ADMISSION_ID login requires the GES code
+    (e.g. "PRESEC"), which may differ from the URL subdomain slug ("presec-gh").
 
     LIGHT / DARK MODE
     -----------------
@@ -145,8 +172,19 @@ class SchoolBranding(BaseModel):
     motto: str | None
     logo_url: str | None   # absolute URL, ready for <img src>
     brand_color: str
+    school_code: str
 
     model_config = {"from_attributes": True}
+
+
+class SchoolByDomainResult(SchoolBranding):
+    """
+    Returned by GET /schools/by-domain when a school is found for a custom domain.
+
+    Extends SchoolBranding with the subdomain slug so the frontend can store
+    the school identity consistently regardless of how it was reached.
+    """
+    subdomain: str | None = None
 
 
 class SchoolConfigSet(BaseModel):
