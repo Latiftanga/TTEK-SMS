@@ -140,12 +140,14 @@ async def seed_school(db, cfg: dict, region_id, district_id):
 
     admin_pos = await get_or_create_position(db, school_id, "School Administrator", [
         "school.manage_users", "school.view",
+        "academic.view", "academic.create", "academic.edit", "academic.delete",
         "students.view", "students.create", "students.edit",
         "staff.view", "staff.create",
         "attendance.view", "attendance.record", "attendance.approve",
         "assessments.view", "assessments.enter_scores", "assessments.approve_scores",
         "fees.view", "fees.create", "fees.collect",
         "housing.view", "housing.manage",
+        "reports.view", "reports.generate",
     ])
     teacher_pos = await get_or_create_position(db, school_id, "Class Teacher", [
         "students.view",
