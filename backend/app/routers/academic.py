@@ -2,7 +2,8 @@
 Academic router — years, terms, programmes, subjects, classes, teacher assignments.
 
 GET endpoints: any authenticated school user.
-POST/PATCH endpoints: require 'academic.manage' permission.
+POST (create) endpoints: require 'academic.create'.
+PATCH and assignment endpoints: require 'academic.edit'.
 """
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ router = APIRouter(prefix="/academic", tags=["academic"])
 @router.post("/years", response_model=AcademicYearRead, status_code=201)
 async def create_year(
     req: AcademicYearCreate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "create")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -89,7 +90,7 @@ async def get_year(
 async def update_year(
     year_id: uuid.UUID,
     req: AcademicYearUpdate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -100,7 +101,7 @@ async def update_year(
 @router.post("/years/{year_id}/set-current", response_model=AcademicYearRead)
 async def set_current_year(
     year_id: uuid.UUID,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -112,7 +113,7 @@ async def set_current_year(
 async def create_term(
     year_id: uuid.UUID,
     req: AcademicTermCreate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "create")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -135,7 +136,7 @@ async def list_terms(
 async def update_term(
     term_id: uuid.UUID,
     req: AcademicTermUpdate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -146,7 +147,7 @@ async def update_term(
 @router.post("/terms/{term_id}/set-current", response_model=TermRead)
 async def set_current_term(
     term_id: uuid.UUID,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -177,7 +178,7 @@ async def list_programmes(
 @router.post("/programmes", response_model=ProgrammeRead, status_code=201)
 async def create_programme(
     req: ProgrammeCreate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "create")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -208,7 +209,7 @@ async def list_subjects(
 @router.post("/subjects", response_model=SubjectRead, status_code=201)
 async def create_subject(
     req: SubjectCreate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "create")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -219,7 +220,7 @@ async def create_subject(
 @router.post("/classes", response_model=ClassRead, status_code=201)
 async def create_class(
     req: ClassCreate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "create")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -250,7 +251,7 @@ async def get_class(
 async def update_class(
     class_id: uuid.UUID,
     req: ClassUpdate,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -261,7 +262,7 @@ async def update_class(
 async def assign_subjects(
     class_id: uuid.UUID,
     req: ClassSubjectAssign,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -273,7 +274,7 @@ async def assign_subjects(
 async def assign_class_teacher(
     class_id: uuid.UUID,
     req: ClassTeacherAssign,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -285,7 +286,7 @@ async def assign_class_teacher(
 async def assign_subject_teacher(
     class_id: uuid.UUID,
     req: SubjectTeacherAssign,
-    ids=Depends(require_permission("academic", "manage")),
+    ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
