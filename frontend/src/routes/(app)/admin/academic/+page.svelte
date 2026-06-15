@@ -24,8 +24,7 @@
   let yearError = $state('');
 
   let showTermForm = $state<string | null>(null);
-  const termNames = ['First Term', 'Second Term', 'Third Term'];
-  let termForm = $state({ term_number: 1, name: 'First Term', start_date: '', end_date: '' });
+  let termForm = $state({ term_number: 1, name: '', start_date: '', end_date: '' });
   let termError = $state('');
 
   const createYearMut = createMutation({
@@ -52,7 +51,7 @@
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['academic-years'] });
       showTermForm = null;
-      termForm = { term_number: 1, name: 'First Term', start_date: '', end_date: '' };
+      termForm = { term_number: 1, name: '', start_date: '', end_date: '' };
       termError = '';
     },
     onError: (e: unknown) => {
@@ -84,8 +83,8 @@
 
   function submitTerm(yearId: string) {
     termError = '';
-    if (!termForm.start_date || !termForm.end_date) {
-      termError = 'Start and end dates are required.';
+    if (!termForm.name.trim() || !termForm.start_date || !termForm.end_date) {
+      termError = 'Name, start date, and end date are required.';
       return;
     }
     $createTermMut.mutate({ yearId, req: termForm });
@@ -262,22 +261,22 @@
                   <h3 class="text-xs font-semibold text-[var(--fg)]">Add term to {year.name}</h3>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Term</label>
+                      <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Session</label>
                       <select
                         bind:value={termForm.term_number}
-                        onchange={() => { termForm.name = termNames[termForm.term_number - 1]; }}
                         class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none"
                       >
-                        <option value={1}>Term 1 — First Term</option>
-                        <option value={2}>Term 2 — Second Term</option>
-                        <option value={3}>Term 3 — Third Term</option>
+                        <option value={1}>1</option>
+                        <option value={2}>2</option>
+                        <option value={3}>3</option>
                       </select>
                     </div>
                     <div>
                       <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Name</label>
                       <input
                         bind:value={termForm.name}
-                        class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none"
+                        placeholder="e.g. First Term, Semester 1"
+                        class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none"
                       />
                     </div>
                     <div>
