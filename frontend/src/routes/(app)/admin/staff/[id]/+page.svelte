@@ -3,9 +3,10 @@
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getStaff, updateStaff } from '$lib/api/staff';
-  import ProfileTab       from './ProfileTab.svelte';
+  import ProfileTab        from './ProfileTab.svelte';
   import QualificationsTab from './QualificationsTab.svelte';
-  import LeaveTab         from './LeaveTab.svelte';
+  import PromotionsTab     from './PromotionsTab.svelte';
+  import LeaveTab          from './LeaveTab.svelte';
 
   const qc = useQueryClient();
   const staffId = $derived(() => $page.params.id);
@@ -16,8 +17,8 @@
     staleTime: 2 * 60_000,
   });
 
-  type Tab = 'profile' | 'qualifications' | 'leave';
-  const TAB_LABELS: Record<Tab, string> = { profile: 'Profile', qualifications: 'Qualifications', leave: 'Leave' };
+  type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave';
+  const TAB_LABELS: Record<Tab, string> = { profile: 'Profile', qualifications: 'Qualifications', promotions: 'Promotions', leave: 'Leave' };
   const activeTab = $derived(() => (($page.url.searchParams.get('tab') as Tab) ?? 'profile'));
 
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
@@ -71,7 +72,7 @@
           </span>
         </div>
         <p class="mt-0.5 text-sm text-[var(--fg-muted)]">
-          {s.staff_number}{s.position_name ? ' · ' + s.position_name : ''}{s.department ? ' · ' + s.department : ''}
+          {s.staff_number}{s.position_names.length ? ' · ' + s.position_names.join(', ') : ''}
         </p>
         <div class="mt-3 flex flex-wrap gap-4 text-xs text-[var(--fg-muted)]">
           {#if s.phone}
@@ -128,6 +129,8 @@
     <ProfileTab staff={s} staffId={staffId()} />
   {:else if activeTab() === 'qualifications'}
     <QualificationsTab staff={s} staffId={staffId()} />
+  {:else if activeTab() === 'promotions'}
+    <PromotionsTab staff={s} staffId={staffId()} />
   {:else if activeTab() === 'leave'}
     <LeaveTab staffId={staffId()} />
   {/if}

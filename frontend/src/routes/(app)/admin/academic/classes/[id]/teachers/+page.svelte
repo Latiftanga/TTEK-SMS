@@ -58,8 +58,8 @@
     </div>
     <div>
       <p class="font-medium text-[var(--fg)]">{teacher?.display_name ?? classTeacher.staff_member_id}</p>
-      {#if teacher?.position_name}
-        <p class="text-xs text-[var(--fg-muted)]">{teacher.position_name}</p>
+      {#if teacher?.position_names?.length}
+        <p class="text-xs text-[var(--fg-muted)]">{teacher.position_names.join(', ')}</p>
       {/if}
     </div>
   </div>
@@ -85,7 +85,7 @@
           {#each ctFiltered as s}
             <button onclick={() => assignStaffId = s.id}
               class="w-full px-3 py-2 text-left text-sm hover:bg-[var(--hover)] {assignStaffId === s.id ? 'bg-[var(--hover)] font-medium' : ''}">
-              {s.display_name}{s.position_name ? ` · ${s.position_name}` : ''}
+              {s.display_name}{s.position_names?.length ? ` · ${s.position_names.join(', ')}` : ''}
             </button>
           {/each}
         {/if}

@@ -191,7 +191,7 @@
         {#each stFiltered as s}
           <button onclick={() => assignSTStaffId = s.id}
             class="w-full px-3 py-2 text-left text-sm hover:bg-[var(--hover)] {assignSTStaffId === s.id ? 'bg-[var(--hover)] font-medium' : ''}">
-            {s.display_name}{s.position_name ? ` · ${s.position_name}` : ''}
+            {s.display_name}{s.position_names?.length ? ` · ${s.position_names.join(', ')}` : ''}
           </button>
         {/each}
       </div>

@@ -8,10 +8,10 @@ Layer 1 — Personal override (StaffPermission table)
     member.  These always beat whatever the position template says.
     Example: give a Subject Teacher access to "fees.collect" for this term.
 
-Layer 2 — Position template (PositionPermission table)
-    Default permissions inherited from the staff member's assigned position
-    (e.g. HEAD, BURSAR, CLASS_TEACHER).  Applied when no personal override
-    exists for a given module+action pair.
+Layer 2 — Position templates (PositionPermission table)
+    Permissions are unioned across ALL positions the staff member holds
+    (e.g. a TEACHER who is also a HOUSE_MASTER gets both sets).
+    Applied when no personal override exists for a given module+action pair.
 
 Layer 3 — Deny by default
     If neither layer 1 nor layer 2 has a rule for a given module+action,
@@ -98,12 +98,16 @@ async def invalidate_permissions(staff_id: uuid.UUID) -> None:
 
     Call this immediately after any of:
     - Creating / updating / deleting a StaffPermission row
-    - Changing a staff member's position_id
+    - Changing a staff member's positions
 
     The next request from this staff member will re-resolve from the DB
-    and repopulate the cache.
+    and repopulate the cache.  Silently no-ops if Redis is not initialised
+    (e.g. during tests or seed scripts).
     """
-    await get_redis().delete(f"{_CACHE_KEY_PREFIX}{staff_id}")
+    try:
+        await get_redis().delete(f"{_CACHE_KEY_PREFIX}{staff_id}")
+    except RuntimeError:
+        pass
 
 
 async def resolve_permissions(
@@ -136,20 +140,31 @@ async def resolve_permissions(
         return cached
 
     from app.models.auth import PositionPermission, StaffPermission
-    from app.models.staff import StaffMember
+    from app.models.staff import StaffMember, staff_member_positions
 
     perms: dict[str, bool] = {}
 
-    # Layer 2: load the position template defaults first.
+    # Layer 2: union permissions from ALL positions the staff member holds.
+    # If any position grants a permission, it is granted (additive model).
     staff = await db.get(StaffMember, staff_member_id)
-    if staff and staff.position_id:
-        position_rows = await db.execute(
-            select(PositionPermission).where(
-                PositionPermission.position_id == staff.position_id
+    if staff:
+        pos_id_rows = await db.execute(
+            select(staff_member_positions.c.position_id).where(
+                staff_member_positions.c.staff_member_id == staff_member_id
             )
         )
-        for row in position_rows.scalars():
-            perms[f"{row.module}.{row.action}"] = row.is_allowed
+        position_ids = [r[0] for r in pos_id_rows]
+        if position_ids:
+            position_rows = await db.execute(
+                select(PositionPermission).where(
+                    PositionPermission.position_id.in_(position_ids)
+                )
+            )
+            for row in position_rows.scalars():
+                key = f"{row.module}.{row.action}"
+                # Grant wins: if any position grants it, it's granted
+                if row.is_allowed or key not in perms:
+                    perms[key] = row.is_allowed
 
     # Layer 1: apply personal overrides — these always win.
     override_rows = await db.execute(

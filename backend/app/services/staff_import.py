@@ -119,7 +119,8 @@ async def process_import(
                 raw[field] = _str(cells[col])
 
         position_name = raw.pop("position_name", None)
-        raw["position_id"] = pos_map.get(position_name.lower()) if position_name else None
+        pos_id = pos_map.get(position_name.lower()) if position_name else None
+        raw["position_ids"] = [pos_id] if pos_id else []
 
         try:
             req = StaffMemberCreate(**raw)
@@ -141,8 +142,6 @@ async def process_import(
             national_id=req.national_id,
             phone=req.phone,
             email=req.email.lower().strip() if req.email else None,
-            position_id=req.position_id,
-            department=req.department,
             is_active=True,
             joined_date=req.joined_date,
         )
@@ -150,6 +149,12 @@ async def process_import(
             async with db.begin_nested():
                 db.add(member)
                 await db.flush()
+                if req.position_ids:
+                    from app.models.staff import staff_member_positions as smp
+                    await db.execute(
+                        smp.insert(),
+                        [{"staff_member_id": member.id, "position_id": pid} for pid in req.position_ids],
+                    )
             _log_row(db, batch.id, school_id, row_num, raw, "success", None, member.id)
             results.append(ImportRowResult(row=row_num, ref=req.staff_number, status="created", error=None))
             created += 1

@@ -2,7 +2,13 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, field_validator
-from app.models.staff import Gender, LeaveStatus
+from app.models.staff import EmploymentType, Gender, LeaveStatus, MaritalStatus, StaffCategory
+
+
+class PositionRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    model_config = {"from_attributes": True}
 
 
 class StaffMemberCreate(BaseModel):
@@ -12,11 +18,15 @@ class StaffMemberCreate(BaseModel):
     last_name: str
     date_of_birth: date | None = None
     gender: Gender | None = None
+    staff_category: StaffCategory | None = None
+    employment_type: EmploymentType | None = None
+    marital_status: MaritalStatus | None = None
     national_id: str | None = None
+    ssnit_number: str | None = None
+    address: str | None = None
     phone: str | None = None
     email: str | None = None
-    position_id: uuid.UUID | None = None
-    department: str | None = None
+    position_ids: list[uuid.UUID] = []
     joined_date: date | None = None
 
     @field_validator("staff_number", "first_name", "last_name")
@@ -33,11 +43,15 @@ class StaffMemberUpdate(BaseModel):
     last_name: str | None = None
     date_of_birth: date | None = None
     gender: Gender | None = None
+    staff_category: StaffCategory | None = None
+    employment_type: EmploymentType | None = None
+    marital_status: MaritalStatus | None = None
     national_id: str | None = None
+    ssnit_number: str | None = None
+    address: str | None = None
     phone: str | None = None
     email: str | None = None
-    position_id: uuid.UUID | None = None
-    department: str | None = None
+    position_ids: list[uuid.UUID] | None = None  # None = no change; [] = clear all
     is_active: bool | None = None
     joined_date: date | None = None
 
@@ -52,11 +66,12 @@ class StaffMemberSummary(BaseModel):
     last_name: str
     display_name: str
     gender: Gender | None
+    staff_category: StaffCategory | None
+    employment_type: EmploymentType | None
     phone: str | None
     email: str | None
-    position_id: uuid.UUID | None
-    position_name: str | None    # denormalized via JOIN
-    department: str | None
+    position_ids: list[uuid.UUID]
+    position_names: list[str]
     is_active: bool
     joined_date: date | None
 
@@ -64,7 +79,10 @@ class StaffMemberSummary(BaseModel):
 class StaffMemberDetail(StaffMemberSummary):
     """Full profile view — includes nested sub-records."""
     date_of_birth: date | None
+    marital_status: MaritalStatus | None
     national_id: str | None
+    ssnit_number: str | None
+    address: str | None
     photo_path: str | None
     qualifications: list[QualificationRead] = []
     emergency_contacts: list[EmergencyContactRead] = []
@@ -105,8 +123,10 @@ class QualificationRead(BaseModel):
 
 
 class PromotionCreate(BaseModel):
-    from_position_id: uuid.UUID | None = None
-    to_position_id: uuid.UUID
+    staff_category: str  # "TEACHING" or "NON_TEACHING"
+    non_teaching_group: str | None = None
+    from_grade: str | None = None
+    to_grade: str
     effective_date: date
     reason: str | None = None
 
@@ -114,13 +134,15 @@ class PromotionCreate(BaseModel):
 class PromotionRead(BaseModel):
     id: uuid.UUID
     staff_member_id: uuid.UUID
-    from_position_id: uuid.UUID | None
-    from_position_name: str | None
-    to_position_id: uuid.UUID
-    to_position_name: str
+    staff_category: str
+    non_teaching_group: str | None
+    from_grade: str | None
+    to_grade: str
     effective_date: date
     reason: str | None
     created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class LeaveCreate(BaseModel):

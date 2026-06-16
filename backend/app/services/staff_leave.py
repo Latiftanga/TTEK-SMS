@@ -4,8 +4,8 @@ Separated from services/staff.py to keep files under 300 lines.
 
 PROMOTION INVARIANT
 -------------------
-record_promotion() updates StaffMember.position_id in the same flush so the
-staff member's current position is always consistent with their promotion history.
+Promotions track Ghana GES civil-service grade changes (Teaching or Non-Teaching).
+from_grade is null for the first recorded promotion.
 
 LEAVE INVARIANT
 ---------------
@@ -20,8 +20,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import or_
 from app.models.auth import StaffPosition
-from app.models.staff import LeaveStatus, StaffLeave, StaffMember, StaffPromotion
+from app.models.staff import LeaveStatus, StaffLeave, StaffMember, StaffPromotion, staff_member_positions
 from app.schemas.staff import LeaveCreate, LeaveRead, LeaveReview, PromotionCreate, PromotionRead
 
 
@@ -41,21 +42,61 @@ async def record_promotion(
     )
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
+    if req.staff_category == "NON_TEACHING" and not req.non_teaching_group:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="non_teaching_group is required for NON_TEACHING category.")
 
     promotion = StaffPromotion(
         school_id=school_id,
         staff_member_id=staff_id,
-        from_position_id=req.from_position_id or member.position_id,
-        to_position_id=req.to_position_id,
+        staff_category=req.staff_category,
+        non_teaching_group=req.non_teaching_group,
+        from_grade=req.from_grade,
+        to_grade=req.to_grade,
         effective_date=req.effective_date,
         reason=req.reason,
         approved_by_id=approved_by_id,
         created_at=_utcnow(),
     )
     db.add(promotion)
-    member.position_id = req.to_position_id
     await db.flush()
-    return await _promotion_read(promotion, db)
+
+    # Auto-assign the Teacher position when a TEACHING promotion is recorded.
+    if req.staff_category == "TEACHING":
+        await _ensure_teacher_position(staff_id, school_id, db)
+
+    return PromotionRead.model_validate(promotion)
+
+
+async def _ensure_teacher_position(
+    staff_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Add the TEACHER position to a staff member if they don't already have it."""
+    teacher_pos = await db.scalar(
+        select(StaffPosition).where(
+            StaffPosition.code == "TEACHER",
+            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)),
+        ).order_by(StaffPosition.school_id.nulls_last()).limit(1)
+    )
+    if not teacher_pos:
+        return
+
+    existing = await db.scalar(
+        select(staff_member_positions).where(
+            staff_member_positions.c.staff_member_id == staff_id,
+            staff_member_positions.c.position_id == teacher_pos.id,
+        )
+    )
+    if not existing:
+        await db.execute(
+            staff_member_positions.insert().values(
+                staff_member_id=staff_id, position_id=teacher_pos.id
+            )
+        )
+        from app.core.permissions import invalidate_permissions
+        await invalidate_permissions(staff_id)
 
 
 async def list_promotions(
@@ -68,7 +109,7 @@ async def list_promotions(
         .where(StaffPromotion.staff_member_id == staff_id, StaffPromotion.school_id == school_id)
         .order_by(StaffPromotion.effective_date.desc())
     )
-    return [await _promotion_read(p, db) for p in rows]
+    return [PromotionRead.model_validate(p) for p in rows]
 
 
 async def submit_leave(
@@ -147,17 +188,3 @@ async def review_leave(
     return leave
 
 
-async def _promotion_read(promotion: StaffPromotion, db: AsyncSession) -> PromotionRead:
-    from_pos = await db.get(StaffPosition, promotion.from_position_id) if promotion.from_position_id else None
-    to_pos = await db.get(StaffPosition, promotion.to_position_id)
-    return PromotionRead(
-        id=promotion.id,
-        staff_member_id=promotion.staff_member_id,
-        from_position_id=promotion.from_position_id,
-        from_position_name=from_pos.name if from_pos else None,
-        to_position_id=promotion.to_position_id,
-        to_position_name=to_pos.name if to_pos else "Unknown",
-        effective_date=promotion.effective_date,
-        reason=promotion.reason,
-        created_at=promotion.created_at,
-    )

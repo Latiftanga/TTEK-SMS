@@ -49,7 +49,7 @@ async def test_create_staff_member(client: AsyncClient, auth: dict):
 @pytest.mark.asyncio
 async def test_create_staff_with_middle_name(client: AsyncClient, auth: dict):
     resp = await client.post("/staff", json=_staff_payload(
-        middle_name="Adu", gender="MALE", department="Science"
+        middle_name="Adu", gender="MALE"
     ), headers=auth)
     assert resp.status_code == 201
     assert resp.json()["display_name"] == "Kwame Adu Mensah"
@@ -84,11 +84,12 @@ async def test_get_staff_detail(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
-async def test_update_staff(client: AsyncClient, auth: dict):
+async def test_update_staff(client: AsyncClient, auth: dict, db_session: AsyncSession):
     staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
-    resp = await client.patch(f"/staff/{staff_id}", json={"department": "Mathematics"}, headers=auth)
+    pos_id = await _get_position_id(db_session)
+    resp = await client.patch(f"/staff/{staff_id}", json={"position_ids": [pos_id]}, headers=auth)
     assert resp.status_code == 200
-    assert resp.json()["department"] == "Mathematics"
+    assert pos_id in resp.json()["position_ids"]
 
 
 @pytest.mark.asyncio
@@ -152,32 +153,34 @@ async def test_add_and_delete_qualification(client: AsyncClient, auth: dict):
 # ── Promotions ────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_record_promotion_updates_position(
+async def test_record_teaching_promotion_auto_assigns_teacher_position(
     client: AsyncClient, auth: dict, db_session: AsyncSession
 ):
-    position_id = await _get_position_id(db_session)
     staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
 
     resp = await client.post(f"/staff/{staff_id}/promotions", json={
-        "to_position_id": position_id,
+        "staff_category": "TEACHING",
+        "to_grade": "Superintendent I",
         "effective_date": "2024-01-15",
         "reason": "Annual review",
     }, headers=auth)
     assert resp.status_code == 201
     promo = resp.json()
-    assert promo["to_position_id"] == position_id
+    assert promo["staff_category"] == "TEACHING"
+    assert promo["to_grade"] == "Superintendent I"
 
-    # Position should be updated on the staff member
+    # Teacher position should be auto-assigned
     detail = (await client.get(f"/staff/{staff_id}", headers=auth)).json()
-    assert detail["position_id"] == position_id
+    assert "Teacher" in detail["position_names"]
 
 
 @pytest.mark.asyncio
 async def test_list_promotions(client: AsyncClient, auth: dict, db_session: AsyncSession):
-    position_id = await _get_position_id(db_session)
     staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
     await client.post(f"/staff/{staff_id}/promotions", json={
-        "to_position_id": position_id, "effective_date": "2024-01-15",
+        "staff_category": "TEACHING",
+        "to_grade": "Superintendent I",
+        "effective_date": "2024-01-15",
     }, headers=auth)
 
     resp = await client.get(f"/staff/{staff_id}/promotions", headers=auth)

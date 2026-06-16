@@ -5,18 +5,15 @@ Promotions and leave management live in services/staff_leave.py.
 from __future__ import annotations
 import uuid
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.auth import StaffPosition
-from app.models.staff import StaffEmergencyContact, StaffMember, StaffQualification
+from app.models.staff import StaffMember, staff_member_positions
 from app.schemas.staff import (
-    EmergencyContactCreate,
-    EmergencyContactRead,
-    QualificationCreate,
     QualificationRead,
+    EmergencyContactRead,
     StaffMemberCreate,
     StaffMemberDetail,
     StaffMemberSummary,
@@ -32,7 +29,7 @@ def _display_name(first: str, middle: str | None, last: str) -> str:
     return " ".join(parts)
 
 
-def _to_summary(member: StaffMember, position_name: str | None) -> StaffMemberSummary:
+def _to_summary(member: StaffMember) -> StaffMemberSummary:
     return StaffMemberSummary(
         id=member.id,
         school_id=member.school_id,
@@ -42,21 +39,25 @@ def _to_summary(member: StaffMember, position_name: str | None) -> StaffMemberSu
         last_name=member.last_name,
         display_name=_display_name(member.first_name, member.middle_name, member.last_name),
         gender=member.gender,
+        staff_category=member.staff_category,
+        employment_type=member.employment_type,
         phone=member.phone,
         email=member.email,
-        position_id=member.position_id,
-        position_name=position_name,
-        department=member.department,
+        position_ids=[p.id for p in member.positions],
+        position_names=[p.name for p in member.positions],
         is_active=member.is_active,
         joined_date=member.joined_date,
     )
 
 
-def _to_detail(member: StaffMember, position_name: str | None) -> StaffMemberDetail:
+def _to_detail(member: StaffMember) -> StaffMemberDetail:
     return StaffMemberDetail(
-        **_to_summary(member, position_name).model_dump(),
+        **_to_summary(member).model_dump(),
         date_of_birth=member.date_of_birth,
+        marital_status=member.marital_status,
         national_id=member.national_id,
+        ssnit_number=member.ssnit_number,
+        address=member.address,
         photo_path=member.photo_path,
         qualifications=[QualificationRead.model_validate(q) for q in member.qualifications],
         emergency_contacts=[EmergencyContactRead.model_validate(c) for c in member.emergency_contacts],
@@ -76,11 +77,14 @@ async def create_staff(
         last_name=req.last_name.strip(),
         date_of_birth=req.date_of_birth,
         gender=req.gender,
+        staff_category=req.staff_category,
+        employment_type=req.employment_type,
+        marital_status=req.marital_status,
         national_id=req.national_id,
+        ssnit_number=req.ssnit_number,
+        address=req.address,
         phone=req.phone,
         email=req.email.lower().strip() if req.email else None,
-        position_id=req.position_id,
-        department=req.department,
         is_active=True,
         joined_date=req.joined_date,
     )
@@ -92,9 +96,16 @@ async def create_staff(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Staff number '{req.staff_number}' is already in use at this school.",
         )
-    await db.refresh(member, attribute_names=["qualifications", "emergency_contacts"])
-    position_name = await _position_name(member.position_id, db)
-    return _to_detail(member, position_name)
+    final_position_ids = list(req.position_ids)
+    if req.staff_category and req.staff_category.value == "TEACHING":
+        final_position_ids = await _merge_teacher_position(final_position_ids, school_id, db)
+    if final_position_ids:
+        await db.execute(
+            staff_member_positions.insert(),
+            [{"staff_member_id": member.id, "position_id": pid} for pid in final_position_ids],
+        )
+    await db.refresh(member, attribute_names=["positions", "qualifications", "emergency_contacts"])
+    return _to_detail(member)
 
 
 async def list_staff(
@@ -106,17 +117,17 @@ async def list_staff(
     limit: int = 50,
 ) -> list[StaffMemberSummary]:
     q = (
-        select(StaffMember, StaffPosition.name.label("pos_name"))
-        .outerjoin(StaffPosition, StaffMember.position_id == StaffPosition.id)
+        select(StaffMember)
         .where(StaffMember.school_id == school_id)
+        .options(selectinload(StaffMember.positions))
         .order_by(StaffMember.last_name, StaffMember.first_name)
         .offset(skip)
         .limit(limit)
     )
     if active_only:
         q = q.where(StaffMember.is_active == True)
-    result = await db.execute(q)
-    return [_to_summary(m, pos_name) for m, pos_name in result]
+    members = await db.scalars(q)
+    return [_to_summary(m) for m in members]
 
 
 async def get_staff(
@@ -128,14 +139,14 @@ async def get_staff(
         select(StaffMember)
         .where(StaffMember.id == staff_id, StaffMember.school_id == school_id)
         .options(
+            selectinload(StaffMember.positions),
             selectinload(StaffMember.qualifications),
             selectinload(StaffMember.emergency_contacts),
         )
     )
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
-    position_name = await _position_name(member.position_id, db)
-    return _to_detail(member, position_name)
+    return _to_detail(member)
 
 
 async def update_staff(
@@ -148,108 +159,70 @@ async def update_staff(
         select(StaffMember)
         .where(StaffMember.id == staff_id, StaffMember.school_id == school_id)
         .options(
+            selectinload(StaffMember.positions),
             selectinload(StaffMember.qualifications),
             selectinload(StaffMember.emergency_contacts),
         )
     )
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
-    for field, val in req.model_dump(exclude_unset=True).items():
+
+    update_data = req.model_dump(exclude_unset=True)
+    new_position_ids: list[uuid.UUID] | None = update_data.pop("position_ids", None)
+
+    for field, val in update_data.items():
         setattr(member, field, val)
-    await db.flush()
-    position_name = await _position_name(member.position_id, db)
-    return _to_detail(member, position_name)
 
-
-async def add_emergency_contact(
-    staff_id: uuid.UUID,
-    req: EmergencyContactCreate,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> StaffEmergencyContact:
-    await _assert_owns(staff_id, school_id, db)
-    contact = StaffEmergencyContact(
-        school_id=school_id,
-        staff_member_id=staff_id,
-        name=req.name.strip(),
-        contact_type=req.contact_type.strip(),
-        phone=req.phone.strip(),
-        email=req.email.lower().strip() if req.email else None,
-    )
-    db.add(contact)
-    await db.flush()
-    return contact
-
-
-async def delete_emergency_contact(
-    staff_id: uuid.UUID,
-    contact_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    contact = await db.scalar(
-        select(StaffEmergencyContact).where(
-            StaffEmergencyContact.id == contact_id,
-            StaffEmergencyContact.staff_member_id == staff_id,
-            StaffEmergencyContact.school_id == school_id,
+    # If category is being set to TEACHING, ensure Teacher position is included
+    new_category = update_data.get("staff_category") or member.staff_category
+    if new_position_ids is not None:
+        if new_category and new_category.value == "TEACHING":
+            new_position_ids = await _merge_teacher_position(new_position_ids, school_id, db)
+        await db.execute(
+            delete(staff_member_positions).where(
+                staff_member_positions.c.staff_member_id == staff_id
+            )
         )
-    )
-    if not contact:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found.")
-    await db.delete(contact)
+        if new_position_ids:
+            await db.execute(
+                staff_member_positions.insert(),
+                [{"staff_member_id": staff_id, "position_id": pid} for pid in new_position_ids],
+            )
+        await db.refresh(member, attribute_names=["positions"])
+    elif "staff_category" in update_data and update_data["staff_category"] and update_data["staff_category"].value == "TEACHING":
+        # Category changed to TEACHING but positions not explicitly updated — auto-add Teacher
+        current_ids = [p.id for p in member.positions]
+        merged = await _merge_teacher_position(current_ids, school_id, db)
+        added = [pid for pid in merged if pid not in current_ids]
+        if added:
+            await db.execute(
+                staff_member_positions.insert(),
+                [{"staff_member_id": staff_id, "position_id": pid} for pid in added],
+            )
+            await db.refresh(member, attribute_names=["positions"])
+
     await db.flush()
-
-
-async def add_qualification(
-    staff_id: uuid.UUID,
-    req: QualificationCreate,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> StaffQualification:
-    await _assert_owns(staff_id, school_id, db)
-    qual = StaffQualification(
-        school_id=school_id,
-        staff_member_id=staff_id,
-        institution=req.institution.strip(),
-        qualification_type=req.qualification_type.strip(),
-        field_of_study=req.field_of_study.strip() if req.field_of_study else None,
-        year_obtained=req.year_obtained,
-    )
-    db.add(qual)
-    await db.flush()
-    return qual
-
-
-async def delete_qualification(
-    staff_id: uuid.UUID,
-    qual_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    qual = await db.scalar(
-        select(StaffQualification).where(
-            StaffQualification.id == qual_id,
-            StaffQualification.staff_member_id == staff_id,
-            StaffQualification.school_id == school_id,
-        )
-    )
-    if not qual:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Qualification not found.")
-    await db.delete(qual)
-    await db.flush()
+    return _to_detail(member)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _position_name(position_id: uuid.UUID | None, db: AsyncSession) -> str | None:
-    if not position_id:
-        return None
-    pos = await db.get(StaffPosition, position_id)
-    return pos.name if pos else None
+async def _merge_teacher_position(
+    position_ids: list[uuid.UUID],
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> list[uuid.UUID]:
+    """Return position_ids with the TEACHER position guaranteed to be included."""
+    from app.models.auth import StaffPosition
+    from sqlalchemy import or_
+    teacher = await db.scalar(
+        select(StaffPosition).where(
+            StaffPosition.code == "TEACHER",
+            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)),
+        ).order_by(StaffPosition.school_id.nulls_last()).limit(1)
+    )
+    if teacher and teacher.id not in position_ids:
+        return [*position_ids, teacher.id]
+    return position_ids
 
 
-async def _assert_owns(staff_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> StaffMember:
-    member = await db.get(StaffMember, staff_id)
-    if not member or member.school_id != school_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
-    return member

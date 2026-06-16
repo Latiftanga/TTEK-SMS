@@ -43,6 +43,7 @@ from app.schemas.staff import (
 )
 from app.services import auth_invite as invite_svc
 from app.services import staff as staff_svc
+from app.services import staff_contacts as contacts_svc
 from app.services import staff_import as import_svc
 from app.services import staff_leave as leave_svc
 from app.services.staff_import_template import build_template
@@ -192,7 +193,6 @@ async def invite_staff_to_platform(
     invite_req = InvitationCreate(
         email=member.email,
         phone=member.phone,
-        position_id=member.position_id,
         staff_member_id=staff_id,
     )
     token = await invite_svc.create_invitation(invite_req, school_id=school_id, invited_by_id=user_id, db=db)
@@ -207,7 +207,7 @@ async def add_emergency_contact(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    contact = await staff_svc.add_emergency_contact(staff_id, req, school_id, db)
+    contact = await contacts_svc.add_emergency_contact(staff_id, req, school_id, db)
     return EmergencyContactRead.model_validate(contact)
 
 
@@ -219,7 +219,7 @@ async def delete_emergency_contact(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    await staff_svc.delete_emergency_contact(staff_id, contact_id, school_id, db)
+    await contacts_svc.delete_emergency_contact(staff_id, contact_id, school_id, db)
 
 
 @router.post("/{staff_id}/qualifications", response_model=QualificationRead, status_code=201)
@@ -230,7 +230,7 @@ async def add_qualification(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    qual = await staff_svc.add_qualification(staff_id, req, school_id, db)
+    qual = await contacts_svc.add_qualification(staff_id, req, school_id, db)
     return QualificationRead.model_validate(qual)
 
 
@@ -242,7 +242,7 @@ async def delete_qualification(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    await staff_svc.delete_qualification(staff_id, qual_id, school_id, db)
+    await contacts_svc.delete_qualification(staff_id, qual_id, school_id, db)
 
 
 @router.post("/{staff_id}/promotions", response_model=PromotionRead, status_code=201)

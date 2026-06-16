@@ -6,7 +6,6 @@
 
   let activeOnly  = $state(true);
   let search      = $state('');
-  let deptFilter  = $state('');
   let genderFilter = $state('');
   let showForm    = $state(false);
 
@@ -16,22 +15,14 @@
     staleTime: 2 * 60_000,
   });
 
-  const depts = $derived(() => {
-    const s = new Set<string>();
-    for (const m of $query.data ?? []) if (m.department) s.add(m.department);
-    return [...s].sort();
-  });
-
   const filtered = $derived(() => {
     let list: StaffSummary[] = $query.data ?? [];
     const q = search.trim().toLowerCase();
-    if (q)           list = list.filter(s =>
+    if (q) list = list.filter(s =>
       s.display_name.toLowerCase().includes(q) ||
       s.staff_number.toLowerCase().includes(q) ||
-      (s.position_name ?? '').toLowerCase().includes(q) ||
-      (s.department ?? '').toLowerCase().includes(q)
+      s.position_names.some(n => n.toLowerCase().includes(q))
     );
-    if (deptFilter)   list = list.filter(s => s.department === deptFilter);
     if (genderFilter) list = list.filter(s => s.gender === genderFilter);
     return list;
   });
@@ -42,12 +33,12 @@
     const rows = filtered();
     if (!rows.length) return;
     const esc = (v: string | null | undefined) => `"${(v ?? '').replace(/"/g, '""')}"`;
-    const header = ['Name','Staff No.','Position','Department','Gender','Phone','Email','Joined','Status'];
+    const header = ['Name','Staff No.','Position','Gender','Phone','Email','Joined','Status'];
     const lines = [
       header.join(','),
       ...rows.map(s => [
-        esc(s.display_name), esc(s.staff_number), esc(s.position_name),
-        esc(s.department), s.gender ?? '', s.phone ?? '', s.email ?? '',
+        esc(s.display_name), esc(s.staff_number), esc(s.position_names.join('; ')),
+        s.gender ?? '', s.phone ?? '', s.email ?? '',
         s.joined_date ?? '', s.is_active ? 'Active' : 'Inactive',
       ].join(',')),
     ];
@@ -112,11 +103,6 @@
       <input bind:value={search} placeholder="Search name, ID, position…"
         class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2.5 pl-9 pr-4 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
     </div>
-    <select bind:value={deptFilter}
-      class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-      <option value="">All departments</option>
-      {#each depts() as d}<option value={d}>{d}</option>{/each}
-    </select>
     <select bind:value={genderFilter}
       class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
       <option value="">All genders</option>
@@ -144,10 +130,10 @@
   {:else if filtered().length === 0}
     <div class="rounded-xl border border-dashed border-[var(--border)] p-10 text-center">
       <p class="text-sm text-[var(--fg-muted)]">
-        {search || deptFilter || genderFilter ? 'No staff match your filters.' : 'No staff on record yet.'}
+        {search || genderFilter ? 'No staff match your filters.' : 'No staff on record yet.'}
       </p>
-      {#if search || deptFilter || genderFilter}
-        <button onclick={() => { search = ''; deptFilter = ''; genderFilter = ''; }}
+      {#if search || genderFilter}
+        <button onclick={() => { search = ''; genderFilter = ''; }}
           class="mt-2 text-sm font-medium transition hover:underline" style="color: var(--brand)">
           Clear filters
         </button>
@@ -176,11 +162,11 @@
                   </div>
                   <div>
                     <p class="font-semibold text-[var(--fg)]">{s.display_name}</p>
-                    <p class="text-xs text-[var(--fg-muted)]">{s.staff_number}{s.department ? ' · ' + s.department : ''}</p>
+                    <p class="text-xs text-[var(--fg-muted)]">{s.staff_number}{s.position_names.length ? ' · ' + s.position_names.join(', ') : ''}</p>
                   </div>
                 </div>
               </td>
-              <td class="hidden px-4 py-3 text-[var(--fg-muted)] md:table-cell">{s.position_name ?? '—'}</td>
+              <td class="hidden px-4 py-3 text-[var(--fg-muted)] md:table-cell">{s.position_names.join(', ') || '—'}</td>
               <td class="hidden px-4 py-3 text-[var(--fg-muted)] lg:table-cell">{s.phone ?? s.email ?? '—'}</td>
               <td class="px-4 py-3">
                 <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold

@@ -147,32 +147,13 @@ STAFF_POSITIONS = [
         ("housing", "view"), ("housing", "assign"),
         ("reports", "view"), ("reports", "generate"),
     ]),
-    ("HOD", "Head of Department", [
-        ("school", "view"),
-        ("staff", "view"),
-        ("students", "view"),
-        ("academic", "view"), ("academic", "create"), ("academic", "edit"),
-        ("attendance", "view"), ("attendance", "record"),
-        ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
-        ("fees", "view"),
-        ("housing", "view"),
-        ("reports", "view"), ("reports", "generate"),
-    ]),
-    ("CLASS_TEACHER", "Class Teacher", [
+    ("TEACHER", "Teacher", [
         ("school", "view"),
         ("students", "view"), ("students", "create"), ("students", "edit"),
         ("academic", "view"),
         ("attendance", "view"), ("attendance", "record"),
         ("assessments", "view"), ("assessments", "enter_scores"),
         ("fees", "view"),
-        ("reports", "view"),
-    ]),
-    ("SUBJECT_TEACHER", "Subject Teacher", [
-        ("school", "view"),
-        ("students", "view"),
-        ("academic", "view"),
-        ("attendance", "view"), ("attendance", "record"),
-        ("assessments", "view"), ("assessments", "enter_scores"),
         ("reports", "view"),
     ]),
     ("BURSAR", "Bursar", [

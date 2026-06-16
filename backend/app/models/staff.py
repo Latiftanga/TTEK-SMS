@@ -24,17 +24,45 @@ import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, String, Table, Text, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SchoolScopedMixin, TimestampMixin, UUIDPrimaryKey
 
+# Many-to-many: a staff member can hold multiple positions simultaneously.
+staff_member_positions = Table(
+    "staff_member_positions",
+    Base.metadata,
+    Column("staff_member_id", UUID(as_uuid=True), ForeignKey("staff_member.id", ondelete="CASCADE"), primary_key=True),
+    Column("position_id", UUID(as_uuid=True), ForeignKey("staff_position.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class Gender(str, enum.Enum):
     MALE = "MALE"
     FEMALE = "FEMALE"
+
+
+class StaffCategory(str, enum.Enum):
+    TEACHING = "TEACHING"
+    NON_TEACHING = "NON_TEACHING"
+
+
+class EmploymentType(str, enum.Enum):
+    PERMANENT = "PERMANENT"
+    CONTRACT = "CONTRACT"
+    NATIONAL_SERVICE = "NATIONAL_SERVICE"
+    INTERN = "INTERN"
+
+
+class MaritalStatus(str, enum.Enum):
+    SINGLE = "SINGLE"
+    MARRIED = "MARRIED"
+    DIVORCED = "DIVORCED"
+    WIDOWED = "WIDOWED"
+    SEPARATED = "SEPARATED"
 
 
 class LeaveStatus(str, enum.Enum):
@@ -67,13 +95,23 @@ class StaffMember(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    position_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("staff_position.id"), nullable=True
+    staff_category: Mapped[StaffCategory | None] = mapped_column(
+        SAEnum(StaffCategory, name="staffcategory"), nullable=True
     )
-    department: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    employment_type: Mapped[EmploymentType | None] = mapped_column(
+        SAEnum(EmploymentType, name="employmenttype"), nullable=True
+    )
+    marital_status: Mapped[MaritalStatus | None] = mapped_column(
+        SAEnum(MaritalStatus, name="maritalstatus"), nullable=True
+    )
+    ssnit_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     joined_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    positions: Mapped[list["StaffPosition"]] = relationship(  # type: ignore[name-defined]
+        "StaffPosition", secondary=staff_member_positions, lazy="selectin"
+    )
     emergency_contacts: Mapped[list[StaffEmergencyContact]] = relationship(
         back_populates="staff_member", cascade="all, delete-orphan"
     )
@@ -100,18 +138,22 @@ class StaffEmergencyContact(Base, UUIDPrimaryKey, SchoolScopedMixin):
 
 
 class StaffPromotion(Base, UUIDPrimaryKey, SchoolScopedMixin):
-    """A single position change event in a staff member's career history."""
+    """A Ghana GES civil-service grade promotion event in a staff member's career history.
+
+    staff_category is 'TEACHING' or 'NON_TEACHING'.
+    non_teaching_group is required when staff_category == 'NON_TEACHING'
+    (e.g. 'Accounting', 'Internal Audit').
+    from_grade is null for the very first recorded promotion.
+    """
     __tablename__ = "staff_promotion"
 
     staff_member_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("staff_member.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    from_position_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("staff_position.id"), nullable=True
-    )
-    to_position_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("staff_position.id"), nullable=False
-    )
+    staff_category: Mapped[str] = mapped_column(String(20), nullable=False)
+    non_teaching_group: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    from_grade: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    to_grade: Mapped[str] = mapped_column(String(200), nullable=False)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved_by_id: Mapped[uuid.UUID | None] = mapped_column(

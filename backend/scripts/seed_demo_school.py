@@ -30,7 +30,7 @@ from app.models import school as school_models, auth as auth_models, staff as st
 from app.models import academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
 from app.models.school import School, SchoolType, GhanaRegion, GhanaDistrict
 from app.models.auth import User, LoginType, StaffPosition, PositionPermission
-from app.models.staff import StaffMember
+from app.models.staff import StaffMember, staff_member_positions
 
 DEMO_PASSWORD = "Demo1234!"
 
@@ -93,7 +93,23 @@ async def get_or_create_position(db, school_id, name: str, perms: list[str]) -> 
 async def create_staff_user(db, school_id, first: str, last: str, email: str, position) -> User:
     existing = await db.scalar(select(User).where(User.email == email))
     if existing:
-        print(f"  User already exists: {email}")
+        # Ensure position assignment exists (handles post-migration re-runs)
+        if existing.staff_member_id:
+            has_pos = await db.scalar(
+                select(staff_member_positions).where(
+                    staff_member_positions.c.staff_member_id == existing.staff_member_id,
+                    staff_member_positions.c.position_id == position.id,
+                )
+            )
+            if not has_pos:
+                await db.execute(
+                    staff_member_positions.insert().values(
+                        staff_member_id=existing.staff_member_id, position_id=position.id
+                    )
+                )
+                print(f"  Re-assigned position '{position.name}' to {email}")
+            else:
+                print(f"  User already exists: {email}")
         return existing
 
     member = StaffMember(
@@ -103,10 +119,12 @@ async def create_staff_user(db, school_id, first: str, last: str, email: str, po
         last_name=last,
         email=email,
         is_active=True,
-        position_id=position.id,
     )
     db.add(member)
     await db.flush()
+    await db.execute(
+        staff_member_positions.insert().values(staff_member_id=member.id, position_id=position.id)
+    )
 
     user = User(
         school_id=school_id,
@@ -150,17 +168,21 @@ async def seed_school(db, cfg: dict, region_id, district_id):
         "school.view", "school.edit", "school.manage_users",
         "academic.view", "academic.create", "academic.edit", "academic.delete",
         "students.view", "students.create", "students.edit",
-        "staff.view", "staff.create",
+        "staff.view", "staff.create", "staff.edit", "staff.delete", "staff.approve_leave",
         "attendance.view", "attendance.record", "attendance.approve",
         "assessments.view", "assessments.enter_scores", "assessments.approve_scores",
         "fees.view", "fees.create", "fees.collect",
         "housing.view", "housing.manage",
         "reports.view", "reports.generate",
     ])
-    teacher_pos = await get_or_create_position(db, school_id, "Class Teacher", [
-        "students.view",
+    teacher_pos = await get_or_create_position(db, school_id, "Teacher", [
+        "school.view",
+        "students.view", "students.create", "students.edit",
+        "academic.view",
         "attendance.view", "attendance.record",
         "assessments.view", "assessments.enter_scores",
+        "fees.view",
+        "reports.view",
     ])
     finance_pos = await get_or_create_position(db, school_id, "Finance Officer", [
         "students.view",

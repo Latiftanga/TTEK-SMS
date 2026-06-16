@@ -1,6 +1,9 @@
 import client from './client';
 
 export type Gender = 'MALE' | 'FEMALE';
+export type StaffCategory = 'TEACHING' | 'NON_TEACHING';
+export type EmploymentType = 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN';
+export type MaritalStatus = 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED' | 'SEPARATED';
 
 export interface StaffSummary {
   id: string;
@@ -11,11 +14,12 @@ export interface StaffSummary {
   last_name: string;
   display_name: string;
   gender: Gender | null;
+  staff_category: StaffCategory | null;
+  employment_type: EmploymentType | null;
   phone: string | null;
   email: string | null;
-  position_id: string | null;
-  position_name: string | null;
-  department: string | null;
+  position_ids: string[];
+  position_names: string[];
   is_active: boolean;
   joined_date: string | null;
 }
@@ -38,10 +42,30 @@ export interface EmergencyContact {
 
 export interface StaffDetail extends StaffSummary {
   date_of_birth: string | null;
+  marital_status: MaritalStatus | null;
   national_id: string | null;
+  ssnit_number: string | null;
+  address: string | null;
   photo_path: string | null;
   qualifications: Qualification[];
   emergency_contacts: EmergencyContact[];
+}
+
+export interface Position {
+  id: string;
+  name: string;
+}
+
+export interface Promotion {
+  id: string;
+  staff_member_id: string;
+  staff_category: 'TEACHING' | 'NON_TEACHING';
+  non_teaching_group: string | null;
+  from_grade: string | null;
+  to_grade: string;
+  effective_date: string;
+  reason: string | null;
+  created_at: string;
 }
 
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
@@ -82,11 +106,15 @@ export async function createStaff(req: {
   last_name: string;
   date_of_birth?: string;
   gender?: Gender;
+  staff_category?: StaffCategory;
+  employment_type?: EmploymentType;
+  marital_status?: MaritalStatus;
   national_id?: string;
+  ssnit_number?: string;
+  address?: string;
   phone?: string;
   email?: string;
-  position_id?: string;
-  department?: string;
+  position_ids?: string[];
   joined_date?: string;
 }): Promise<StaffDetail> {
   const { data } = await client.post<StaffDetail>('/staff', req);
@@ -99,10 +127,16 @@ export async function updateStaff(
     first_name: string;
     middle_name: string;
     last_name: string;
+    gender: Gender;
+    staff_category: StaffCategory;
+    employment_type: EmploymentType;
+    marital_status: MaritalStatus;
+    national_id: string;
+    ssnit_number: string;
+    address: string;
     phone: string;
     email: string;
-    position_id: string;
-    department: string;
+    position_ids: string[];
     is_active: boolean;
   }>
 ): Promise<StaffDetail> {
@@ -140,6 +174,31 @@ export async function addEmergencyContact(
 
 export async function deleteEmergencyContact(staffId: string, contactId: string): Promise<void> {
   await client.delete(`/staff/${staffId}/emergency-contacts/${contactId}`);
+}
+
+export async function listPositions(): Promise<Position[]> {
+  const { data } = await client.get<Position[]>('/schools/me/positions');
+  return data;
+}
+
+export async function listPromotions(staffId: string): Promise<Promotion[]> {
+  const { data } = await client.get<Promotion[]>(`/staff/${staffId}/promotions`);
+  return data;
+}
+
+export async function addPromotion(
+  staffId: string,
+  req: {
+    staff_category: string;
+    non_teaching_group?: string;
+    from_grade?: string;
+    to_grade: string;
+    effective_date: string;
+    reason?: string;
+  }
+): Promise<Promotion> {
+  const { data } = await client.post<Promotion>(`/staff/${staffId}/promotions`, req);
+  return data;
 }
 
 export async function listLeave(staffId: string): Promise<Leave[]> {
