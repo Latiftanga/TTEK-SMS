@@ -57,12 +57,6 @@
 
 <div class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[var(--bg)] px-6 py-16 text-center">
 
-  <!-- Subtle grid pattern -->
-  <div class="pointer-events-none absolute inset-0 opacity-[0.025]"
-       style="background-image: linear-gradient(var(--fg) 1px, transparent 1px), linear-gradient(90deg, var(--fg) 1px, transparent 1px); background-size: 40px 40px;"
-       aria-hidden="true">
-  </div>
-
   <!-- Soft brand glow -->
   <div class="pointer-events-none absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.07] blur-3xl"
        style="background: radial-gradient(circle, {meta.color}, transparent 70%);"
