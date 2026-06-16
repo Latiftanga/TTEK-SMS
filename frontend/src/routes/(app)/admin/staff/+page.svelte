@@ -1,202 +1,135 @@
 <script lang="ts">
-  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { createQuery } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
-  import { listStaff, createStaff, type StaffSummary } from '$lib/api/staff';
+  import { listStaff, type StaffSummary } from '$lib/api/staff';
+  import StaffForm from './StaffForm.svelte';
 
-  const qc = useQueryClient();
-
-  let activeOnly = $state(true);
-  let search = $state('');
+  let activeOnly  = $state(true);
+  let search      = $state('');
+  let deptFilter  = $state('');
+  let genderFilter = $state('');
+  let showForm    = $state(false);
 
   const query = createQuery({
     queryKey: ['staff', activeOnly],
-    queryFn: () => listStaff({ active_only: activeOnly }),
+    queryFn:  () => listStaff({ active_only: activeOnly }),
     staleTime: 2 * 60_000,
   });
 
+  const depts = $derived(() => {
+    const s = new Set<string>();
+    for (const m of $query.data ?? []) if (m.department) s.add(m.department);
+    return [...s].sort();
+  });
+
   const filtered = $derived(() => {
+    let list: StaffSummary[] = $query.data ?? [];
     const q = search.trim().toLowerCase();
-    if (!q) return $query.data ?? [];
-    return ($query.data ?? []).filter((s: StaffSummary) =>
+    if (q)           list = list.filter(s =>
       s.display_name.toLowerCase().includes(q) ||
       s.staff_number.toLowerCase().includes(q) ||
       (s.position_name ?? '').toLowerCase().includes(q) ||
       (s.department ?? '').toLowerCase().includes(q)
     );
+    if (deptFilter)   list = list.filter(s => s.department === deptFilter);
+    if (genderFilter) list = list.filter(s => s.gender === genderFilter);
+    return list;
   });
 
-  let showForm = $state(false);
-  let form = $state({
-    staff_number: '',
-    first_name: '',
-    last_name: '',
-    middle_name: '',
-    gender: '' as '' | 'MALE' | 'FEMALE',
-    phone: '',
-    email: '',
-    department: '',
-    joined_date: '',
-  });
-  let formError = $state('');
+  const total = $derived(() => ($query.data ?? []).length);
 
-  const createMut = createMutation({
-    mutationFn: createStaff,
-    onSuccess: (data: import('$lib/api/staff').StaffDetail) => {
-      qc.invalidateQueries({ queryKey: ['staff'] });
-      showForm = false;
-      form = {
-        staff_number: '', first_name: '', last_name: '', middle_name: '',
-        gender: '', phone: '', email: '', department: '', joined_date: '',
-      };
-      goto(`/admin/staff/${data.id}`);
-    },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create staff.';
-    },
-  });
-
-  function submit() {
-    formError = '';
-    if (!form.staff_number || !form.first_name || !form.last_name) {
-      formError = 'Staff number, first name, and last name are required.';
-      return;
-    }
-    $createMut.mutate({
-      staff_number: form.staff_number,
-      first_name: form.first_name,
-      last_name: form.last_name,
-      middle_name: form.middle_name || undefined,
-      gender: (form.gender || undefined) as 'MALE' | 'FEMALE' | undefined,
-      phone: form.phone || undefined,
-      email: form.email || undefined,
-      department: form.department || undefined,
-      joined_date: form.joined_date || undefined,
+  function exportCSV() {
+    const rows = filtered();
+    if (!rows.length) return;
+    const esc = (v: string | null | undefined) => `"${(v ?? '').replace(/"/g, '""')}"`;
+    const header = ['Name','Staff No.','Position','Department','Gender','Phone','Email','Joined','Status'];
+    const lines = [
+      header.join(','),
+      ...rows.map(s => [
+        esc(s.display_name), esc(s.staff_number), esc(s.position_name),
+        esc(s.department), s.gender ?? '', s.phone ?? '', s.email ?? '',
+        s.joined_date ?? '', s.is_active ? 'Active' : 'Inactive',
+      ].join(',')),
+    ];
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' }));
+    const a = Object.assign(document.createElement('a'), {
+      href: url, download: `staff-${new Date().toISOString().slice(0, 10)}.csv`,
     });
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
-  function initials(s: StaffSummary) {
-    return (s.first_name[0] + s.last_name[0]).toUpperCase();
-  }
-
-  const GENDER_COLORS: Record<string, string> = {
-    MALE: '#3B82F6',
-    FEMALE: '#EC4899',
-  };
+  function initials(s: StaffSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }
+  const GENDER_BG: Record<string, string> = { MALE: '#3B82F6', FEMALE: '#EC4899' };
 </script>
 
-<div class="space-y-6">
+<div class="space-y-5">
   <!-- Header -->
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
       <h1 class="text-2xl font-bold text-[var(--fg)]">Staff</h1>
       <p class="mt-0.5 text-sm text-[var(--fg-muted)]">
-        {($query.data ?? []).length} member{($query.data ?? []).length !== 1 ? 's' : ''} on record
+        {#if filtered().length !== total()}
+          Showing {filtered().length} of {total()} member{total() !== 1 ? 's' : ''}
+        {:else}
+          {total()} member{total() !== 1 ? 's' : ''} on record
+        {/if}
       </p>
     </div>
-    <button
-      onclick={() => { showForm = !showForm; formError = ''; }}
-      class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 active:scale-[0.98]"
-      style="background-color: var(--brand)"
-    >
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-      </svg>
-      Add staff
-    </button>
+    <div class="flex gap-2">
+      <button onclick={exportCSV} disabled={!filtered().length}
+        class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:text-[var(--fg)] hover:bg-[var(--hover)] disabled:opacity-40">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+        </svg>
+        Export CSV
+      </button>
+      <button onclick={() => { showForm = !showForm; }}
+        class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
+        style="background-color: var(--brand)">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add staff
+      </button>
+    </div>
   </div>
 
-  <!-- Add staff form -->
   {#if showForm}
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-      <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">New Staff Member</h2>
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Staff number *</label>
-          <input bind:value={form.staff_number} placeholder="e.g. T001"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">First name *</label>
-          <input bind:value={form.first_name} placeholder="First name"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Last name *</label>
-          <input bind:value={form.last_name} placeholder="Last name"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Middle name</label>
-          <input bind:value={form.middle_name} placeholder="Middle name"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
-          <select bind:value={form.gender}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-            <option value="">Select…</option>
-            <option value="MALE">Male</option>
-            <option value="FEMALE">Female</option>
-          </select>
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Phone</label>
-          <input bind:value={form.phone} placeholder="0XX XXX XXXX"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Email</label>
-          <input type="email" bind:value={form.email} placeholder="staff@school.edu.gh"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Department</label>
-          <input bind:value={form.department} placeholder="e.g. Science"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
-          <input type="date" bind:value={form.joined_date}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20" />
-        </div>
-      </div>
-      {#if formError}
-        <p class="mt-2 text-xs text-red-500">{formError}</p>
-      {/if}
-      <div class="mt-4 flex gap-2">
-        <button onclick={submit} disabled={$createMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-          style="background-color: var(--brand)">
-          {$createMut.isPending ? 'Creating…' : 'Create and view profile'}
-        </button>
-        <button onclick={() => { showForm = false; formError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">
-          Cancel
-        </button>
-      </div>
-    </div>
+    <StaffForm
+      onSuccess={(staff) => { showForm = false; goto(`/admin/staff/${staff.id}`); }}
+      onCancel={() => showForm = false}
+    />
   {/if}
 
-  <!-- Search + filter -->
-  <div class="flex flex-wrap gap-3">
-    <div class="relative flex-1 min-w-48">
+  <!-- Filter bar -->
+  <div class="flex flex-wrap gap-2">
+    <div class="relative min-w-48 flex-1">
       <svg class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--fg-muted)]"
            fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/>
       </svg>
-      <input
-        bind:value={search}
-        placeholder="Search name, ID, position…"
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2.5 pl-9 pr-4 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20"
-      />
+      <input bind:value={search} placeholder="Search name, ID, position…"
+        class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2.5 pl-9 pr-4 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
     </div>
+    <select bind:value={deptFilter}
+      class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+      <option value="">All departments</option>
+      {#each depts() as d}<option value={d}>{d}</option>{/each}
+    </select>
+    <select bind:value={genderFilter}
+      class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+      <option value="">All genders</option>
+      <option value="MALE">Male</option>
+      <option value="FEMALE">Female</option>
+    </select>
     <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-sm text-[var(--fg-muted)]">
       <input type="checkbox" bind:checked={activeOnly} class="accent-[var(--brand)] rounded" />
       Active only
     </label>
   </div>
 
-  <!-- List -->
+  <!-- Table -->
   {#if $query.isPending}
     <div class="space-y-2">
       {#each [1,2,3,4,5] as _}
@@ -205,36 +138,40 @@
     </div>
   {:else if $query.isError}
     <div class="rounded-xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-600 dark:text-red-400">
-      Could not load staff.
+      Could not load staff list.
       <button onclick={() => $query.refetch()} class="ml-2 underline">Retry</button>
     </div>
   {:else if filtered().length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-10 text-center">
       <p class="text-sm text-[var(--fg-muted)]">
-        {search ? 'No staff match your search.' : 'No staff on record yet.'}
+        {search || deptFilter || genderFilter ? 'No staff match your filters.' : 'No staff on record yet.'}
       </p>
+      {#if search || deptFilter || genderFilter}
+        <button onclick={() => { search = ''; deptFilter = ''; genderFilter = ''; }}
+          class="mt-2 text-sm font-medium transition hover:underline" style="color: var(--brand)">
+          Clear filters
+        </button>
+      {/if}
     </div>
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-[var(--border)] text-left">
-            <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff</th>
-            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] md:table-cell">Position</th>
-            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] lg:table-cell">Contact</th>
-            <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
+            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff</th>
+            <th class="hidden px-4 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] md:table-cell">Position</th>
+            <th class="hidden px-4 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] lg:table-cell">Contact</th>
+            <th class="px-4 py-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)]">
           {#each filtered() as s (s.id)}
-            <tr
-              onclick={() => goto(`/admin/staff/${s.id}`)}
-              class="group cursor-pointer transition hover:bg-[var(--bg)]"
-            >
-              <td class="px-4 py-2.5">
+            <tr onclick={() => goto(`/admin/staff/${s.id}`)}
+                class="cursor-pointer transition hover:bg-[var(--hover)]">
+              <td class="px-4 py-3">
                 <div class="flex items-center gap-3">
                   <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
-                       style="background-color: {GENDER_COLORS[s.gender ?? ''] ?? 'var(--brand)'}">
+                       style="background-color: {GENDER_BG[s.gender ?? ''] ?? 'var(--brand)'}">
                     {initials(s)}
                   </div>
                   <div>
@@ -243,17 +180,12 @@
                   </div>
                 </div>
               </td>
-              <td class="hidden px-5 py-2.5 text-[var(--fg-muted)] md:table-cell">
-                {s.position_name ?? '—'}
-              </td>
-              <td class="hidden px-5 py-2.5 lg:table-cell">
-                <p class="text-[var(--fg-muted)]">{s.phone ?? s.email ?? '—'}</p>
-              </td>
-              <td class="px-4 py-2.5">
-                <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold
-                             {s.is_active
-                               ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'
-                               : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}">
+              <td class="hidden px-4 py-3 text-[var(--fg-muted)] md:table-cell">{s.position_name ?? '—'}</td>
+              <td class="hidden px-4 py-3 text-[var(--fg-muted)] lg:table-cell">{s.phone ?? s.email ?? '—'}</td>
+              <td class="px-4 py-3">
+                <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold
+                             {s.is_active ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'
+                                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}">
                   {s.is_active ? 'Active' : 'Inactive'}
                 </span>
               </td>
