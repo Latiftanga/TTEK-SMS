@@ -41,7 +41,6 @@ export interface Subject {
 export interface SchoolClass {
   id: string;
   school_id: string;
-  academic_year_id: string;
   level: string;
   year_group: number;
   programme_id: string | null;
@@ -64,6 +63,16 @@ export interface ClassTeacher {
   id: string;
   school_id: string;
   class_id: string;
+  staff_member_id: string;
+  academic_term_id: string;
+  is_active: boolean;
+}
+
+export interface SubjectTeacher {
+  id: string;
+  school_id: string;
+  class_id: string;
+  subject_id: string;
   staff_member_id: string;
   academic_term_id: string;
   is_active: boolean;
@@ -146,15 +155,22 @@ export async function updateSubject(subjectId: string, req: {
   return data;
 }
 
-export async function listClasses(yearId: string): Promise<SchoolClass[]> {
-  const { data } = await client.get<SchoolClass[]>('/academic/classes', {
-    params: { year_id: yearId },
-  });
+export async function listAllTerms(): Promise<AcademicTerm[]> {
+  const { data } = await client.get<AcademicTerm[]>('/academic/terms');
+  return data;
+}
+
+export async function listClasses(): Promise<SchoolClass[]> {
+  const { data } = await client.get<SchoolClass[]>('/academic/classes');
+  return data;
+}
+
+export async function getClass(classId: string): Promise<SchoolClass> {
+  const { data } = await client.get<SchoolClass>(`/academic/classes/${classId}`);
   return data;
 }
 
 export async function createClass(req: {
-  academic_year_id: string;
   level: string;
   year_group: number;
   programme_id?: string;
@@ -185,6 +201,26 @@ export async function assignSubjects(
     subject_ids: subjectIds,
   });
   return data;
+}
+
+export async function getClassTeacher(classId: string, termId: string): Promise<ClassTeacher | null> {
+  const { data } = await client.get<ClassTeacher | null>(
+    `/academic/classes/${classId}/class-teacher`,
+    { params: { term_id: termId } }
+  );
+  return data;
+}
+
+export async function listSubjectTeachers(classId: string, termId: string): Promise<SubjectTeacher[]> {
+  const { data } = await client.get<SubjectTeacher[]>(
+    `/academic/classes/${classId}/subject-teachers`,
+    { params: { term_id: termId } }
+  );
+  return data;
+}
+
+export async function removeClassSubject(classId: string, subjectId: string): Promise<void> {
+  await client.delete(`/academic/classes/${classId}/subjects/${subjectId}`);
 }
 
 export async function assignClassTeacher(

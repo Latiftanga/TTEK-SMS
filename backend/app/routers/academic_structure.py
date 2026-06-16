@@ -35,6 +35,7 @@ from app.schemas.academic import (
 )
 from app.services import academic_class as class_svc
 from app.services import academic_subjects as subj_svc
+from app.services import academic_teachers as teacher_svc
 
 router = APIRouter(prefix="/academic", tags=["academic"])
 
@@ -135,12 +136,11 @@ async def create_class(
 
 @router.get("/classes", response_model=list[ClassRead])
 async def list_classes(
-    year_id: uuid.UUID = Query(..., description="Filter by academic year"),
     ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await class_svc.list_classes(year_id, school_id, db)
+    return await class_svc.list_classes(school_id, db)
 
 
 @router.get("/classes/{class_id}", response_model=ClassRead)
@@ -189,6 +189,18 @@ async def assign_subjects(
     return [ClassSubjectRead.model_validate(cs) for cs in added]
 
 
+@router.get("/classes/{class_id}/class-teacher", response_model=ClassTeacherRead | None)
+async def get_class_teacher(
+    class_id: uuid.UUID,
+    term_id: uuid.UUID = Query(...),
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    ct = await teacher_svc.get_class_teacher(class_id, term_id, school_id, db)
+    return ClassTeacherRead.model_validate(ct) if ct else None
+
+
 @router.post("/classes/{class_id}/class-teacher", response_model=ClassTeacherRead, status_code=201)
 async def assign_class_teacher(
     class_id: uuid.UUID,
@@ -197,8 +209,20 @@ async def assign_class_teacher(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    ct = await class_svc.assign_class_teacher(class_id, req, school_id, db)
+    ct = await teacher_svc.assign_class_teacher(class_id, req, school_id, db)
     return ClassTeacherRead.model_validate(ct)
+
+
+@router.get("/classes/{class_id}/subject-teachers", response_model=list[SubjectTeacherRead])
+async def list_subject_teachers(
+    class_id: uuid.UUID,
+    term_id: uuid.UUID = Query(...),
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    rows = await teacher_svc.list_subject_teachers(class_id, term_id, school_id, db)
+    return [SubjectTeacherRead.model_validate(st) for st in rows]
 
 
 @router.post("/classes/{class_id}/subject-teachers", response_model=SubjectTeacherRead, status_code=201)
@@ -209,5 +233,16 @@ async def assign_subject_teacher(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    st = await class_svc.assign_subject_teacher(class_id, req, school_id, db)
+    st = await teacher_svc.assign_subject_teacher(class_id, req, school_id, db)
     return SubjectTeacherRead.model_validate(st)
+
+
+@router.delete("/classes/{class_id}/subjects/{subject_id}", status_code=204)
+async def remove_class_subject(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    ids=Depends(require_permission("academic", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await class_svc.remove_class_subject(class_id, subject_id, school_id, db)

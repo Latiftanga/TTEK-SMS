@@ -31,6 +31,7 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas.documents import ImportBatchResult
 from app.schemas.students import (
+    BulkEnrollResult, BulkTermEnrollmentCreate,
     EnrollmentCreate, EnrollmentRead,
     GuardianCreate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
@@ -124,6 +125,17 @@ async def bulk_import_students(
 
 
 # ── Term enrollment (declared before /{student_id} to avoid path capture) ────
+
+@router.post("/bulk-term-enrollments", response_model=BulkEnrollResult)
+async def bulk_term_enrollment(
+    req: BulkTermEnrollmentCreate,
+    ids=Depends(require_permission("students", "enroll")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    result = await enroll_svc.bulk_term_enrollment(req.items, school_id, user_id, db)
+    return result
+
 
 @router.post("/term-enrollments", response_model=TermEnrollmentRead, status_code=201)
 async def create_term_enrollment(

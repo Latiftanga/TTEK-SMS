@@ -44,12 +44,23 @@
   ];
 
   const adminNav = [
-    { href: '/admin/academic',   label: 'Academic',       icon: ic.academic  },
     { href: '/admin/staff',      label: 'Staff',          icon: ic.staff     },
     { href: '/admin/grading',    label: 'Grading Scales', icon: ic.grading   },
     { href: '/admin/fees-setup', label: 'Fee Structure',  icon: ic.feeSetup  },
     { href: '/admin/sms',        label: 'SMS Config',     icon: ic.sms       },
   ];
+
+  const academicSub = $derived([
+    { href: '/admin/academic/years',      label: 'Years & Terms' },
+    { href: '/admin/academic/classes',    label: 'Classes'       },
+    { href: '/admin/academic/subjects',   label: 'Subjects'      },
+    ...($school?.schoolType === 'SHS' ? [{ href: '/admin/academic/programmes', label: 'Programmes' }] : []),
+  ]);
+
+  const academicActive = $derived($page.url.pathname.startsWith('/admin/academic'));
+  let academicOpen = $state(browser ? localStorage.getItem('academic_open') !== 'false' : true);
+  function toggleAcademic() { academicOpen = !academicOpen; if (browser) localStorage.setItem('academic_open', String(academicOpen)); }
+  $effect(() => { if ($page.url.pathname.startsWith('/admin/academic')) academicOpen = true; });
 
   const showAdmin = $derived(() => $isSchoolAdmin || ($currentUser?.is_superadmin ?? false));
 
@@ -183,6 +194,35 @@
         </div>
       {:else}
         <hr class="my-2 border-[var(--border)]" />
+      {/if}
+
+      {#if collapsed}
+        <a href="/admin/academic/years" onclick={onclose} title="Academic"
+           class="group flex items-center justify-center rounded-lg p-2.5 transition-all duration-150 text-sm {academicActive ? 'font-semibold' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
+           style={academicActive ? 'background-color: var(--nav-active-bg); color: var(--nav-active-color);' : ''}>
+          <svg class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width={academicActive ? '2.1' : '1.6'} viewBox="0 0 24 24">{@html ic.academic}</svg>
+        </a>
+      {:else}
+        <button onclick={toggleAcademic}
+          class="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 {academicActive ? 'font-semibold' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
+          style={academicActive ? 'background-color: var(--nav-active-bg); color: var(--nav-active-color);' : ''}>
+          <svg class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width={academicActive ? '2.1' : '1.6'} viewBox="0 0 24 24">{@html ic.academic}</svg>
+          <span class="flex-1 truncate text-left">Academic</span>
+          <svg class="h-3 w-3 shrink-0 transition-transform duration-150 {academicOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+          </svg>
+        </button>
+        {#if academicOpen}
+          <div class="ml-[30px] mt-0.5 space-y-0.5 border-l border-[var(--border)] pl-2.5">
+            {#each academicSub as sub}
+              {@const subActive = $page.url.pathname.startsWith(sub.href)}
+              <a href={sub.href} onclick={onclose}
+                 class="block rounded-md px-2.5 py-1.5 text-[0.8125rem] transition-colors {subActive ? 'font-semibold text-[var(--brand)]' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}">
+                {sub.label}
+              </a>
+            {/each}
+          </div>
+        {/if}
       {/if}
 
       {#each adminNav as item}

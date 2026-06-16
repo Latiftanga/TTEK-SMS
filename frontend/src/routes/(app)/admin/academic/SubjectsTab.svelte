@@ -1,54 +1,57 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listSubjects, createSubject, updateSubject, type Subject } from '$lib/api/academic';
+  import Pagination from '$lib/components/Pagination.svelte';
 
   const qc = useQueryClient();
 
-  const subjectsQuery = createQuery({
-    queryKey: ['subjects'],
-    queryFn: listSubjects,
-    staleTime: 5 * 60_000,
-  });
+  const subjectsQuery = createQuery({ queryKey: ['subjects'], queryFn: listSubjects, staleTime: 5 * 60_000 });
 
-  let showForm = $state(false);
-  let form = $state({ code: '', name: '' });
+  // ── Filters ───────────────────────────────────────────────────────────────────
+  let search       = $state('');
+  let statusFilter = $state('active');
+  let page         = $state(1);
+
+  const all = $derived<Subject[]>($subjectsQuery.data ?? []);
+
+  const filtered = $derived(
+    all.filter(s => {
+      const q = search.trim().toLowerCase();
+      if (q && !s.name.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false;
+      if (statusFilter === 'active'   && !s.is_active) return false;
+      if (statusFilter === 'inactive' &&  s.is_active) return false;
+      return true;
+    }).sort((a, b) => a.name.localeCompare(b.name))
+  );
+
+  $effect(() => { search; statusFilter; page = 1; });
+
+  const PAGE  = 20;
+  const paged = $derived(filtered.slice((page - 1) * PAGE, page * PAGE));
+
+  // ── Create form ───────────────────────────────────────────────────────────────
+  let showForm  = $state(false);
+  let form      = $state({ code: '', name: '' });
   let formError = $state('');
-
-  let editingId = $state<string | null>(null);
-  let editForm = $state({ code: '', name: '' });
-  let editError = $state('');
 
   const createMut = createMutation({
     mutationFn: createSubject,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subjects'] });
-      showForm = false;
-      form = { code: '', name: '' };
-      formError = '';
-    },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create subject.';
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); showForm = false; form = { code: '', name: '' }; formError = ''; },
+    onError: (e: unknown) => { formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create subject.'; },
   });
+
+  // ── Inline edit ───────────────────────────────────────────────────────────────
+  let editingId = $state<string | null>(null);
+  let editForm  = $state({ code: '', name: '' });
+  let editError = $state('');
 
   const updateMut = createMutation({
-    mutationFn: ({ id, req }: { id: string; req: { code?: string; name?: string; is_active?: boolean } }) =>
-      updateSubject(id, req),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subjects'] });
-      editingId = null;
-      editError = '';
-    },
-    onError: (e: unknown) => {
-      editError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to update.';
-    },
+    mutationFn: ({ id, req }: { id: string; req: { code?: string; name?: string; is_active?: boolean } }) => updateSubject(id, req),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); editingId = null; editError = ''; },
+    onError: (e: unknown) => { editError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to update.'; },
   });
 
-  function startEdit(subj: Subject) {
-    editingId = subj.id;
-    editForm = { code: subj.code, name: subj.name };
-    editError = '';
-  }
+  function startEdit(s: Subject) { editingId = s.id; editForm = { code: s.code, name: s.name }; editError = ''; }
 
   function submitCreate() {
     formError = '';
@@ -62,21 +65,27 @@
     $updateMut.mutate({ id: editingId!, req: { code: editForm.code, name: editForm.name } });
   }
 
-  function deactivate(id: string) {
-    $updateMut.mutate({ id, req: { is_active: false } });
-  }
+  const PILL = (active: boolean) => `rounded-md px-3 py-1 text-xs font-medium transition ${active ? 'bg-[var(--card)] text-[var(--fg)] shadow-sm' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}`;
 </script>
 
 <div class="space-y-4">
-  <div class="flex justify-end">
-    <button
-      onclick={() => { showForm = !showForm; formError = ''; }}
-      class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-      style="background-color: var(--brand)"
-    >
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-      </svg>
+  <!-- Toolbar -->
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="relative">
+        <svg class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--fg-muted)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z"/></svg>
+        <input bind:value={search} type="search" placeholder="Search subjects…"
+          class="h-9 w-48 rounded-xl border border-[var(--border)] bg-[var(--card)] pl-9 pr-3 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 sm:w-60" />
+      </div>
+      <div class="flex rounded-lg border border-[var(--border)] bg-[var(--bg)] p-0.5">
+        {#each [['all','All'],['active','Active'],['inactive','Inactive']] as [v, l]}
+          <button onclick={() => { statusFilter = v; page = 1; }} class={PILL(statusFilter === v)}>{l}</button>
+        {/each}
+      </div>
+    </div>
+    <button onclick={() => { showForm = !showForm; formError = ''; }}
+      class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style="background-color: var(--brand)">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
       Add subject
     </button>
   </div>
@@ -87,39 +96,31 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Code</label>
-          <input bind:value={form.code} placeholder="e.g. MATH"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+          <input bind:value={form.code} placeholder="e.g. MATH" class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Name</label>
-          <input bind:value={form.name} placeholder="e.g. Mathematics"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+          <input bind:value={form.name} placeholder="e.g. Mathematics" class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
         </div>
       </div>
       {#if formError}<p class="mt-2 text-xs text-red-500">{formError}</p>{/if}
       <div class="mt-4 flex gap-2">
-        <button onclick={submitCreate} disabled={$createMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-          style="background-color: var(--brand)">
-          {$createMut.isPending ? 'Creating…' : 'Create subject'}
-        </button>
-        <button onclick={() => { showForm = false; formError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">
-          Cancel
-        </button>
+        <button onclick={submitCreate} disabled={$createMut.isPending} class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background-color: var(--brand)">{$createMut.isPending ? 'Creating…' : 'Create subject'}</button>
+        <button onclick={() => { showForm = false; formError = ''; }} class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">Cancel</button>
       </div>
     </div>
   {/if}
 
   {#if $subjectsQuery.isPending}
-    <div class="space-y-2">
-      {#each [1,2,3,4,5] as _}
-        <div class="h-12 animate-pulse rounded-xl bg-[var(--card)]"></div>
-      {/each}
+    <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="h-12 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
+  {:else if all.length === 0}
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
+      <p class="text-sm text-[var(--fg-muted)]">No subjects yet. Add your first one above.</p>
     </div>
-  {:else if ($subjectsQuery.data ?? []).length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No subjects yet.</p>
+  {:else if filtered.length === 0}
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
+      <p class="text-sm text-[var(--fg-muted)]">No subjects match these filters.</p>
+      <button onclick={() => { search = ''; statusFilter = 'all'; }} class="mt-2 text-xs text-[var(--brand)] hover:underline">Clear filters</button>
     </div>
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
@@ -128,33 +129,24 @@
           <tr class="border-b border-[var(--border)] text-left">
             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Code</th>
             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Name</th>
+            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Status</th>
             <th class="px-4 py-2.5"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)]">
-          {#each ($subjectsQuery.data ?? []).sort((a: Subject, b: Subject) => a.name.localeCompare(b.name)) as subj (subj.id)}
+          {#each paged as subj (subj.id)}
             {#if editingId === subj.id}
               <tr class="bg-[var(--bg)]">
+                <td class="px-3 py-2"><input bind:value={editForm.code} class="w-20 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 font-mono text-xs uppercase text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" /></td>
                 <td class="px-3 py-2">
-                  <input bind:value={editForm.code}
-                    class="w-20 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 font-mono text-xs uppercase text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
-                </td>
-                <td class="px-3 py-2">
-                  <input bind:value={editForm.name}
-                    class="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                  <input bind:value={editForm.name} class="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
                   {#if editError}<p class="mt-1 text-[10px] text-red-500">{editError}</p>{/if}
                 </td>
+                <td class="hidden px-4 py-2 sm:table-cell"></td>
                 <td class="px-3 py-2 text-right">
                   <div class="flex items-center justify-end gap-1.5">
-                    <button onclick={submitEdit} disabled={$updateMut.isPending}
-                      class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                      style="background-color: var(--brand)">
-                      {$updateMut.isPending ? '…' : 'Save'}
-                    </button>
-                    <button onclick={() => { editingId = null; editError = ''; }}
-                      class="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--card)]">
-                      Cancel
-                    </button>
+                    <button onclick={submitEdit} disabled={$updateMut.isPending} class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50" style="background-color: var(--brand)">{$updateMut.isPending ? '…' : 'Save'}</button>
+                    <button onclick={() => { editingId = null; editError = ''; }} class="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--card)]">Cancel</button>
                   </div>
                 </td>
               </tr>
@@ -162,17 +154,22 @@
               <tr class="group transition hover:bg-[var(--bg)]">
                 <td class="px-4 py-2.5 font-mono text-xs text-[var(--fg-muted)]">{subj.code}</td>
                 <td class="px-4 py-2.5 font-medium text-[var(--fg)]">{subj.name}</td>
+                <td class="hidden px-4 py-2.5 sm:table-cell"><span class="badge {subj.is_active ? 'badge-success' : 'badge-neutral'}">{subj.is_active ? 'Active' : 'Inactive'}</span></td>
                 <td class="px-4 py-2.5 text-right">
                   <div class="flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
-                    <button onclick={() => startEdit(subj)}
-                      class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]">
+                    <button onclick={() => startEdit(subj)} class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]">
                       <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
                       Edit
                     </button>
-                    <button onclick={() => deactivate(subj.id)} disabled={$updateMut.isPending}
-                      class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 disabled:opacity-40">
-                      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
-                      Remove
+                    <button onclick={() => $updateMut.mutate({ id: subj.id, req: { is_active: !subj.is_active } })} disabled={$updateMut.isPending}
+                      class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-40 {subj.is_active ? 'text-red-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30' : 'text-green-500 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-950/30'}">
+                      {#if subj.is_active}
+                        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Deactivate
+                      {:else}
+                        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Activate
+                      {/if}
                     </button>
                   </div>
                 </td>
@@ -182,5 +179,6 @@
         </tbody>
       </table>
     </div>
+    <Pagination total={filtered.length} pageSize={PAGE} {page} label="subjects" onPageChange={(p) => page = p} />
   {/if}
 </div>

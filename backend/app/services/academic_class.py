@@ -10,20 +10,15 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import (
-    AcademicYear,
     Class,
     ClassSubject,
-    ClassTeacher,
     SHSProgramme,
-    SubjectTeacher,
 )
 from app.schemas.academic import (
     ClassCreate,
     ClassRead,
     ClassSubjectAssign,
-    ClassTeacherAssign,
     ClassUpdate,
-    SubjectTeacherAssign,
 )
 
 
@@ -50,7 +45,6 @@ def _to_class_read(cls: Class, programme_name: str | None) -> ClassRead:
     return ClassRead(
         id=cls.id,
         school_id=cls.school_id,
-        academic_year_id=cls.academic_year_id,
         level=cls.level,
         year_group=cls.year_group,
         programme_id=cls.programme_id,
@@ -67,17 +61,7 @@ async def create_class(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> ClassRead:
-    # Verify the academic year belongs to this school — prevents cross-school data access.
-    year = await db.scalar(
-        select(AcademicYear).where(
-            AcademicYear.id == req.academic_year_id,
-            AcademicYear.school_id == school_id,
-        )
-    )
-    if not year:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic year not found.")
-
-    # Uniqueness: (school, year, level, year_group, programme, stream) must be unique.
+    # Uniqueness: (school, level, year_group, programme, stream) must be unique.
     # Handle NULLs explicitly since SQL NULL != NULL.
     level_norm = req.level.strip()
     stream_norm = req.stream.strip() if req.stream else None
@@ -88,7 +72,6 @@ async def create_class(
     duplicate = await db.scalar(
         select(Class).where(
             Class.school_id == school_id,
-            Class.academic_year_id == req.academic_year_id,
             Class.level == level_norm,
             Class.year_group == req.year_group,
             prog_clause,
@@ -98,13 +81,12 @@ async def create_class(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="A class with this name already exists for this academic year.",
+            detail="A class with this name already exists.",
         )
 
     programme = await db.get(SHSProgramme, req.programme_id) if req.programme_id else None
     cls = Class(
         school_id=school_id,
-        academic_year_id=req.academic_year_id,
         level=req.level.strip(),
         year_group=req.year_group,
         programme_id=req.programme_id,
@@ -126,13 +108,12 @@ def _classes_query(where_clauses: list):
 
 
 async def list_classes(
-    year_id: uuid.UUID,
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[ClassRead]:
     result = await db.execute(
-        _classes_query([Class.school_id == school_id, Class.academic_year_id == year_id])
-        .order_by(Class.level, Class.stream)
+        _classes_query([Class.school_id == school_id])
+        .order_by(Class.level, Class.year_group, Class.stream)
     )
     return [_to_class_read(cls, prog_name) for cls, prog_name in result]
 
@@ -226,63 +207,23 @@ async def assign_subjects(
     return added
 
 
-async def assign_class_teacher(
+async def remove_class_subject(
     class_id: uuid.UUID,
-    req: ClassTeacherAssign,
+    subject_id: uuid.UUID,
     school_id: uuid.UUID,
     db: AsyncSession,
-) -> ClassTeacher:
-    existing = await db.scalar(
-        select(ClassTeacher).where(
-            ClassTeacher.class_id == class_id,
-            ClassTeacher.academic_term_id == req.academic_term_id,
+) -> None:
+    cs = await db.scalar(
+        select(ClassSubject).where(
+            ClassSubject.class_id == class_id,
+            ClassSubject.subject_id == subject_id,
+            ClassSubject.school_id == school_id,
         )
     )
-    if existing:
-        existing.staff_member_id = req.staff_member_id
-        existing.is_active = True
-        await db.flush()
-        return existing
-
-    ct = ClassTeacher(
-        school_id=school_id,
-        class_id=class_id,
-        staff_member_id=req.staff_member_id,
-        academic_term_id=req.academic_term_id,
-        is_active=True,
-    )
-    db.add(ct)
-    await db.flush()
-    return ct
-
-
-async def assign_subject_teacher(
-    class_id: uuid.UUID,
-    req: SubjectTeacherAssign,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> SubjectTeacher:
-    existing = await db.scalar(
-        select(SubjectTeacher).where(
-            SubjectTeacher.class_id == class_id,
-            SubjectTeacher.subject_id == req.subject_id,
-            SubjectTeacher.academic_term_id == req.academic_term_id,
+    if not cs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subject not assigned to this class.",
         )
-    )
-    if existing:
-        existing.staff_member_id = req.staff_member_id
-        existing.is_active = True
-        await db.flush()
-        return existing
-
-    st = SubjectTeacher(
-        school_id=school_id,
-        class_id=class_id,
-        subject_id=req.subject_id,
-        staff_member_id=req.staff_member_id,
-        academic_term_id=req.academic_term_id,
-        is_active=True,
-    )
-    db.add(st)
+    await db.delete(cs)
     await db.flush()
-    return st

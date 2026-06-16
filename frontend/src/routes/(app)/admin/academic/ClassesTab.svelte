@@ -1,86 +1,131 @@
 <script lang="ts">
-  import { writable } from 'svelte/store';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { listClasses, updateClass, listProgrammes, type SchoolClass, type Programme } from '$lib/api/academic';
+  import { listClasses, listProgrammes, updateClass, type SchoolClass, type Programme } from '$lib/api/academic';
   import ClassCreateForm from './ClassCreateForm.svelte';
-  import AssignSubjectsModal from './AssignSubjectsModal.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
 
-  const { selectedYearId, schoolType } = $props<{
-    selectedYearId: string | null;
-    schoolType: string;
-  }>();
-
+  const { schoolType } = $props<{ schoolType: string }>();
   const qc = useQueryClient();
 
-  // Writable store so the Svelte 4 query API reacts when selectedYearId prop changes after mount.
-  const classesOpts = writable({
-    queryKey: ['classes', selectedYearId] as [string, string | null],
-    queryFn: () => listClasses(selectedYearId!),
-    enabled: !!selectedYearId, staleTime: 2 * 60_000,
-  });
-  $effect(() => classesOpts.set({
-    queryKey: ['classes', selectedYearId],
-    queryFn: () => listClasses(selectedYearId!),
-    enabled: !!selectedYearId, staleTime: 2 * 60_000,
-  }));
-  const classesQuery = createQuery(classesOpts);
+  const classesQuery = createQuery({ queryKey: ['classes'], queryFn: listClasses, staleTime: 2 * 60_000 });
+  const programmesQuery = createQuery({ queryKey: ['programmes'], queryFn: listProgrammes, enabled: schoolType === 'SHS', staleTime: 5 * 60_000 });
 
-  // schoolType never changes mid-session — plain object is fine.
-  const programmesQuery = createQuery({
-    queryKey: ['programmes'],
-    queryFn: listProgrammes,
-    enabled: schoolType === 'SHS',
-    staleTime: 5 * 60_000,
-  });
+  // ── Filters ──────────────────────────────────────────────────────────────────
+  let search          = $state('');
+  let statusFilter    = $state('all');
+  let filterYear      = $state('');
+  let filterProgramme = $state('');  // SHS
+  let filterLevel     = $state('');  // Basic
 
-  let editingClassId = $state<string | null>(null);
-  let editForm = $state({ stream: '', capacity: '', programme_id: '' });
+  const all = $derived<SchoolClass[]>($classesQuery.data ?? []);
+  const availableLevels = $derived([...new Set(all.map(c => c.level))].sort());
+  const availableYears  = $derived([...new Set(all.filter(c => !filterLevel || c.level === filterLevel).map(c => c.year_group))].sort((a, b) => a - b));
+  const availableProgs  = $derived([...new Map(all.filter(c => c.programme_id).map(c => [c.programme_id, { id: c.programme_id!, name: c.programme_name ?? '' }])).values()]);
+
+  const filtered = $derived(
+    all.filter(c => {
+      const q = search.trim().toLowerCase();
+      if (q && !c.display_name.toLowerCase().includes(q) && !(c.programme_name ?? '').toLowerCase().includes(q)) return false;
+      if (statusFilter === 'active'   &&  !c.is_active) return false;
+      if (statusFilter === 'inactive' &&   c.is_active) return false;
+      if (schoolType === 'SHS') {
+        if (filterYear      && c.year_group !== Number(filterYear)) return false;
+        if (filterProgramme && c.programme_id !== filterProgramme)  return false;
+      } else {
+        if (filterLevel && c.level      !== filterLevel)         return false;
+        if (filterYear  && c.year_group !== Number(filterYear)) return false;
+      }
+      return true;
+    }).sort((a, b) => a.display_name.localeCompare(b.display_name))
+  );
+
+  $effect(() => { if (filterLevel) filterYear = ''; });
+
+  // ── Pagination ────────────────────────────────────────────────────────────────
+  const PAGE = 20;
+  let page = $state(1);
+  $effect(() => { search; statusFilter; filterYear; filterProgramme; filterLevel; page = 1; });
+  const paged = $derived(filtered.slice((page - 1) * PAGE, page * PAGE));
+
+  // ── Inline edit ───────────────────────────────────────────────────────────────
+  let editingId = $state<string | null>(null);
+  let editForm  = $state({ stream: '', capacity: '', programme_id: '' });
   let editError = $state('');
 
-  const updateClassMut = createMutation({
-    mutationFn: ({ id, req }: { id: string; req: { stream?: string | null; capacity?: number | null; is_active?: boolean; programme_id?: string } }) =>
-      updateClass(id, req),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['classes'] }); editingClassId = null; editError = ''; },
-    onError: (e: unknown) => {
-      editError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to update class.';
-    },
+  const updateMut = createMutation({
+    mutationFn: ({ id, req }: { id: string; req: { stream?: string | null; capacity?: number | null; is_active?: boolean; programme_id?: string } }) => updateClass(id, req),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['classes'] }); editingId = null; editError = ''; },
+    onError: (e: unknown) => { editError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to update class.'; },
   });
 
-  function startEditClass(cls: SchoolClass) {
-    editingClassId = cls.id;
+  function startEdit(cls: SchoolClass) {
+    editingId = cls.id;
     editForm = { stream: cls.stream ?? '', capacity: cls.capacity?.toString() ?? '', programme_id: cls.programme_id ?? '' };
     editError = '';
   }
 
-  function submitEditClass() {
+  function saveEdit() {
     editError = '';
-    $updateClassMut.mutate({
-      id: editingClassId!,
-      req: {
-        stream: editForm.stream.trim() || null,
-        capacity: editForm.capacity ? Number(editForm.capacity) : null,
-        ...(schoolType === 'SHS' && editForm.programme_id ? { programme_id: editForm.programme_id } : {}),
-      },
-    });
+    $updateMut.mutate({ id: editingId!, req: { stream: editForm.stream.trim() || null, capacity: editForm.capacity ? Number(editForm.capacity) : null, ...(schoolType === 'SHS' && editForm.programme_id ? { programme_id: editForm.programme_id } : {}) } });
   }
 
-  let assigningClass = $state<{ id: string; name: string } | null>(null);
+
+  const PILL = (active: boolean) => `rounded-md px-3 py-1 text-xs font-medium transition ${active ? 'bg-[var(--card)] text-[var(--fg)] shadow-sm' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}`;
+  const SEL  = "rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none";
 </script>
 
 <div class="space-y-4">
-  <ClassCreateForm {schoolType} {selectedYearId} programmes={$programmesQuery.data ?? []} />
+  <!-- Toolbar -->
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Search -->
+      <div class="relative">
+        <svg class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--fg-muted)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z"/></svg>
+        <input bind:value={search} type="search" placeholder="Search classes…"
+          class="h-9 w-48 rounded-xl border border-[var(--border)] bg-[var(--card)] pl-9 pr-3 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 sm:w-56" />
+      </div>
+      <!-- Status -->
+      <div class="flex rounded-lg border border-[var(--border)] bg-[var(--bg)] p-0.5">
+        {#each [['all','All'],['active','Active'],['inactive','Inactive']] as [v, l]}
+          <button onclick={() => { statusFilter = v; page = 1; }} class={PILL(statusFilter === v)}>{l}</button>
+        {/each}
+      </div>
+      <!-- Dimension filters -->
+      {#if !$classesQuery.isPending && all.length > 0}
+        {#if schoolType === 'SHS'}
+          <select bind:value={filterYear} class={SEL}>
+            <option value="">All years</option>
+            {#each availableYears as yr}<option value={String(yr)}>Year {yr}</option>{/each}
+          </select>
+          <select bind:value={filterProgramme} class={SEL}>
+            <option value="">All programmes</option>
+            {#each availableProgs as p}<option value={p.id}>{p.name}</option>{/each}
+          </select>
+        {:else}
+          <select bind:value={filterLevel} class={SEL}>
+            <option value="">All levels</option>
+            {#each availableLevels as lvl}<option value={lvl}>{lvl}</option>{/each}
+          </select>
+          <select bind:value={filterYear} class={SEL}>
+            <option value="">All years</option>
+            {#each availableYears as yr}<option value={String(yr)}>{filterLevel ? `${filterLevel} ${yr}` : `Year ${yr}`}</option>{/each}
+          </select>
+        {/if}
+      {/if}
+    </div>
+    <ClassCreateForm {schoolType} programmes={$programmesQuery.data ?? []} />
+  </div>
 
   {#if $classesQuery.isPending}
-    <div class="space-y-2">
-      {#each [1,2,3,4] as _}
-        <div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>
-      {/each}
+    <div class="space-y-2">{#each [1,2,3,4] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
+  {:else if all.length === 0}
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
+      <p class="text-sm text-[var(--fg-muted)]">No classes yet. Add your first class above.</p>
     </div>
-  {:else if !selectedYearId}
-    <p class="text-sm text-[var(--fg-muted)]">Select an academic year to view classes.</p>
-  {:else if ($classesQuery.data ?? []).length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-7 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No classes for this year yet.</p>
+  {:else if filtered.length === 0}
+    <div class="rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
+      <p class="text-sm text-[var(--fg-muted)]">No classes match these filters.</p>
+      <button onclick={() => { search = ''; statusFilter = 'all'; filterYear = ''; filterProgramme = ''; filterLevel = ''; }} class="mt-2 text-xs text-[var(--brand)] hover:underline">Clear filters</button>
     </div>
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
@@ -88,78 +133,57 @@
         <thead>
           <tr class="border-b border-[var(--border)] text-left">
             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Class</th>
-            {#if schoolType === 'SHS'}
-              <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Programme</th>
-            {/if}
+            {#if schoolType === 'SHS'}<th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Programme</th>{/if}
             <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Capacity</th>
             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
             <th class="px-4 py-2.5"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)]">
-          {#each ($classesQuery.data ?? []).sort((a: SchoolClass, b: SchoolClass) => a.display_name.localeCompare(b.display_name)) as cls (cls.id)}
-            {#if editingClassId === cls.id}
+          {#each paged as cls (cls.id)}
+            {#if editingId === cls.id}
               <tr class="bg-[var(--bg)]">
                 <td class="px-4 py-2 font-medium text-[var(--fg)]">{cls.display_name}</td>
                 {#if schoolType === 'SHS'}
                   <td class="hidden px-4 py-2 sm:table-cell">
-                    <select bind:value={editForm.programme_id}
-                      class="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+                    <select bind:value={editForm.programme_id} class="rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
                       <option value="">No programme</option>
-                      {#each ($programmesQuery.data ?? []).filter((p: Programme) => p.is_active) as prog (prog.id)}
-                        <option value={prog.id}>{prog.name}</option>
-                      {/each}
+                      {#each ($programmesQuery.data ?? []).filter((p: Programme) => p.is_active) as prog (prog.id)}<option value={prog.id}>{prog.name}</option>{/each}
                     </select>
                   </td>
                 {/if}
                 <td class="hidden px-3 py-2 sm:table-cell">
-                  <input type="number" bind:value={editForm.capacity} placeholder="—"
-                    class="w-20 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                  <input type="number" bind:value={editForm.capacity} placeholder="—" class="w-20 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
                 </td>
                 <td class="px-3 py-2">
-                  <input bind:value={editForm.stream} placeholder="Stream"
-                    class="w-24 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                  <input bind:value={editForm.stream} placeholder="Stream" class="w-24 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
                   {#if editError}<p class="mt-1 text-[10px] text-red-500">{editError}</p>{/if}
                 </td>
                 <td class="px-3 py-2 text-right">
                   <div class="flex items-center justify-end gap-1.5">
-                    <button onclick={submitEditClass} disabled={$updateClassMut.isPending}
-                      class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                      style="background-color: var(--brand)">
-                      {$updateClassMut.isPending ? '…' : 'Save'}
-                    </button>
-                    <button onclick={() => { editingClassId = null; editError = ''; }}
-                      class="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--card)]">
-                      Cancel
-                    </button>
+                    <button onclick={saveEdit} disabled={$updateMut.isPending} class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50" style="background-color: var(--brand)">{$updateMut.isPending ? '…' : 'Save'}</button>
+                    <button onclick={() => { editingId = null; editError = ''; }} class="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--card)]">Cancel</button>
                   </div>
                 </td>
               </tr>
             {:else}
               <tr class="group transition hover:bg-[var(--bg)]">
-                <td class="px-4 py-2.5 font-medium text-[var(--fg)]">{cls.display_name}</td>
-                {#if schoolType === 'SHS'}
-                  <td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.programme_name ?? '—'}</td>
-                {/if}
-                <td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.capacity ?? '—'}</td>
-                <td class="px-4 py-2.5">
-                  <span class="badge {cls.is_active ? 'badge-success' : 'badge-neutral'}">
-                    {cls.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                <td class="px-4 py-2.5 font-medium">
+                  <a href="/admin/academic/classes/{cls.id}/students" class="text-[var(--fg)] hover:text-[var(--brand)] hover:underline underline-offset-2">{cls.display_name}</a>
                 </td>
+                {#if schoolType === 'SHS'}<td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.programme_name ?? '—'}</td>{/if}
+                <td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.capacity ?? '—'}</td>
+                <td class="px-4 py-2.5"><span class="badge {cls.is_active ? 'badge-success' : 'badge-neutral'}">{cls.is_active ? 'Active' : 'Inactive'}</span></td>
                 <td class="px-4 py-2.5 text-right">
                   <div class="flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
-                    <button onclick={() => startEditClass(cls)}
-                      class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]">
+                    <a href="/admin/academic/classes/{cls.id}/students" class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand)] hover:bg-[var(--bg)]">
+                      Manage →
+                    </a>
+                    <button onclick={() => startEdit(cls)} class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]">
                       <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
                       Edit
                     </button>
-                    <button onclick={() => { assigningClass = { id: cls.id, name: cls.display_name }; }}
-                      class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]">
-                      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0118 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
-                      Subjects
-                    </button>
-                    <button onclick={() => $updateClassMut.mutate({ id: cls.id, req: { is_active: !cls.is_active } })}
+                    <button onclick={() => $updateMut.mutate({ id: cls.id, req: { is_active: !cls.is_active } })}
                       class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium {cls.is_active ? 'text-red-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30' : 'text-green-500 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-950/30'}">
                       {#if cls.is_active}
                         <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -177,13 +201,6 @@
         </tbody>
       </table>
     </div>
+    <Pagination total={filtered.length} pageSize={PAGE} {page} label="classes" onPageChange={(p) => page = p} />
   {/if}
 </div>
-
-{#if assigningClass}
-  <AssignSubjectsModal
-    classId={assigningClass.id}
-    className={assigningClass.name}
-    onclose={() => { assigningClass = null; }}
-  />
-{/if}

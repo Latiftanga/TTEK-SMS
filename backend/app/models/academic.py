@@ -116,9 +116,6 @@ class Class(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "class"
     # Class name is NEVER stored — computed: level + year_group + programme + stream
 
-    academic_year_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_year.id", ondelete="CASCADE"), nullable=False, index=True
-    )
     level: Mapped[str] = mapped_column(String(20), nullable=False)
     year_group: Mapped[int] = mapped_column(Integer, nullable=False)
     programme_id: Mapped[uuid.UUID | None] = mapped_column(

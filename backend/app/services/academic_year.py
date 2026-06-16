@@ -219,3 +219,13 @@ async def get_current_term(school_id: uuid.UUID, db: AsyncSession) -> AcademicTe
         select(AcademicTerm)
         .where(AcademicTerm.school_id == school_id, AcademicTerm.is_current == True)
     )
+
+
+async def list_all_terms(school_id: uuid.UUID, db: AsyncSession) -> list[AcademicTerm]:
+    rows = await db.scalars(
+        select(AcademicTerm)
+        .join(AcademicYear, AcademicYear.id == AcademicTerm.academic_year_id)
+        .where(AcademicYear.school_id == school_id)
+        .order_by(AcademicYear.start_date.desc(), AcademicTerm.term_number)
+    )
+    return list(rows)

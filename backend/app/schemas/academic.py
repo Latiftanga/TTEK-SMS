@@ -121,9 +121,8 @@ class SubjectRead(BaseModel):
 
 
 class ClassCreate(BaseModel):
-    academic_year_id: uuid.UUID
     level: str          # "SHS 1", "SHS 2", "JHS 1", "Primary 6" etc.
-    year_group: int     # cohort entry year e.g. 2023
+    year_group: int     # 1, 2, 3 within the level
     programme_id: uuid.UUID | None = None
     stream: str | None = None   # "A", "B", "Gold", "Blue" etc.
     capacity: int | None = None
@@ -139,7 +138,6 @@ class ClassUpdate(BaseModel):
 class ClassRead(BaseModel):
     id: uuid.UUID
     school_id: uuid.UUID
-    academic_year_id: uuid.UUID
     level: str
     year_group: int
     programme_id: uuid.UUID | None

@@ -213,8 +213,6 @@ async def list_subject_registrations(
     return [SubjectRegistrationRead.model_validate(r) for r in rows]
 
 
-# ── Transfer requests ─────────────────────────────────────────────────────────
-
 async def create_transfer_request(
     student_id: uuid.UUID,
     req: TransferRequestCreate,
@@ -248,6 +246,24 @@ async def list_pending_transfers(
         ).order_by(TransferRequest.created_at)
     )
     return [TransferRequestRead.model_validate(r) for r in rows]
+
+
+async def bulk_term_enrollment(
+    items: list[TermEnrollmentCreate],
+    school_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> dict:
+    enrolled = skipped = 0
+    for item in items:
+        try:
+            await create_term_enrollment(item, school_id, user_id, db)
+            enrolled += 1
+        except HTTPException as e:
+            if e.status_code != 409:
+                raise
+            skipped += 1
+    return {"enrolled": enrolled, "skipped": skipped}
 
 
 async def review_transfer(

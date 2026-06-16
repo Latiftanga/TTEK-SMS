@@ -138,6 +138,16 @@ async def set_current_term(
     return TermRead.model_validate(term)
 
 
+@router.get("/terms", response_model=list[TermRead])
+async def list_all_terms(
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    terms = await year_svc.list_all_terms(school_id, db)
+    return [TermRead.model_validate(t) for t in terms]
+
+
 @router.get("/terms/current", response_model=TermRead | None)
 async def get_current_term(
     ids=Depends(require_auth),

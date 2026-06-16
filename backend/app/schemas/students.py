@@ -158,6 +158,15 @@ class TransferRequestCreate(BaseModel):
     requesting_school_id: uuid.UUID | None = None
 
 
+class BulkTermEnrollmentCreate(BaseModel):
+    items: list[TermEnrollmentCreate]
+
+
+class BulkEnrollResult(BaseModel):
+    enrolled: int
+    skipped: int
+
+
 class TransferRequestReview(BaseModel):
     status: TransferStatus
 

@@ -2,9 +2,8 @@
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { createClass, type Programme } from '$lib/api/academic';
 
-  const { schoolType, selectedYearId, programmes } = $props<{
+  const { schoolType, programmes } = $props<{
     schoolType: string;
-    selectedYearId: string | null;
     programmes: Programme[];
   }>();
 
@@ -44,9 +43,7 @@
     formError = '';
     if (schoolType !== 'SHS' && !form.level) { formError = 'Level is required.'; return; }
     if (schoolType === 'SHS' && !form.programme_id) { formError = 'Programme is required for SHS classes.'; return; }
-    if (!selectedYearId) { formError = 'No year selected.'; return; }
     $createClassMut.mutate({
-      academic_year_id: selectedYearId,
       level: form.level,
       year_group: Number(form.year_group),
       programme_id: form.programme_id || undefined,
