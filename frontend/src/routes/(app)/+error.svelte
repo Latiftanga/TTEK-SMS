@@ -71,13 +71,6 @@
 <div class="flex min-h-[72vh] flex-col items-center justify-center py-16 text-center page-enter">
   <div class="relative flex flex-col items-center">
 
-    <!-- Decorative background code -->
-    <span class="pointer-events-none absolute top-1/2 -translate-y-[55%] select-none text-[18rem]
-                 font-black leading-none tracking-tighter text-[var(--fg)] opacity-[0.03]"
-          aria-hidden="true">
-      {status}
-    </span>
-
     <!-- Icon ring -->
     <div class="relative z-10 mb-6 flex h-20 w-20 items-center justify-center rounded-2xl shadow-sm ring-1"
          style="background: color-mix(in oklab, {meta.color} 10%, transparent);
