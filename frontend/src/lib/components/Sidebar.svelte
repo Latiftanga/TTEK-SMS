@@ -24,11 +24,11 @@
     scores:      `<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>`,
     fees:        `<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>`,
     reports:     `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>`,
-    academic:    `<path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>`,
+    classes:     `<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zm0 9.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zm9.75-9.75A2.25 2.25 0 0115.75 3.75H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zm0 9.75A2.25 2.25 0 0115.75 13.5H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/>`,
     staff:       `<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>`,
     grading:     `<path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>`,
     feeSetup:    `<path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>`,
-    sms:         `<path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>`,
+    schoolSetup: `<path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>`,
     signOut:     `<path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>`,
     chevronLeft: `<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>`,
     chevronRight:`<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>`,
@@ -44,23 +44,12 @@
   ];
 
   const adminNav = [
-    { href: '/admin/staff',      label: 'Staff',          icon: ic.staff     },
-    { href: '/admin/grading',    label: 'Grading Scales', icon: ic.grading   },
-    { href: '/admin/fees-setup', label: 'Fee Structure',  icon: ic.feeSetup  },
-    { href: '/admin/sms',        label: 'SMS Config',     icon: ic.sms       },
+    { href: '/admin/setup',            label: 'School Setup',   icon: ic.schoolSetup },
+    { href: '/admin/academic/classes', label: 'Classes',        icon: ic.classes     },
+    { href: '/admin/staff',            label: 'Staff',          icon: ic.staff       },
+    { href: '/admin/grading',          label: 'Grading Scales', icon: ic.grading     },
+    { href: '/admin/fees-setup',       label: 'Fee Structure',  icon: ic.feeSetup    },
   ];
-
-  const academicSub = $derived([
-    { href: '/admin/academic/years',      label: 'Years & Terms' },
-    { href: '/admin/academic/classes',    label: 'Classes'       },
-    { href: '/admin/academic/subjects',   label: 'Subjects'      },
-    ...($school?.schoolType === 'SHS' ? [{ href: '/admin/academic/programmes', label: 'Programmes' }] : []),
-  ]);
-
-  const academicActive = $derived($page.url.pathname.startsWith('/admin/academic'));
-  let academicOpen = $state(browser ? localStorage.getItem('academic_open') !== 'false' : true);
-  function toggleAcademic() { academicOpen = !academicOpen; if (browser) localStorage.setItem('academic_open', String(academicOpen)); }
-  $effect(() => { if ($page.url.pathname.startsWith('/admin/academic')) academicOpen = true; });
 
   const showAdmin = $derived(() => $isSchoolAdmin || ($currentUser?.is_superadmin ?? false));
 
@@ -194,35 +183,6 @@
         </div>
       {:else}
         <hr class="my-2 border-[var(--border)]" />
-      {/if}
-
-      {#if collapsed}
-        <a href="/admin/academic/years" onclick={onclose} title="Academic"
-           class="group flex items-center justify-center rounded-lg p-2.5 transition-all duration-150 text-sm {academicActive ? 'font-semibold' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
-           style={academicActive ? 'background-color: var(--nav-active-bg); color: var(--nav-active-color);' : ''}>
-          <svg class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width={academicActive ? '2.1' : '1.6'} viewBox="0 0 24 24">{@html ic.academic}</svg>
-        </a>
-      {:else}
-        <button onclick={toggleAcademic}
-          class="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 {academicActive ? 'font-semibold' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
-          style={academicActive ? 'background-color: var(--nav-active-bg); color: var(--nav-active-color);' : ''}>
-          <svg class="h-[18px] w-[18px] shrink-0" fill="none" stroke="currentColor" stroke-width={academicActive ? '2.1' : '1.6'} viewBox="0 0 24 24">{@html ic.academic}</svg>
-          <span class="flex-1 truncate text-left">Academic</span>
-          <svg class="h-3 w-3 shrink-0 transition-transform duration-150 {academicOpen ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
-          </svg>
-        </button>
-        {#if academicOpen}
-          <div class="ml-[30px] mt-0.5 space-y-0.5 border-l border-[var(--border)] pl-2.5">
-            {#each academicSub as sub}
-              {@const subActive = $page.url.pathname.startsWith(sub.href)}
-              <a href={sub.href} onclick={onclose}
-                 class="block rounded-md px-2.5 py-1.5 text-[0.8125rem] transition-colors {subActive ? 'font-semibold text-[var(--brand)]' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}">
-                {sub.label}
-              </a>
-            {/each}
-          </div>
-        {/if}
       {/if}
 
       {#each adminNav as item}

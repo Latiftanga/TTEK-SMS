@@ -118,6 +118,43 @@ async def get_my_school_branding(
     return await school_svc.get_school_branding_by_id(school_id, db)
 
 
+@router.get("/me", response_model=SchoolRead)
+async def get_my_school(
+    ids: tuple = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return full school profile for the authenticated user's school."""
+    _user_id, school_id = ids
+    return await school_svc.get_school(school_id, db)
+
+
+@router.patch("/me", response_model=SchoolRead)
+async def update_my_school(
+    req: SchoolUpdate,
+    ids: tuple = Depends(require_permission("school", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the authenticated user's school profile fields."""
+    _user_id, school_id = ids
+    return await school_svc.update_school(school_id, req, db)
+
+
+@router.post("/me/logo", response_model=SchoolRead)
+async def upload_my_school_logo(
+    file: UploadFile,
+    ids: tuple = Depends(require_permission("school", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload or replace the school logo.
+
+    Accepts JPEG, PNG, or WebP up to 2 MB.  Stored as WebP, max 400 × 400 px.
+    School admins with school.edit permission can manage their own logo.
+    """
+    _user_id, school_id = ids
+    return await school_svc.upload_school_logo(school_id, file, db)
+
+
 # ── School registration (superadmin only) ─────────────────────────────────────
 
 @router.post("", response_model=SchoolRead, status_code=201)

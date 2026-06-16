@@ -59,27 +59,36 @@ DEMO_SCHOOLS = [
 
 
 async def get_or_create_position(db, school_id, name: str, perms: list[str]) -> StaffPosition:
+    from sqlalchemy import select as _select
     existing = await db.scalar(
         select(StaffPosition).where(
             StaffPosition.school_id == school_id,
             StaffPosition.name == name,
         )
     )
-    if existing:
-        return existing
-    code = name.upper().replace(" ", "_")[:50]
-    pos = StaffPosition(school_id=school_id, name=name, code=code, is_template=False)
-    db.add(pos)
-    await db.flush()
+    if not existing:
+        code = name.upper().replace(" ", "_")[:50]
+        existing = StaffPosition(school_id=school_id, name=name, code=code, is_template=False)
+        db.add(existing)
+        await db.flush()
+
+    # Sync permissions — add any that are missing (idempotent on re-runs).
+    existing_perms = {
+        (p.module, p.action)
+        for p in await db.scalars(
+            _select(PositionPermission).where(PositionPermission.position_id == existing.id)
+        )
+    }
     for perm_str in perms:
         module, action = perm_str.split(".")
-        db.add(PositionPermission(
-            position_id=pos.id,
-            module=module,
-            action=action,
-            is_allowed=True,
-        ))
-    return pos
+        if (module, action) not in existing_perms:
+            db.add(PositionPermission(
+                position_id=existing.id,
+                module=module,
+                action=action,
+                is_allowed=True,
+            ))
+    return existing
 
 
 async def create_staff_user(db, school_id, first: str, last: str, email: str, position) -> User:
@@ -139,7 +148,7 @@ async def seed_school(db, cfg: dict, region_id, district_id):
     school_id = school.id
 
     admin_pos = await get_or_create_position(db, school_id, "School Administrator", [
-        "school.manage_users", "school.view",
+        "school.view", "school.edit", "school.manage_users",
         "academic.view", "academic.create", "academic.edit", "academic.delete",
         "students.view", "students.create", "students.edit",
         "staff.view", "staff.create",

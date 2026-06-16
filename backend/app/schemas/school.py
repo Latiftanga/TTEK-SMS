@@ -5,7 +5,7 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models.school import SchoolType, SmsProvider
+from app.models.school import EmailProvider, SchoolType, SmsProvider
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
@@ -205,5 +205,55 @@ class SmsConfigRead(BaseModel):
     provider: SmsProvider
     sender_id: str
     is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class EmailConfigCreate(BaseModel):
+    provider: EmailProvider
+    host: str | None = None
+    port: int | None = None
+    username: str
+    password: str | None = None
+    from_name: str
+    from_address: EmailStr
+    use_tls: bool = True
+
+    @field_validator("host")
+    @classmethod
+    def host_required_for_smtp(cls, v: str | None, info) -> str | None:
+        return v
+
+    def model_post_init(self, __context) -> None:
+        if self.provider == EmailProvider.SMTP and not self.host:
+            raise ValueError("host is required for SMTP provider")
+
+
+class EmailConfigRead(BaseModel):
+    id: uuid.UUID
+    provider: EmailProvider
+    host: str | None
+    port: int | None
+    from_name: str
+    from_address: str
+    use_tls: bool
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class EmailActivateRequest(BaseModel):
+    config_id: uuid.UUID
+
+
+class EmailLogRead(BaseModel):
+    id: uuid.UUID
+    provider: EmailProvider
+    recipient: str
+    subject: str
+    status: str
+    error_message: str | None
+    entity_type: str | None
+    sent_at: str
 
     model_config = {"from_attributes": True}

@@ -51,6 +51,18 @@ class SmsStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class EmailProvider(str, enum.Enum):
+    SMTP = "SMTP"
+    SENDGRID = "SENDGRID"
+    MAILGUN = "MAILGUN"
+    BREVO = "BREVO"
+
+
+class EmailStatus(str, enum.Enum):
+    SENT = "SENT"
+    FAILED = "FAILED"
+
+
 class GhanaRegion(Base, UUIDPrimaryKey):
     __tablename__ = "ghana_region"
 
@@ -113,6 +125,7 @@ class School(Base, UUIDPrimaryKey, TimestampMixin):
     district: Mapped[GhanaDistrict] = relationship(back_populates="schools", foreign_keys=[district_id])
     configs: Mapped[list[SchoolConfig]] = relationship(back_populates="school")
     sms_configs: Mapped[list[SmsConfig]] = relationship(back_populates="school")
+    email_configs: Mapped[list[EmailConfig]] = relationship(back_populates="school")
 
 
 class SchoolConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
@@ -135,6 +148,37 @@ class SmsConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     school: Mapped[School] = relationship(back_populates="sms_configs")
+
+
+class EmailConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+    """Email provider credentials per school. Only one is active at a time."""
+    __tablename__ = "email_config"
+
+    provider: Mapped[EmailProvider] = mapped_column(SAEnum(EmailProvider, name="emailprovider"), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(253), nullable=True)       # SMTP host
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)            # SMTP port
+    username: Mapped[str] = mapped_column(String(500), nullable=False)          # SMTP user / API key
+    password: Mapped[str | None] = mapped_column(String(500), nullable=True)   # SMTP pass / API secret
+    from_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    from_address: Mapped[str] = mapped_column(String(200), nullable=False)
+    use_tls: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    school: Mapped[School] = relationship(back_populates="email_configs")
+
+
+class EmailLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """Audit record for every email attempted by the system."""
+    __tablename__ = "email_log"
+
+    provider: Mapped[EmailProvider] = mapped_column(SAEnum(EmailProvider, name="emailprovider"), nullable=False)
+    recipient: Mapped[str] = mapped_column(String(200), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[EmailStatus] = mapped_column(SAEnum(EmailStatus, name="emailstatus"), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SmsLog(Base, UUIDPrimaryKey, SchoolScopedMixin):

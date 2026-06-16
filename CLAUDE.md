@@ -89,6 +89,8 @@ Started: 2026-06-13
 - 12a–c: SvelteKit foundation, PWA manifest, axios client, login flow, app shell, role-adaptive dashboard
 - 12d: Multi-tenant subdomain detection, custom domain support, branded login, TopBar user menu
 - 12e: Academic Setup (/admin/academic), Classes & Subjects (/admin/structure), Staff directory + detail (/admin/staff)
+- 12f: Class detail page with card header, tabs (students/subjects/teachers), academic sidebar nav
+- 12g: School Setup page (/admin/setup) — Profile, Subjects, Programmes, SMS, Email tabs; GET/PATCH /schools/me + /schools/me/logo backend endpoints; EmailConfig + EmailLog models + migration h6i7j8k9l0m1; email router; SMS Config moved from sidebar into Setup; Subjects/Programmes removed from Academic sub-nav
 
 ## Phase 0 checklist
 - [x] Folder structure created
