@@ -16,7 +16,7 @@
     <TopBar toggleSidebar={() => sidebarOpen = !sidebarOpen} />
 
     <main class="flex-1 overflow-y-auto">
-      <div class="mx-auto max-w-7xl px-4 py-6 pb-24 lg:px-8 lg:pb-6">
+      <div class="mx-auto max-w-7xl px-4 py-7 pb-24 lg:px-8 lg:pb-8">
         {#key $page.url.pathname}
           <div class="page-enter">
             {@render children()}

@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { browser } from '$app/environment';
 
 export interface CurrentUser {
   id: string;
@@ -19,11 +20,14 @@ interface AuthState {
   offlineSessionStartedAt: string | null;
 }
 
+// Pre-hydrate from localStorage so the first request already carries the Bearer token.
+// Without this, TanStack Query fires before onMount runs and every page load starts
+// with a 401 → silent refresh cycle even when the stored token is still valid.
 const EMPTY: AuthState = {
   user: null,
-  accessToken: null,
+  accessToken: browser ? localStorage.getItem('access_token') : null,
   schoolId: null,
-  offlineSessionStartedAt: null,
+  offlineSessionStartedAt: browser ? localStorage.getItem('offline_session_started_at') : null,
 };
 
 function createAuth() {
@@ -45,6 +49,7 @@ function createAuth() {
     /** Called after silent access-token refresh — no new user object needed. */
     setToken(accessToken: string) {
       update(s => ({ ...s, accessToken }));
+      localStorage.setItem('access_token', accessToken);
     },
 
     /** Called when user's /me data is loaded (e.g. on app startup). */
@@ -53,7 +58,9 @@ function createAuth() {
     },
 
     clearAuth() {
-      set(EMPTY);
+      // Don't reset to EMPTY — EMPTY.accessToken captured the old token at module load time.
+      // Set a clean null state so no stale token leaks through after sign-out.
+      set({ user: null, accessToken: null, schoolId: null, offlineSessionStartedAt: null });
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('offline_session_started_at');

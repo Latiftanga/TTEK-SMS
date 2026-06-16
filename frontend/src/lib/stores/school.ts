@@ -1,11 +1,14 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 
+export type SchoolType = 'BASIC' | 'SHS' | 'TECHNICAL' | 'VOCATIONAL' | 'PRIVATE';
+
 export interface SchoolInfo {
   name: string;
   shortName: string;
   subdomain: string;
   schoolCode: string;
+  schoolType: SchoolType;
   brandColor: string;
   logoUrl: string | null;
   motto: string | null;

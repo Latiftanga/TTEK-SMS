@@ -72,9 +72,8 @@
 {/if}
 
 <header class="sticky top-0 z-40 flex h-14 items-center justify-between
-               border-b border-[var(--border)] bg-[var(--card)]/90 backdrop-blur
-               px-4 lg:px-6"
-        style="padding-top: env(safe-area-inset-top); box-shadow: 0 1px 0 var(--border), var(--shadow-sm);">
+               bg-[var(--card)] px-4 lg:px-6"
+        style="padding-top: env(safe-area-inset-top); box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(0,0,0,0.06);">
 
   <!-- Mobile: school identity -->
   <div class="flex items-center gap-2.5 lg:hidden">
@@ -110,9 +109,9 @@
         aria-haspopup="true"
       >
         <!-- Avatar -->
-        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl
                     text-xs font-bold text-white select-none"
-             style="background-color: var(--brand)">
+             style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 60%, #7c3aed) 100%)">
           {userInitials()}
         </div>
         <!-- Name — desktop only -->

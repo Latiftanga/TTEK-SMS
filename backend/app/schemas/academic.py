@@ -80,6 +80,12 @@ class ProgrammeCreate(BaseModel):
     name: str
 
 
+class ProgrammeUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    is_active: bool | None = None
+
+
 class CatalogueRead(BaseModel):
     id: uuid.UUID
     code: str
@@ -95,6 +101,12 @@ class SubjectCreate(BaseModel):
     catalogue_id: uuid.UUID | None = None   # link to national catalogue or None for custom
     code: str
     name: str
+
+
+class SubjectUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    is_active: bool | None = None
 
 
 class SubjectRead(BaseModel):
@@ -121,6 +133,7 @@ class ClassUpdate(BaseModel):
     stream: str | None = None
     capacity: int | None = None
     is_active: bool | None = None
+    programme_id: uuid.UUID | None = None  # None = leave unchanged
 
 
 class ClassRead(BaseModel):

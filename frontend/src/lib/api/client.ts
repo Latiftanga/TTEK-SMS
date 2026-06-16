@@ -1,10 +1,15 @@
 /**
- * Axios instance with automatic Bearer token injection and silent token refresh.
+ * Axios instance with automatic Bearer token injection and proactive token refresh.
+ *
+ * Strategy: check the JWT expiry in the REQUEST interceptor (before sending).
+ * If the token expires within 60 seconds, refresh proactively — zero 401s for
+ * normal session renewal. The RESPONSE interceptor is a fallback for edge cases
+ * (server clock skew, revoked tokens).
  *
  * Token lifecycle:
- *   - access_token (15 min) stored in memory (auth store)
- *   - refresh_token (7 days) stored in localStorage
- *   - On 401: transparently refreshes, retries original request once
+ *   - access_token (15 min) — in-memory store + localStorage (updated on refresh)
+ *   - refresh_token (7 days) — localStorage only
+ *   - On near-expiry: transparently refreshes before the request fires
  *   - On refresh failure: clears auth + redirects to /login
  */
 import axios, { type InternalAxiosRequestConfig } from 'axios';
@@ -17,26 +22,77 @@ export const client = axios.create({
   timeout: 15_000,
 });
 
-// ── Request interceptor: attach current access token ─────────────────────────
+// ── JWT expiry helper ────────────────────────────────────────────────────────
 
-client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = get(auth).accessToken;
+function parseJwtExpiry(token: string): number | null {
+  try {
+    // JWT payload is base64url encoded (- → +, _ → /)
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(b64));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Shared refresh logic (deduplicates concurrent calls) ─────────────────────
+
+let refreshPromise: Promise<string | null> | null = null;
+
+function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  const rt = localStorage.getItem('refresh_token');
+  if (!rt) {
+    auth.clearAuth();
+    window.location.href = '/login';
+    return Promise.resolve(null);
+  }
+
+  refreshPromise = axios
+    .post('/api/auth/refresh', { refresh_token: rt })
+    .then(({ data }) => {
+      const newToken = data.access_token as string;
+      auth.setToken(newToken); // also persists to localStorage
+      localStorage.setItem('refresh_token', data.refresh_token);
+      return newToken;
+    })
+    .catch(() => {
+      auth.clearAuth();
+      window.location.href = '/login';
+      return null;
+    })
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
+}
+
+// ── Request interceptor: attach token, refresh proactively if near expiry ────
+
+client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  let token = get(auth).accessToken;
+  if (!token) return config;
+
+  const expiry = parseJwtExpiry(token);
+  // Refresh proactively if the token expires within the next 60 seconds.
+  // This eliminates 401s on page refresh after idle periods.
+  if (expiry !== null && expiry - Date.now() < 60_000) {
+    const refreshed = await refreshAccessToken();
+    token = refreshed ?? token;
+  }
+
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// ── Response interceptor: silent 401 recovery ────────────────────────────────
+// ── Response interceptor: fallback for unexpected 401s ────────────────────────
+// Handles revoked tokens, server clock skew, or edge cases the request
+// interceptor didn't catch (e.g., token invalidated server-side mid-session).
 
 interface RetryConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
-}
-
-let isRefreshing = false;
-let pendingQueue: Array<{ resolve: (t: string) => void; reject: (e: unknown) => void }> = [];
-
-function drainQueue(error: unknown, token: string | null) {
-  pendingQueue.forEach(p => (token ? p.resolve(token) : p.reject(error)));
-  pendingQueue = [];
 }
 
 client.interceptors.response.use(
@@ -46,43 +102,13 @@ client.interceptors.response.use(
     if (error.response?.status !== 401 || original._retry) {
       return Promise.reject(error);
     }
-
     original._retry = true;
 
-    if (isRefreshing) {
-      return new Promise<string>((resolve, reject) => {
-        pendingQueue.push({ resolve, reject });
-      }).then(token => {
-        original.headers.Authorization = `Bearer ${token}`;
-        return client(original);
-      });
-    }
+    const newToken = await refreshAccessToken();
+    if (!newToken) return Promise.reject(error);
 
-    isRefreshing = true;
-    const refreshToken = localStorage.getItem('refresh_token');
-
-    if (!refreshToken) {
-      auth.clearAuth();
-      window.location.href = '/login';
-      return Promise.reject(error);
-    }
-
-    try {
-      const { data } = await axios.post('/api/auth/refresh', { refresh_token: refreshToken });
-      const { access_token, refresh_token: newRefresh } = data;
-      auth.setToken(access_token);
-      localStorage.setItem('refresh_token', newRefresh);
-      drainQueue(null, access_token);
-      original.headers.Authorization = `Bearer ${access_token}`;
-      return client(original);
-    } catch (refreshError) {
-      drainQueue(refreshError, null);
-      auth.clearAuth();
-      window.location.href = '/login';
-      return Promise.reject(refreshError);
-    } finally {
-      isRefreshing = false;
-    }
+    original.headers.Authorization = `Bearer ${newToken}`;
+    return client(original);
   }
 );
 

@@ -88,6 +88,13 @@ export async function createYear(req: {
   return data;
 }
 
+export async function updateYear(yearId: string, req: {
+  name?: string; start_date?: string; end_date?: string;
+}): Promise<AcademicYear> {
+  const { data } = await client.patch<AcademicYear>(`/academic/years/${yearId}`, req);
+  return data;
+}
+
 export async function setCurrentYear(yearId: string): Promise<AcademicYear> {
   const { data } = await client.post<AcademicYear>(`/academic/years/${yearId}/set-current`);
   return data;
@@ -103,6 +110,13 @@ export async function createTerm(
   req: { term_number: number; name: string; start_date: string; end_date: string }
 ): Promise<AcademicTerm> {
   const { data } = await client.post<AcademicTerm>(`/academic/years/${yearId}/terms`, req);
+  return data;
+}
+
+export async function updateTerm(termId: string, req: {
+  name?: string; start_date?: string; end_date?: string;
+}): Promise<AcademicTerm> {
+  const { data } = await client.patch<AcademicTerm>(`/academic/terms/${termId}`, req);
   return data;
 }
 
@@ -125,6 +139,13 @@ export async function createSubject(req: {
   return data;
 }
 
+export async function updateSubject(subjectId: string, req: {
+  code?: string; name?: string; is_active?: boolean;
+}): Promise<Subject> {
+  const { data } = await client.patch<Subject>(`/academic/subjects/${subjectId}`, req);
+  return data;
+}
+
 export async function listClasses(yearId: string): Promise<SchoolClass[]> {
   const { data } = await client.get<SchoolClass[]>('/academic/classes', {
     params: { year_id: yearId },
@@ -141,6 +162,18 @@ export async function createClass(req: {
   capacity?: number;
 }): Promise<SchoolClass> {
   const { data } = await client.post<SchoolClass>('/academic/classes', req);
+  return data;
+}
+
+export async function updateClass(classId: string, req: {
+  stream?: string | null; capacity?: number | null; is_active?: boolean; programme_id?: string;
+}): Promise<SchoolClass> {
+  const { data } = await client.patch<SchoolClass>(`/academic/classes/${classId}`, req);
+  return data;
+}
+
+export async function listClassSubjects(classId: string): Promise<ClassSubject[]> {
+  const { data } = await client.get<ClassSubject[]>(`/academic/classes/${classId}/subjects`);
   return data;
 }
 
@@ -175,5 +208,17 @@ export async function assignSubjectTeacher(
 
 export async function listProgrammes(): Promise<Programme[]> {
   const { data } = await client.get<Programme[]>('/academic/programmes');
+  return data;
+}
+
+export async function createProgramme(req: { code: string; name: string }): Promise<Programme> {
+  const { data } = await client.post<Programme>('/academic/programmes', req);
+  return data;
+}
+
+export async function updateProgramme(progId: string, req: {
+  code?: string; name?: string; is_active?: boolean;
+}): Promise<Programme> {
+  const { data } = await client.patch<Programme>(`/academic/programmes/${progId}`, req);
   return data;
 }

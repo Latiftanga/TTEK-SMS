@@ -8,6 +8,13 @@
   --color-surface: var(--bg, #f9f8f6);
   --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Outfit renders slightly smaller than system fonts at the same nominal size.
+     Bump xs and sm so labels, table headers, and body text are comfortably readable. */
+  --text-xs: 0.8125rem;            /* 13px  (Tailwind default 12px) */
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;            /* 15px  (Tailwind default 14px) */
+  --text-sm--line-height: 1.375rem;
 }
 
 /* ── Design tokens ────────────────────────────────────────────────────────── */
@@ -29,7 +36,8 @@
   --border:       rgba(0, 0, 0, 0.08);
   --border-strong: rgba(0, 0, 0, 0.13);
   --input-bg:     #FFFFFF;
-  --hover:        #F4F4F5;
+  --hover:        #EFEEE9;
+  --sidebar:      #ECEAE4;
 
   /* Shadows — depth system */
   --shadow-xs:  0 1px 2px rgba(0,0,0,0.04);
@@ -64,7 +72,8 @@
   --border:       rgba(255,255,255,0.07);
   --border-strong: rgba(255,255,255,0.12);
   --input-bg:     #1D2130;
-  --hover:        #1D2130;
+  --hover:        #1E2235;
+  --sidebar:      #0B0E15;
 
   --shadow-xs:  0 1px 2px rgba(0,0,0,0.25);
   --shadow-sm:  0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
@@ -99,6 +108,10 @@ html, body {
 
 /* Don't transition animations */
 [class*="animate-"] { transition: none; }
+
+/* Interactive element cursors */
+button, select, [role="button"] { cursor: pointer; }
+button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 
 /* Focus ring */
 :focus-visible {
@@ -152,12 +165,12 @@ html, body {
 }
 
 /* ── Page entry animation ─────────────────────────────────────────────────── */
-@keyframes fade-up {
+@keyframes page-fade {
   from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0);   }
 }
 .page-enter {
-  animation: fade-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: page-fade 0.22s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 /* ── Form inputs ──────────────────────────────────────────────────────────── */
@@ -212,3 +225,59 @@ html, body {
   cursor: pointer;
 }
 .btn-ghost:hover { background: var(--hover); color: var(--fg); }
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: #EF4444;
+  color: white;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: none;
+}
+.btn-danger:hover   { opacity: 0.9; }
+.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Status badges ────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  line-height: 1.6;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.badge-success { background: #ECFDF5; color: #059669; }
+.badge-warning { background: #FFFBEB; color: #D97706; }
+.badge-danger  { background: #FEF2F2; color: #DC2626; }
+.badge-info    { background: #EFF6FF; color: #2563EB; }
+.badge-neutral { background: var(--hover); color: var(--fg-muted); }
+
+:root.dark .badge-success { background: rgba(16,185,129,0.14); color: #34D399; }
+:root.dark .badge-warning { background: rgba(245,158,11,0.14); color: #FBB84F; }
+:root.dark .badge-danger  { background: rgba(239,68,68,0.14);  color: #F87171; }
+:root.dark .badge-info    { background: rgba(59,130,246,0.14); color: #60A5FA; }
+
+/* ── Table defaults ───────────────────────────────────────────────────────── */
+.table-auto th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* ── Stat ring (used by dashboard counters) ───────────────────────────────── */
+.stat-ring {
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -16,18 +16,32 @@
   const attendancePct = $derived(() => Math.round(data.attendance_pct));
   const collectionPct = $derived(() => Math.min(100, Math.round(data.term_collection_pct)));
 
+  const icons = {
+    students:   `<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>`,
+    attendance: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
+    fees:       `<path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
+    pending:    `<path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
+    academic:   `<path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>`,
+    staff:      `<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>`,
+    feeSetup:   `<path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>`,
+    sms:        `<path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>`,
+    arrow:      `<path stroke-linecap="round" stroke-linejoin="round" d="M7 17L17 7M17 7H7M17 7v10"/>`,
+  };
+
   const adminLinks = [
-    { href: '/admin/academic',  label: 'Academic Setup',     sub: 'Years, terms, calendar'   },
-    { href: '/admin/structure', label: 'Classes & Subjects',  sub: 'Organise the school'      },
-    { href: '/admin/staff',     label: 'Manage Staff',        sub: 'Profiles & permissions'   },
-    { href: '/admin/sms',       label: 'SMS Config',          sub: 'Notifications & provider' },
+    { href: '/admin/academic',   label: 'Academic Setup',    sub: 'Years, terms & calendar',   icon: icons.academic  },
+    { href: '/admin/staff',      label: 'Manage Staff',      sub: 'Profiles & permissions',    icon: icons.staff     },
+    { href: '/admin/fees-setup', label: 'Fee Structure',     sub: 'Types, amounts & waivers',  icon: icons.feeSetup  },
+    { href: '/admin/sms',        label: 'SMS Notifications', sub: 'Provider & auto-alerts',    icon: icons.sms       },
   ];
 </script>
 
-<!-- Greeting — full width -->
+<!-- Greeting -->
 <div class="mb-6 flex items-start justify-between gap-4">
   <div>
-    <h1 class="text-2xl font-bold text-[var(--fg)]">{salutation}, {data.greeting_name.split(' ')[0]}.</h1>
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--fg)]">
+      {salutation}, {data.greeting_name.split(' ')[0]}.
+    </h1>
     <p class="mt-0.5 text-sm text-[var(--fg-muted)]">{data.school_name}</p>
   </div>
   {#if data.pending_approvals > 0}
@@ -36,42 +50,67 @@
               bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-xs font-semibold
               text-amber-700 dark:text-amber-400 transition hover:bg-amber-100 dark:hover:bg-amber-900/60">
       <span class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-      {data.pending_approvals} pending
+      {data.pending_approvals} awaiting approval
     </a>
   {/if}
 </div>
 
-<!-- 4 stat cards — full width, always -->
+<!-- 4 stat cards -->
 <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-  <StatCard label="Enrolled" value={fmt(data.total_students)}
-    icon="👥" color="bg-indigo-50 dark:bg-indigo-950/40" iconColor="text-indigo-600 dark:text-indigo-400"
-    href="/students" />
-  <StatCard label="Present Today" value="{attendancePct()}%"
-    icon="✅" color="bg-green-50 dark:bg-green-950/40" iconColor="text-green-600 dark:text-green-400"
+  <StatCard
+    label="Enrolled"
+    value={fmt(data.total_students)}
+    iconPath={icons.students}
+    color="bg-indigo-50 dark:bg-indigo-950/40"
+    iconColor="text-indigo-500 dark:text-indigo-400"
+    href="/students"
+  />
+  <StatCard
+    label="Present Today"
+    value="{attendancePct()}%"
+    iconPath={icons.attendance}
+    color="bg-emerald-50 dark:bg-emerald-950/40"
+    iconColor="text-emerald-500 dark:text-emerald-400"
     trend="{fmt(data.today_present)} of {fmt(data.today_total)}"
-    href="/attendance" alert={data.attendance_pct < 80 && data.today_total > 0} />
-  <StatCard label="Fees Collected" value="{collectionPct()}%"
-    icon="💰" color="bg-emerald-50 dark:bg-emerald-950/40" iconColor="text-emerald-600 dark:text-emerald-400"
+    href="/attendance"
+    alert={data.attendance_pct < 80 && data.today_total > 0}
+  />
+  <StatCard
+    label="Fees Collected"
+    value="{collectionPct()}%"
+    iconPath={icons.fees}
+    color="bg-sky-50 dark:bg-sky-950/40"
+    iconColor="text-sky-500 dark:text-sky-400"
     trend={fmtGHS(Number(data.term_collected))}
-    href="/fees" alert={data.term_collection_pct < 50} />
-  <StatCard label="Awaiting Approval" value={fmt(data.pending_approvals)}
-    icon="⏳" color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400"
-    href="/scores" alert={data.pending_approvals > 0} />
+    href="/fees"
+    alert={data.term_collection_pct < 50}
+  />
+  <StatCard
+    label="Awaiting Approval"
+    value={fmt(data.pending_approvals)}
+    iconPath={icons.pending}
+    color="bg-amber-50 dark:bg-amber-950/40"
+    iconColor="text-amber-500 dark:text-amber-400"
+    href="/scores"
+    alert={data.pending_approvals > 0}
+  />
 </div>
 
-<!-- Two-column on xl: left = attendance, right = fees + admin links -->
+<!-- Two-column on xl -->
 <div class="grid grid-cols-1 gap-5 xl:grid-cols-[3fr_2fr]">
 
   <!-- LEFT: class-level attendance -->
   {#if data.class_attendance.length > 0}
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-      <div class="mb-4 flex items-center justify-between">
-        <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
-          Attendance · by class
-        </p>
-        <a href="/attendance" class="text-[11px] font-semibold hover:underline" style="color: var(--brand)">
-          View all →
-        </a>
+    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
+         style="box-shadow: var(--shadow-sm);">
+      <div class="mb-5 flex items-center justify-between">
+        <div>
+          <p class="text-sm font-semibold text-[var(--fg)]">Attendance by class</p>
+          <p class="text-[11px] text-[var(--fg-muted)] mt-0.5">Today's presence rate</p>
+        </div>
+        <a href="/attendance"
+           class="text-xs font-semibold transition hover:opacity-80"
+           style="color: var(--brand)">View all →</a>
       </div>
       <div class="space-y-4">
         {#each data.class_attendance as cls}
@@ -79,11 +118,13 @@
           {@const low = pct < 70 && cls.total > 0}
           <div>
             <div class="mb-1.5 flex items-center justify-between">
-              <span class="text-sm font-medium text-[var(--fg)]">{cls.name}</span>
+              <span class="text-[0.8125rem] font-medium text-[var(--fg)]">{cls.name}</span>
               <div class="flex items-center gap-1.5">
                 {#if low}
-                  <svg class="h-3.5 w-3.5 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  <svg class="h-3.5 w-3.5 text-red-500" fill="none" stroke="currentColor"
+                       stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                   </svg>
                 {/if}
                 <span class="text-sm font-bold {low ? 'text-red-600 dark:text-red-400' : 'text-[var(--fg)]'}">{pct}%</span>
@@ -103,19 +144,23 @@
   <!-- RIGHT: fee summary + admin links -->
   <div class="space-y-5">
 
-    <!-- Fee bar -->
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-      <div class="mb-3 flex items-center justify-between">
-        <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Term fee collection</p>
-        <a href="/fees" class="text-[11px] font-semibold hover:underline" style="color: var(--brand)">
+    <!-- Fee collection -->
+    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
+         style="box-shadow: var(--shadow-sm);">
+      <div class="mb-4 flex items-center justify-between">
+        <div>
+          <p class="text-sm font-semibold text-[var(--fg)]">Term fee collection</p>
+          <p class="text-[11px] text-[var(--fg-muted)] mt-0.5">{fmtGHS(Number(data.term_collected))} of {fmtGHS(Number(data.term_expected))}</p>
+        </div>
+        <a href="/fees" class="text-xs font-semibold transition hover:opacity-80" style="color: var(--brand)">
           View records →
         </a>
       </div>
-      <div class="flex items-end justify-between mb-2">
-        <span class="text-3xl font-bold text-[var(--fg)]">{collectionPct()}%</span>
-        <span class="text-sm text-[var(--fg-muted)]">{fmtGHS(Number(data.term_collected))} / {fmtGHS(Number(data.term_expected))}</span>
+      <div class="flex items-end gap-2 mb-3">
+        <span class="text-[2rem] font-bold leading-none tracking-tight text-[var(--fg)]">{collectionPct()}%</span>
+        <span class="mb-0.5 text-xs text-[var(--fg-muted)]">collected</span>
       </div>
-      <div class="h-2.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+      <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
         <div class="h-full rounded-full transition-all duration-700"
              style="width: {collectionPct()}%; background-color: var(--brand)"></div>
       </div>
@@ -123,21 +168,29 @@
 
     <!-- Admin quick links -->
     <div>
-      <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Administration</p>
-      <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+      <p class="mb-2.5 text-[0.6875rem] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
+        Administration
+      </p>
+      <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]
+                  divide-y divide-[var(--border)]"
+           style="box-shadow: var(--shadow-sm);">
         {#each adminLinks as link}
-          <a href={link.href} class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-[var(--bg)]">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-              <svg class="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                <polyline points="9 18 15 12 9 6"/>
+          <a href={link.href}
+             class="group flex items-center gap-3.5 px-4 py-3.5 transition hover:bg-[var(--hover)]">
+            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
+                        bg-[var(--hover)] transition group-hover:bg-[var(--card)]">
+              <svg class="h-4 w-4 text-[var(--fg-muted)]" fill="none" stroke="currentColor"
+                   stroke-width="1.6" viewBox="0 0 24 24">
+                {@html link.icon}
               </svg>
             </div>
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-[var(--fg)]">{link.label}</p>
-              <p class="text-[11px] text-[var(--fg-muted)]">{link.sub}</p>
+              <p class="text-[0.8125rem] font-semibold text-[var(--fg)]">{link.label}</p>
+              <p class="text-[0.6875rem] text-[var(--fg-muted)]">{link.sub}</p>
             </div>
-            <svg class="h-4 w-4 text-gray-300 dark:text-gray-700 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <polyline points="9 18 15 12 9 6"/>
+            <svg class="h-4 w-4 text-[var(--fg-subtle)] transition-transform group-hover:translate-x-0.5"
+                 fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              {@html icons.arrow}
             </svg>
           </a>
         {/each}

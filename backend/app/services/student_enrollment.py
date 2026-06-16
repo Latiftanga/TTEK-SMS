@@ -48,12 +48,15 @@ def _utcnow() -> datetime:
 
 
 def _display_name(level: str, year_group: int, programme_name: str | None, stream: str | None) -> str:
-    name = f"{level} {year_group}"
-    if programme_name:
-        name += f" {programme_name}"
+    if level.upper() == "SHS":
+        parts = [str(year_group)]
+        if programme_name:
+            parts.append(programme_name)
+    else:
+        parts = [level, str(year_group)]
     if stream:
-        name += f" {stream}"
-    return name
+        parts.append(stream)
+    return " ".join(parts)
 
 
 def _te_query(*where_clauses):

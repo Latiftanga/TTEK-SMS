@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import SchoolLevel, SHSProgramme, Subject, SubjectCatalogue, SubjectType
 from app.models.school import School, SchoolType
-from app.schemas.academic import ProgrammeCreate, SubjectCreate
+from app.schemas.academic import ProgrammeCreate, ProgrammeUpdate, SubjectCreate, SubjectUpdate
 
 
 async def _require_shs(school_id: uuid.UUID, db: AsyncSession) -> None:
@@ -59,6 +59,57 @@ async def create_programme(
     db.add(prog)
     await db.flush()
     return prog
+
+
+async def update_programme(
+    prog_id: uuid.UUID,
+    req: ProgrammeUpdate,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> SHSProgramme:
+    # Mirror list_programmes: match both school-owned and global (school_id=NULL) records.
+    # list_programmes shows both, so a programme visible in the UI must be updatable too.
+    prog = await db.scalar(
+        select(SHSProgramme).where(
+            SHSProgramme.id == prog_id,
+            or_(SHSProgramme.school_id == school_id, SHSProgramme.school_id.is_(None)),
+        )
+    )
+    if not prog:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Programme not found.")
+    # Claim any global (seed) programme for this school on first edit so subsequent
+    # updates keep the same record and other schools aren't affected.
+    if prog.school_id is None:
+        prog.school_id = school_id
+    if req.code is not None:
+        prog.code = req.code.upper().strip()
+    if req.name is not None:
+        prog.name = req.name.strip()
+    if req.is_active is not None:
+        prog.is_active = req.is_active
+    await db.flush()
+    return prog
+
+
+async def update_subject(
+    subject_id: uuid.UUID,
+    req: SubjectUpdate,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> Subject:
+    subj = await db.scalar(
+        select(Subject).where(Subject.id == subject_id, Subject.school_id == school_id)
+    )
+    if not subj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found.")
+    if req.code is not None:
+        subj.code = req.code.upper().strip()
+    if req.name is not None:
+        subj.name = req.name.strip()
+    if req.is_active is not None:
+        subj.is_active = req.is_active
+    await db.flush()
+    return subj
 
 
 async def list_catalogue(level: SchoolLevel | None, db: AsyncSession) -> list[SubjectCatalogue]:

@@ -31,10 +31,11 @@
       applyBranding({
         school_name: stored.name,
         short_name: stored.shortName,
-        school_type: 'BASIC',
+        school_type: stored.schoolType ?? 'BASIC',
         motto: stored.motto ?? null,
         logo_url: stored.logoUrl ?? null,
         brand_color: stored.brandColor,
+        school_code: stored.schoolCode,
       });
     }
 
@@ -45,9 +46,8 @@
         const user = await getMe();
         auth.setUser(user);
 
-        // School store empty = user was logged in before school.set() was wired.
-        // Fetch branding from the backend using the auth token.
-        if (!stored && !user.is_superadmin) {
+        // Fetch branding if store is empty OR schoolType is missing (stale localStorage entry).
+        if ((!stored || !stored.schoolType) && !user.is_superadmin) {
           try {
             const branding = await getMySchoolBranding();
             applyBranding(branding);
@@ -56,6 +56,7 @@
               shortName: branding.short_name ?? branding.school_name,
               subdomain: '',
               schoolCode: branding.school_code,
+              schoolType: branding.school_type,
               brandColor: branding.brand_color,
               logoUrl: branding.logo_url,
               motto: branding.motto,
