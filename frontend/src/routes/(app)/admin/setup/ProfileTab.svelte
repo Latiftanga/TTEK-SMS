@@ -57,7 +57,7 @@
       schoolStore.set({
         name:        updated.name,
         shortName:   updated.short_name ?? updated.name,
-        subdomain:   '',
+        subdomain:   updated.subdomain ?? '',
         schoolCode:  updated.school_code,
         schoolType:  updated.school_type,
         brandColor:  updated.brand_color,
@@ -97,7 +97,7 @@
       schoolStore.set({
         name:       updated.name,
         shortName:  updated.short_name ?? updated.name,
-        subdomain:  '',
+        subdomain:  updated.subdomain ?? '',
         schoolCode: updated.school_code,
         schoolType: updated.school_type,
         brandColor: updated.brand_color,

@@ -11,10 +11,15 @@ ACCESS CONTROL SUMMARY
 GET  /schools/regions              Public — no auth required (needed for signup forms)
 GET  /schools/districts            Public — no auth required
 GET  /schools/public/{subdomain}   Public — branding for the login screen
+GET  /schools/my-branding          Authenticated — returns branding for caller's school
+GET  /schools/me                   Authenticated — full school profile for caller's school
+PATCH /schools/me                  Requires 'school.edit' permission
+POST /schools/me/logo              Requires 'school.edit' permission
 POST /schools                      Superadmin only (require_superadmin)
 GET  /schools                      Any authenticated user
 GET  /schools/{id}                 Any authenticated user
-PATCH /schools/{id}                Requires 'school.edit' permission
+PATCH /schools/{id}                Superadmin only (legacy — use /me for self-service)
+POST /schools/{id}/logo            Superadmin only
 PUT  /schools/{id}/config          Requires 'school.edit' permission
 GET  /schools/{id}/config          Any authenticated user
 PUT  /schools/{id}/sms-config      Requires 'school.edit' permission

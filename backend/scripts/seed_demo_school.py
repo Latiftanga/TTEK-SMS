@@ -59,7 +59,6 @@ DEMO_SCHOOLS = [
 
 
 async def get_or_create_position(db, school_id, name: str, perms: list[str]) -> StaffPosition:
-    from sqlalchemy import select as _select
     existing = await db.scalar(
         select(StaffPosition).where(
             StaffPosition.school_id == school_id,
@@ -76,7 +75,7 @@ async def get_or_create_position(db, school_id, name: str, perms: list[str]) -> 
     existing_perms = {
         (p.module, p.action)
         for p in await db.scalars(
-            _select(PositionPermission).where(PositionPermission.position_id == existing.id)
+            select(PositionPermission).where(PositionPermission.position_id == existing.id)
         )
     }
     for perm_str in perms:

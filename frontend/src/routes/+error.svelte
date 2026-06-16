@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
 
   const META = {
     404: {
@@ -53,6 +54,11 @@
       `,
     }
   );
+
+  function goBack() {
+    if (history.length > 1) history.back();
+    else goto('/');
+  }
 </script>
 
 <div class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[var(--bg)] px-6 py-16 text-center">
@@ -66,9 +72,9 @@
   <div class="relative z-10 flex flex-col items-center">
 
     <!-- Icon ring -->
-    <div class="relative z-10 mb-6 flex h-20 w-20 items-center justify-center rounded-2xl shadow-md ring-1"
+    <div class="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl shadow-md"
          style="background: color-mix(in oklab, {meta.color} 12%, var(--card));
-                ring-color: color-mix(in oklab, {meta.color} 25%, transparent);">
+                border: 1px solid color-mix(in oklab, {meta.color} 28%, transparent);">
       <svg class="h-10 w-10" style="color: {meta.color}"
            fill="none" stroke="currentColor" viewBox="0 0 48 48" aria-hidden="true">
         {@html meta.icon}
@@ -76,23 +82,23 @@
     </div>
 
     <!-- Status badge -->
-    <span class="relative z-10 mb-4 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold tracking-wide"
+    <span class="mb-4 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold tracking-wide"
           style="background: color-mix(in oklab, {meta.color} 10%, transparent); color: {meta.color};">
       {status} &middot; {meta.label}
     </span>
 
     <!-- Heading -->
-    <h1 class="relative z-10 mb-3 text-3xl font-bold tracking-tight text-[var(--fg)] sm:text-4xl">
+    <h1 class="mb-3 text-3xl font-bold tracking-tight text-[var(--fg)] sm:text-4xl">
       {meta.heading}
     </h1>
 
     <!-- Body -->
-    <p class="relative z-10 mb-8 max-w-md text-balance leading-relaxed text-[var(--fg-muted)]">
+    <p class="mb-8 max-w-md text-balance leading-relaxed text-[var(--fg-muted)]">
       {meta.body}
     </p>
 
     <!-- Actions -->
-    <div class="relative z-10 flex flex-wrap items-center justify-center gap-3">
+    <div class="flex flex-wrap items-center justify-center gap-3">
       <a href="/" class="btn-primary">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round"
@@ -100,7 +106,7 @@
         </svg>
         Go home
       </a>
-      <button onclick={() => history.back()} class="btn-ghost">
+      <button onclick={goBack} class="btn-ghost">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
         </svg>
@@ -109,7 +115,7 @@
     </div>
 
     <!-- Wordmark -->
-    <p class="relative z-10 mt-16 text-xs font-medium tracking-widest text-[var(--fg-subtle)] uppercase">
+    <p class="mt-16 text-xs font-medium tracking-widest text-[var(--fg-subtle)] uppercase">
       TTEK · School Management
     </p>
 

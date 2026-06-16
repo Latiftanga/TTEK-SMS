@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import { school as schoolStore } from '$lib/stores/school';
   import ProfileTab    from './ProfileTab.svelte';
   import YearsTab      from '../academic/YearsTab.svelte';
@@ -8,18 +10,25 @@
   import EmailTab      from './EmailTab.svelte';
 
   type Tab = 'profile' | 'calendar' | 'subjects' | 'programmes' | 'sms' | 'email';
-  let activeTab = $state<Tab>('profile');
 
   const isSHS = $derived($schoolStore?.schoolType === 'SHS');
 
   const tabs = $derived([
-    { id: 'profile'    as Tab, label: 'Profile'            },
-    { id: 'calendar'   as Tab, label: 'Academic Calendar'  },
-    { id: 'subjects'   as Tab, label: 'Subjects'           },
+    { id: 'profile'    as Tab, label: 'Profile'           },
+    { id: 'calendar'   as Tab, label: 'Academic Calendar' },
+    { id: 'subjects'   as Tab, label: 'Subjects'          },
     ...(isSHS ? [{ id: 'programmes' as Tab, label: 'Programmes' }] : []),
-    { id: 'sms'        as Tab, label: 'SMS'                },
-    { id: 'email'      as Tab, label: 'Email'              },
+    { id: 'sms'        as Tab, label: 'SMS'               },
+    { id: 'email'      as Tab, label: 'Email'             },
   ]);
+
+  const activeTab = $derived<Tab>(
+    ($page.url.searchParams.get('tab') as Tab | null) ?? 'profile'
+  );
+
+  function setTab(id: Tab) {
+    goto(`?tab=${id}`, { replaceState: true, noScroll: true });
+  }
 </script>
 
 <div class="mb-6">
@@ -32,7 +41,7 @@
   <nav class="-mb-px flex gap-1" aria-label="Setup sections">
     {#each tabs as tab}
       <button
-        onclick={() => activeTab = tab.id}
+        onclick={() => setTab(tab.id)}
         class="relative px-4 pb-3 pt-1 text-sm font-medium transition-colors
                {activeTab === tab.id ? 'text-[var(--brand)]' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}"
       >
