@@ -232,3 +232,48 @@ export async function reviewLeave(
   const { data } = await client.patch<Leave>(`/staff/leave/${leaveId}/review`, req);
   return data;
 }
+
+export interface ImportRowResult {
+  row: number;
+  ref: string | null;
+  status: string;
+  error: string | null;
+  warning: string | null;
+}
+
+export interface ImportBatchResult {
+  batch_id: string;
+  total_rows: number;
+  created: number;
+  failed: number;
+  errors: ImportRowResult[];
+  warnings: ImportRowResult[];
+}
+
+export async function downloadImportTemplate(): Promise<void> {
+  const response = await client.get('/staff/import/template', { responseType: 'blob' });
+  const cd = response.headers['content-disposition'] as string | undefined;
+  const match = cd?.match(/filename="?([^";]+)"?/);
+  const filename = match?.[1] ?? 'staff_import_template.xlsx';
+  const url = URL.createObjectURL(new Blob([response.data]));
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function bulkImportStaff(file: File): Promise<ImportBatchResult> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await client.post<ImportBatchResult>('/staff/import', form);
+  return data;
+}
+
+export interface TempPasswordResult {
+  temporary_password: string;
+  display_name: string;
+}
+
+export async function resetStaffPassword(staffId: string): Promise<TempPasswordResult> {
+  const { data } = await client.post<TempPasswordResult>(`/staff/${staffId}/reset-password`);
+  return data;
+}

@@ -2,11 +2,14 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { getStaff, updateStaff } from '$lib/api/staff';
-  import ProfileTab        from './ProfileTab.svelte';
-  import QualificationsTab from './QualificationsTab.svelte';
-  import PromotionsTab     from './PromotionsTab.svelte';
-  import LeaveTab          from './LeaveTab.svelte';
+  import { getStaff, updateStaff, resetStaffPassword, type TempPasswordResult } from '$lib/api/staff';
+  import { toast } from '$lib/stores/toast';
+  import Badge                from '$lib/components/Badge.svelte';
+  import ProfileTab           from './ProfileTab.svelte';
+  import QualificationsTab    from './QualificationsTab.svelte';
+  import PromotionsTab        from './PromotionsTab.svelte';
+  import LeaveTab             from './LeaveTab.svelte';
+  import PasswordResetModals  from './PasswordResetModals.svelte';
 
   const qc = useQueryClient();
   const staffId = $derived(() => $page.params.id);
@@ -29,16 +32,28 @@
 
   const toggleMut = createMutation({
     mutationFn: () => updateStaff(staffId(), { is_active: !$query.data!.is_active }),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['staff', staffId()] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['staff', staffId()] });
+      toast.success(data.is_active ? 'Staff member reactivated.' : 'Staff member deactivated.');
+    },
+    onError: () => toast.error('Could not update status. Try again.'),
   });
 
-  const GENDER_BG: Record<string, string>   = { MALE: '#3B82F6', FEMALE: '#EC4899' };
-  const CAT_STYLE: Record<string, string>   = {
-    TEACHING:     'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-800',
-    NON_TEACHING: 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800',
-  };
-  const CAT_LABEL: Record<string, string>   = { TEACHING: 'Teaching', NON_TEACHING: 'Non-Teaching' };
-  const EMP_LABEL: Record<string, string>   = {
+  let resetResult   = $state<TempPasswordResult | null>(null);
+  let confirmReset  = $state(false);
+  const resetMut = createMutation({
+    mutationFn: () => resetStaffPassword(staffId()),
+    onSuccess: (r) => { confirmReset = false; resetResult = r; },
+    onError: (e: unknown) => {
+      confirmReset = false;
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Could not reset password.';
+      toast.error(msg);
+    },
+  });
+
+  const GENDER_BG: Record<string, string> = { MALE: '#3B82F6', FEMALE: '#EC4899' };
+  const EMP_LABEL: Record<string, string> = {
     PERMANENT: 'Permanent', CONTRACT: 'Contract',
     NATIONAL_SERVICE: 'National Service', INTERN: 'Intern',
   };
@@ -62,8 +77,8 @@
 
 {#if $query.isPending}
   <div class="space-y-4">
-    <div class="h-36 animate-pulse rounded-xl bg-[var(--card)]"></div>
-    <div class="h-64 animate-pulse rounded-xl bg-[var(--card)]"></div>
+    <div class="skeleton h-36"></div>
+    <div class="skeleton h-64"></div>
   </div>
 {:else if $query.isError}
   <div class="rounded-xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40
@@ -89,19 +104,15 @@
 
       <!-- Identity -->
       <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2 mb-1">
+        <div class="flex flex-wrap items-center gap-2.5 mb-1">
           <h1 class="text-xl font-bold text-[var(--fg)]">{s.display_name}</h1>
-          <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold
-                       {s.is_active
-                         ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'
-                         : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}">
-            {s.is_active ? 'Active' : 'Inactive'}
-          </span>
+          <Badge label={s.is_active ? 'Active' : 'Inactive'} color={s.is_active ? 'green' : 'gray'} variant="dot" />
           {#if s.staff_category}
-            <span class="rounded-full border px-2.5 py-0.5 text-[10px] font-semibold
-                         {CAT_STYLE[s.staff_category] ?? ''}">
-              {CAT_LABEL[s.staff_category] ?? s.staff_category}
-            </span>
+            <Badge
+              label={s.staff_category === 'TEACHING' ? 'Teaching' : 'Non-Teaching'}
+              color={s.staff_category === 'TEACHING' ? 'teal' : 'violet'}
+              variant="solid"
+            />
           {/if}
         </div>
 
@@ -148,12 +159,23 @@
         </div>
       </div>
 
-      <!-- Toggle action -->
-      <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-        class="shrink-0 rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium
-               text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)] disabled:opacity-50">
-        {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
-      </button>
+      <!-- Actions -->
+      <div class="flex shrink-0 flex-col gap-2">
+        <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium
+                 text-[var(--fg-muted)] transition disabled:opacity-50
+                 {s.is_active
+                   ? 'hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/40 dark:hover:text-red-400'
+                   : 'hover:bg-[var(--hover)] hover:text-[var(--fg)]'}">
+          {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
+        </button>
+        <button onclick={() => confirmReset = true}
+          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium
+                 text-[var(--fg-muted)] transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700
+                 dark:hover:border-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-400">
+          Reset password
+        </button>
+      </div>
     </div>
   </div>
 
@@ -191,12 +213,12 @@
 
       <!-- Employment card -->
       <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-        <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
+        <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
           Employment
         </p>
         <dl class="space-y-3">
           {#each ([
-            ['Category',      s.staff_category  ? CAT_LABEL[s.staff_category]  : '—'],
+            ['Category',      s.staff_category === 'TEACHING' ? 'Teaching' : s.staff_category === 'NON_TEACHING' ? 'Non-Teaching' : '—'],
             ['Type',          s.employment_type ? EMP_LABEL[s.employment_type] : '—'],
             ['Joined',        fmtDate(s.joined_date)],
             ['Date of birth', fmtDate(s.date_of_birth)],
@@ -213,7 +235,7 @@
       <!-- HR identifiers -->
       {#if s.national_id || s.ssnit_number}
         <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-          <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
+          <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
             HR identifiers
           </p>
           <dl class="space-y-3">
@@ -236,8 +258,8 @@
       <!-- Platform access -->
       {#if s.email || s.phone}
         <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-          <p class="mb-0.5 text-xs font-semibold text-[var(--fg)]">Platform access</p>
-          <p class="mb-3 text-[10px] text-[var(--fg-muted)]">
+          <p class="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Platform access</p>
+          <p class="mb-3 text-xs text-[var(--fg-muted)]">
             Send a login invitation to this staff member.
           </p>
           <button
@@ -251,3 +273,13 @@
     </div>
   </div>
 {/if}
+
+<PasswordResetModals
+  displayName={$query.data?.display_name ?? ''}
+  confirmOpen={confirmReset}
+  onConfirm={() => $resetMut.mutate()}
+  onCancel={() => confirmReset = false}
+  isPending={$resetMut.isPending}
+  result={resetResult}
+  onDismiss={() => resetResult = null}
+/>

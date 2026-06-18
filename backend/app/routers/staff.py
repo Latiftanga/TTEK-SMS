@@ -40,6 +40,7 @@ from app.schemas.staff import (
     StaffMemberDetail,
     StaffMemberSummary,
     StaffMemberUpdate,
+    TempPasswordResult,
 )
 from app.services import auth_invite as invite_svc
 from app.services import staff as staff_svc
@@ -124,6 +125,43 @@ async def bulk_import_staff(
     school_code = school.school_code if school else "SCHOOL"
     file_bytes = await file.read()
     return await import_svc.process_import(file_bytes, school_id, school_code, user_id, db)
+
+
+@router.post("/{staff_id}/reset-password", response_model=TempPasswordResult)
+async def reset_staff_password(
+    staff_id: uuid.UUID,
+    ids=Depends(require_permission("staff", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin resets a staff member's login password and returns a temporary password."""
+    import secrets, string
+    from app.models.auth import User
+    from app.core.auth import hash_password
+    from sqlalchemy import select
+
+    from app.models.staff import StaffMember
+
+    _, school_id = ids
+    user = await db.scalar(
+        select(User).where(User.staff_member_id == staff_id, User.school_id == school_id)
+    )
+    if not user:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="No login account found for this staff member.")
+
+    staff = await db.get(StaffMember, staff_id)
+
+    words = ["Blue","Stone","River","Eagle","Cedar","Pearl","Storm","Flame","Coral","Frost"]
+    word1 = secrets.choice(words)
+    word2 = secrets.choice([w for w in words if w != word1])
+    digits = ''.join(secrets.choice(string.digits) for _ in range(3))
+    temp = f"{word1}{word2}{digits}"
+
+    user.password_hash = hash_password(temp)
+    await db.flush()
+
+    display = f"{staff.first_name} {staff.last_name}" if staff else str(staff_id)
+    return TempPasswordResult(temporary_password=temp, display_name=display)
 
 
 @router.get("/leave/pending", response_model=list[LeaveRead])

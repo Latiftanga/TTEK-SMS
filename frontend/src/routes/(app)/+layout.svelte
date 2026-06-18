@@ -1,8 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import Sidebar from '$lib/components/Sidebar.svelte';
-  import TopBar from '$lib/components/TopBar.svelte';
+  import Sidebar  from '$lib/components/Sidebar.svelte';
+  import TopBar   from '$lib/components/TopBar.svelte';
   import BottomNav from '$lib/components/BottomNav.svelte';
+  import Toast    from '$lib/components/Toast.svelte';
 
   const { children } = $props();
 
@@ -28,3 +29,4 @@
 </div>
 
 <BottomNav onmore={() => sidebarOpen = !sidebarOpen} />
+<Toast />

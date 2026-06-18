@@ -194,4 +194,10 @@
     {/if}
   </button>
 
+  <p class="text-center text-xs text-[var(--fg-subtle)]">
+    <a href="/forgot-password" class="text-[var(--fg-muted)] transition hover:text-[var(--fg)] hover:underline">
+      Forgot your password?
+    </a>
+  </p>
+
 </div>

@@ -3,6 +3,7 @@
   import { listClasses, listProgrammes, updateClass, type SchoolClass, type Programme } from '$lib/api/academic';
   import ClassCreateForm from './ClassCreateForm.svelte';
   import Pagination from '$lib/components/Pagination.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   const { schoolType } = $props<{ schoolType: string }>();
   const qc = useQueryClient();
@@ -117,16 +118,21 @@
   </div>
 
   {#if $classesQuery.isPending}
-    <div class="space-y-2">{#each [1,2,3,4] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
+    <div class="space-y-2">{#each [1,2,3,4] as _}<div class="skeleton h-14"></div>{/each}</div>
   {:else if all.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No classes yet. Add your first class above.</p>
-    </div>
+    <EmptyState
+      iconPath="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
+      title="No classes yet."
+      description="Add your first class using the button above."
+    />
   {:else if filtered.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No classes match these filters.</p>
-      <button onclick={() => { search = ''; statusFilter = 'all'; filterYear = ''; filterProgramme = ''; filterLevel = ''; }} class="mt-2 text-xs text-[var(--brand)] hover:underline">Clear filters</button>
-    </div>
+    <EmptyState
+      iconPath="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z"
+      title="No classes match these filters."
+      description="Try adjusting or clearing your search and filters."
+      action={() => { search = ''; statusFilter = 'all'; filterYear = ''; filterProgramme = ''; filterLevel = ''; }}
+      actionLabel="Clear filters"
+    />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
@@ -157,7 +163,7 @@
                 </td>
                 <td class="px-3 py-2">
                   <input bind:value={editForm.stream} placeholder="Stream" class="w-24 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
-                  {#if editError}<p class="mt-1 text-[10px] text-red-500">{editError}</p>{/if}
+                  {#if editError}<p class="mt-1 text-[11px] text-red-500">{editError}</p>{/if}
                 </td>
                 <td class="px-3 py-2 text-right">
                   <div class="flex items-center justify-end gap-1.5">
@@ -169,14 +175,14 @@
             {:else}
               <tr class="group transition hover:bg-[var(--bg)]">
                 <td class="px-4 py-2.5 font-medium">
-                  <a href="/admin/academic/classes/{cls.id}/students" class="text-[var(--fg)] hover:text-[var(--brand)] hover:underline underline-offset-2">{cls.display_name}</a>
+                  <a href="/admin/academic/classes/{cls.id}" class="text-[var(--fg)] hover:text-[var(--brand)] hover:underline underline-offset-2">{cls.display_name}</a>
                 </td>
                 {#if schoolType === 'SHS'}<td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.programme_name ?? '—'}</td>{/if}
                 <td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.capacity ?? '—'}</td>
                 <td class="px-4 py-2.5"><span class="badge {cls.is_active ? 'badge-success' : 'badge-neutral'}">{cls.is_active ? 'Active' : 'Inactive'}</span></td>
                 <td class="px-4 py-2.5 text-right">
                   <div class="flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
-                    <a href="/admin/academic/classes/{cls.id}/students" class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand)] hover:bg-[var(--bg)]">
+                    <a href="/admin/academic/classes/{cls.id}" class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand)] hover:bg-[var(--bg)]">
                       Manage →
                     </a>
                     <button onclick={() => startEdit(cls)} class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]">

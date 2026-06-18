@@ -1,4 +1,4 @@
-"""Dashboard service — role-detection and teacher/hod views.
+"""Dashboard service — role-detection and role-specific views.
 
 Admin and finance views live in dashboard_admin.py to respect the 300-line limit.
 """
@@ -18,8 +18,8 @@ from app.models.students import Student, TermEnrollment
 from app.schemas.dashboard import (
     AbsentStudent,
     ClassSnapshot,
+    ApproverDashboard,
     DashboardData,
-    HodDashboard,
     TeacherDashboard,
 )
 from app.services.academic_class import _display_name
@@ -142,12 +142,11 @@ async def _teacher_view(
     )
 
 
-async def _hod_view(
+async def _approver_view(
     school_id: uuid.UUID,
-    staff_id: uuid.UUID,
     greeting_name: str,
     db: AsyncSession,
-) -> HodDashboard:
+) -> ApproverDashboard:
     term = await _current_term(school_id, db)
     pending = 0
     total_assessments = 0
@@ -162,7 +161,7 @@ async def _hod_view(
                 Assessment.school_id == school_id, Assessment.academic_term_id == term.id,
             )
         ) or 0
-    return HodDashboard(
+    return ApproverDashboard(
         greeting_name=greeting_name,
         pending_approvals=pending,
         assessments_this_term=total_assessments,
@@ -196,5 +195,5 @@ async def get_dashboard(
     if perms.get("fees.collect"):
         return await finance_view(school_id, greeting_name, db)
     if perms.get("assessments.approve_scores"):
-        return await _hod_view(school_id, user.staff_member_id, greeting_name, db)
+        return await _approver_view(school_id, greeting_name, db)
     return await _teacher_view(school_id, user.staff_member_id, greeting_name, db)

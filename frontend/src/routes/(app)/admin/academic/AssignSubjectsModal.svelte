@@ -72,7 +72,7 @@
     <div class="mb-4 max-h-72 space-y-1.5 overflow-y-auto">
       {#if $classSubjectsQuery.isPending}
         {#each [1,2,3] as _}
-          <div class="h-10 animate-pulse rounded-xl bg-[var(--bg)]"></div>
+          <div class="skeleton h-10"></div>
         {/each}
       {:else}
         {#each ($subjectsQuery.data ?? []).filter((s: Subject) => s.is_active) as subj (subj.id)}

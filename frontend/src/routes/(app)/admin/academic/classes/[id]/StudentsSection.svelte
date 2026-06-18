@@ -2,6 +2,8 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { type AcademicTerm, type SchoolClass } from '$lib/api/academic';
   import { listStudents, enrollStudent, bulkEnrollStudents, type StudentSummary } from '$lib/api/students';
+  import EmptyState from '$lib/components/EmptyState.svelte';
+  import { portal } from '$lib/actions/portal';
 
   let { classId, terms, selectedTermId, classes }: {
     classId: string;
@@ -12,12 +14,12 @@
 
   const qc = useQueryClient();
 
-  const studentsQuery = createQuery(() => ({
+  const studentsQuery = createQuery({
     queryKey: ['class-students', classId, selectedTermId],
     queryFn: () => listStudents({ class_id: classId, term_id: selectedTermId, limit: 200 }),
     enabled: !!selectedTermId,
     staleTime: 60_000,
-  }));
+  });
   const students = $derived<StudentSummary[]>($studentsQuery.data ?? []);
 
   let selected = $state(new Set<string>());
@@ -68,7 +70,7 @@
 <div>
   <div class="mb-4 flex items-center justify-between">
     <div class="flex items-center gap-2">
-      <h2 class="text-base font-semibold text-[var(--fg)]">Students</h2>
+      <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Students</p>
       {#if students.length > 0}
         <span class="rounded-full bg-[var(--hover)] px-2 py-0.5 text-xs text-[var(--fg-muted)]">{students.length}</span>
       {/if}
@@ -83,21 +85,24 @@
   {#if !selectedTermId}
     <p class="py-10 text-center text-sm text-[var(--fg-muted)]">Select a term above to view enrolled students.</p>
   {:else if $studentsQuery.isLoading}
-    <p class="py-10 text-center text-sm text-[var(--fg-muted)]">Loading…</p>
+    <div class="space-y-2">{#each [1,2,3,4] as _}<div class="skeleton h-12"></div>{/each}</div>
   {:else if students.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] py-10 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No students enrolled for this term.</p>
-      <button onclick={() => showEnroll = true} class="mt-2 text-sm text-[var(--brand)] hover:underline">Enroll the first student</button>
-    </div>
+    <EmptyState
+      iconPath="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+      title="No students enrolled for this term."
+      description="Enroll students to track attendance and record scores."
+      action={() => showEnroll = true}
+      actionLabel="Enroll first student"
+    />
   {:else}
     <div class="overflow-x-auto rounded-xl border border-[var(--border)]">
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b border-[var(--border)] bg-[var(--hover)]">
+          <tr class="border-b border-[var(--border)]">
             <th class="w-10 px-3 py-2.5"><input type="checkbox" checked={allSelected} onchange={toggleAll} class="rounded" /></th>
-            <th class="px-4 py-2.5 text-left font-medium text-[var(--fg-muted)]">Name</th>
-            <th class="px-4 py-2.5 text-left font-medium text-[var(--fg-muted)]">Admission #</th>
-            <th class="px-4 py-2.5 text-left font-medium text-[var(--fg-muted)]">Gender</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Name</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Admission #</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Gender</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)]">
@@ -130,7 +135,7 @@
 {/if}
 
 {#if showEnroll}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div class="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
       <h2 class="mb-4 text-lg font-semibold text-[var(--fg)]">Enroll Student</h2>
       <label class="block">
@@ -173,7 +178,7 @@
 {/if}
 
 {#if bulkAction}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div class="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
       <h2 class="mb-1 text-lg font-semibold capitalize text-[var(--fg)]">{bulkAction} Students</h2>
       <p class="mb-4 text-sm text-[var(--fg-muted)]">{selected.size} student{selected.size !== 1 ? 's' : ''} will be enrolled in the selected class and term.</p>

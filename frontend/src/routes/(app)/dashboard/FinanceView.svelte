@@ -22,6 +22,12 @@
     { href: '/fees/discounts',   label: 'Manage Discounts', sub: 'Apply or review',         primary: false },
     { href: '/fees/report',      label: 'Fee Report',       sub: 'Export & analyse',        primary: false },
   ];
+
+  const icons = {
+    creditCard: `<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>`,
+    clock:      `<path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
+    trendDown:  `<path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/>`,
+  };
 </script>
 
 <!-- Greeting — full width -->
@@ -35,9 +41,8 @@
 
   <!-- LEFT: hero ring card -->
   <div>
-    <div class="relative overflow-hidden rounded-2xl p-6 text-white" style="background-color: var(--brand)">
-      <div class="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/10"></div>
-      <div class="pointer-events-none absolute -bottom-8 right-8 h-24 w-24 rounded-full bg-white/10"></div>
+    <div class="relative overflow-hidden rounded-2xl p-6 text-white"
+         style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 72%, #312e81) 100%)">
 
       <p class="mb-5 text-sm font-semibold opacity-80 uppercase tracking-widest">Term Collection</p>
       <div class="flex items-center gap-6">
@@ -72,13 +77,16 @@
 
     <div class="grid grid-cols-3 xl:grid-cols-1 gap-3">
       <StatCard label="Payments Today"  value={data.payments_today}
-        icon="💳" color="bg-green-50 dark:bg-green-950/40" iconColor="text-green-600 dark:text-green-400"
+        iconPath={icons.creditCard}
+        color="bg-green-50 dark:bg-green-950/40" iconColor="text-green-600 dark:text-green-400"
         href="/fees" />
       <StatCard label="Outstanding"     value={data.outstanding_students}
-        icon="⏳" color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500"
+        iconPath={icons.clock}
+        color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"
         href="/fees?outstanding" alert={data.outstanding_students > 0} trend="students" />
       <StatCard label="Remaining"       value={fmtGHS(remaining())}
-        icon="📉" color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400" />
+        iconPath={icons.trendDown}
+        color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400" />
     </div>
 
     <div>

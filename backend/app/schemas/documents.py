@@ -9,6 +9,7 @@ class ImportRowResult(BaseModel):
     ref: str | None          # admission_number / staff_number / whatever the row key is
     status: str              # "created" | "failed"
     error: str | None
+    warning: str | None = None
 
 
 class ImportBatchResult(BaseModel):
@@ -17,6 +18,7 @@ class ImportBatchResult(BaseModel):
     created: int
     failed: int
     errors: list[ImportRowResult]
+    warnings: list[ImportRowResult] = []
 
 
 class DocumentRecordRead(BaseModel):

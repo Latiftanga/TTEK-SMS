@@ -28,6 +28,12 @@
     { href: '/students', label: 'My Students', badge: `${data.my_class?.student_count ?? 0} enrolled`, urgent: false },
     { href: '/reports',  label: 'Report Cards', badge: 'View & download', urgent: false },
   ];
+
+  const icons = {
+    pencil: `<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>`,
+    userMinus: `<path stroke-linecap="round" stroke-linejoin="round" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zm8-1h4"/>`,
+    users: `<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>`,
+  };
 </script>
 
 <!-- Greeting — always full width -->
@@ -124,13 +130,16 @@
     <!-- Stat row -->
     <div class="grid grid-cols-3 gap-3">
       <StatCard label="Pending Scores" value={data.pending_score_assessments}
-        icon="✏️" color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
+        iconPath={icons.pencil}
+        color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
         href="/scores" alert={data.pending_score_assessments > 0} />
       <StatCard label="Absent Today" value={data.my_class?.absent_today ?? 0}
-        icon="🔴" color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500"
+        iconPath={icons.userMinus}
+        color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"
         href="/attendance" alert={(data.my_class?.absent_today ?? 0) > 0} />
       <StatCard label="Class Size" value={data.my_class?.student_count ?? 0}
-        icon="👥" color="bg-indigo-50 dark:bg-indigo-950/40" iconColor="text-indigo-600 dark:text-indigo-400"
+        iconPath={icons.users}
+        color="bg-indigo-50 dark:bg-indigo-950/40" iconColor="text-indigo-600 dark:text-indigo-400"
         href="/students" />
     </div>
 

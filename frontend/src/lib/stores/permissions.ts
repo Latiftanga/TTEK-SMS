@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 
-export type DashboardView = 'teacher' | 'admin' | 'hod' | 'finance' | null;
+export type DashboardView = 'teacher' | 'admin' | 'approver' | 'finance' | null;
 
 const STORAGE_KEY = 'user_view';
 
@@ -25,5 +25,5 @@ export const userRole = {
 };
 
 export const isSchoolAdmin = derived(_view, $v => $v === 'admin');
-export const isHod        = derived(_view, $v => $v === 'hod');
-export const isFinance    = derived(_view, $v => $v === 'finance');
+export const isApprover   = derived(_view, $v => $v === 'approver');
+export const isFinance     = derived(_view, $v => $v === 'finance');

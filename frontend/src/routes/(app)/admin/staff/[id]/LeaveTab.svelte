@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listLeave, submitLeave } from '$lib/api/staff';
+  import Badge from '$lib/components/Badge.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   interface Props { staffId: string; }
   const { staffId }: Props = $props();
@@ -15,11 +17,12 @@
 
   const LEAVE_TYPES = ['Annual', 'Sick', 'Maternity', 'Paternity', 'Study', 'Emergency', 'Unpaid'];
 
-  const STATUS_STYLE: Record<string, string> = {
-    PENDING:   'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400',
-    APPROVED:  'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400',
-    REJECTED:  'bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400',
-    CANCELLED: 'bg-gray-100 dark:bg-gray-800 text-gray-500',
+  type BadgeColor = 'amber' | 'green' | 'red' | 'gray';
+  const STATUS_COLOR: Record<string, BadgeColor> = {
+    PENDING: 'amber', APPROVED: 'green', REJECTED: 'red', CANCELLED: 'gray',
+  };
+  const STATUS_LABEL: Record<string, string> = {
+    PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
   };
 
   let showForm  = $state(false);
@@ -120,11 +123,13 @@
   {/if}
 
   {#if $leaveQ.isPending}
-    <div class="space-y-2">{#each [1,2,3] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
+    <div class="space-y-2">{#each [1,2,3] as _}<div class="skeleton h-14"></div>{/each}</div>
   {:else if ($leaveQ.data ?? []).length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No leave requests on record.</p>
-    </div>
+    <EmptyState
+      iconPath="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
+      title="No leave requests on record."
+      description="Submit a leave request using the button above."
+    />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
@@ -145,9 +150,11 @@
               </td>
               <td class="px-4 py-3 text-[var(--fg-muted)]">{l.days_count}</td>
               <td class="px-4 py-3">
-                <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold {STATUS_STYLE[l.status] ?? ''}">
-                  {l.status}
-                </span>
+                <Badge
+                  label={STATUS_LABEL[l.status] ?? l.status}
+                  color={STATUS_COLOR[l.status] ?? 'gray'}
+                  variant="solid"
+                />
               </td>
             </tr>
           {/each}

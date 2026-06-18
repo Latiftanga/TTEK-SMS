@@ -5,7 +5,7 @@
   import SkeletonCard from '$lib/components/SkeletonCard.svelte';
   import TeacherView from './TeacherView.svelte';
   import AdminView from './AdminView.svelte';
-  import HodView from './HodView.svelte';
+  import ApproverView from './ApproverView.svelte';
   import FinanceView from './FinanceView.svelte';
 
   const query = createQuery({
@@ -42,8 +42,8 @@
     <TeacherView {data} />
   {:else if data.view === 'admin'}
     <AdminView {data} />
-  {:else if data.view === 'hod'}
-    <HodView {data} />
+  {:else if data.view === 'approver'}
+    <ApproverView {data} />
   {:else if data.view === 'finance'}
     <FinanceView {data} />
   {/if}

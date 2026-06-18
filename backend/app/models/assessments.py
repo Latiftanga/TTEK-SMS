@@ -118,7 +118,7 @@ class Score(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
 
     APPROVAL FLOW
     1. Teacher enters raw_score → is_approved=False, cached_grade_label=NULL
-    2. HOD/admin approves → is_approved=True, approved_by_id and approved_at stamped,
+    2. Approver/admin approves → is_approved=True, approved_by_id and approved_at stamped,
        cached_grade_label set from the school's GradingScale
     3. If GradingScale changes → cached_grade_label must be cleared for recalculation
 

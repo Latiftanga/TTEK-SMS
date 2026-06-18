@@ -13,6 +13,7 @@ GET  /schools/districts            Public — no auth required
 GET  /schools/public/{subdomain}   Public — branding for the login screen
 GET  /schools/my-branding          Authenticated — returns branding for caller's school
 GET  /schools/me                   Authenticated — full school profile for caller's school
+GET  /schools/me/positions         Authenticated — list positions for caller's school
 PATCH /schools/me                  Requires 'school.edit' permission
 POST /schools/me/logo              Requires 'school.edit' permission
 POST /schools                      Superadmin only (require_superadmin)
@@ -34,7 +35,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission, require_superadmin
+from app.models.auth import StaffPosition
 from app.models.school import GhanaDistrict, GhanaRegion
+from app.schemas.staff import PositionRead
 from app.schemas.school import (
     DistrictRead,
     RegionRead,
@@ -131,6 +134,22 @@ async def get_my_school(
     """Return full school profile for the authenticated user's school."""
     _user_id, school_id = ids
     return await school_svc.get_school(school_id, db)
+
+
+@router.get("/me/positions", response_model=list[PositionRead])
+async def list_my_positions(
+    ids: tuple = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all staff positions available to the authenticated user's school."""
+    from sqlalchemy import or_
+    _, school_id = ids
+    rows = await db.scalars(
+        select(StaffPosition)
+        .where(or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)))
+        .order_by(StaffPosition.name)
+    )
+    return list(rows)
 
 
 @router.patch("/me", response_model=SchoolRead)

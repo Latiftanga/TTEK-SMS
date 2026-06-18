@@ -1,7 +1,7 @@
 """Add email_config and email_log tables
 
 Revision ID: h6i7j8k9l0m1
-Revises: f4c9b2e10a87
+Revises: c3d4e5f6a1b2
 Create Date: 2026-06-16
 
 """
@@ -13,20 +13,23 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "h6i7j8k9l0m1"
-down_revision = "f4c9b2e10a87"
+down_revision = "c3d4e5f6a1b2"
 branch_labels = None
 depends_on = None
 
+_emailprovider = postgresql.ENUM("SMTP", "SENDGRID", "MAILGUN", "BREVO", name="emailprovider", create_type=False)
+_emailstatus = postgresql.ENUM("SENT", "FAILED", name="emailstatus", create_type=False)
+
 
 def upgrade() -> None:
-    op.execute("CREATE TYPE emailprovider AS ENUM ('SMTP', 'SENDGRID', 'MAILGUN', 'BREVO')")
-    op.execute("CREATE TYPE emailstatus AS ENUM ('SENT', 'FAILED')")
+    _emailprovider.create(op.get_bind(), checkfirst=True)
+    _emailstatus.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "email_config",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
         sa.Column("school_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("school.id", ondelete="CASCADE"), nullable=False, index=True),
-        sa.Column("provider", sa.Enum("SMTP", "SENDGRID", "MAILGUN", "BREVO", name="emailprovider", create_type=False), nullable=False),
+        sa.Column("provider", _emailprovider, nullable=False),
         sa.Column("host", sa.String(253), nullable=True),
         sa.Column("port", sa.Integer, nullable=True),
         sa.Column("username", sa.String(500), nullable=False),
@@ -43,10 +46,10 @@ def upgrade() -> None:
         "email_log",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
         sa.Column("school_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("school.id", ondelete="CASCADE"), nullable=False, index=True),
-        sa.Column("provider", sa.Enum("SMTP", "SENDGRID", "MAILGUN", "BREVO", name="emailprovider", create_type=False), nullable=False),
+        sa.Column("provider", _emailprovider, nullable=False),
         sa.Column("recipient", sa.String(200), nullable=False),
         sa.Column("subject", sa.String(500), nullable=False),
-        sa.Column("status", sa.Enum("SENT", "FAILED", name="emailstatus", create_type=False), nullable=False),
+        sa.Column("status", _emailstatus, nullable=False),
         sa.Column("error_message", sa.Text, nullable=True),
         sa.Column("entity_type", sa.String(50), nullable=True),
         sa.Column("entity_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -57,5 +60,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("email_log")
     op.drop_table("email_config")
-    op.execute("DROP TYPE emailstatus")
-    op.execute("DROP TYPE emailprovider")
+    _emailstatus.drop(op.get_bind(), checkfirst=True)
+    _emailprovider.drop(op.get_bind(), checkfirst=True)

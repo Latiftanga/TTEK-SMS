@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { createStaff, listPositions, type StaffCategory, type StaffDetail } from '$lib/api/staff';
+  import { toast } from '$lib/stores/toast';
+  import { portal } from '$lib/actions/portal';
 
   interface Props {
     open: boolean;
@@ -53,6 +55,7 @@
     onError: (e: unknown) => {
       formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         ?? 'Failed to create staff member.';
+      toast.error(formError);
     },
   });
 
@@ -85,6 +88,7 @@
 </script>
 
 {#if open}
+  <div use:portal class="contents">
   <div class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onclick={onCancel} role="none"></div>
 
   <div class="fixed inset-y-0 right-0 z-50 flex w-full max-w-[440px] flex-col
@@ -111,7 +115,7 @@
 
       <!-- Category -->
       <div>
-        <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff category *</p>
+        <p class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff category *</p>
         <div class="grid grid-cols-2 gap-2">
           {#each [
             ['TEACHING',     'Teaching',     'Classroom & subject teachers'],
@@ -125,7 +129,7 @@
                        : 'border-[var(--border)] hover:bg-[var(--hover)]'}">
               <span class="text-sm font-semibold leading-snug
                            {form.staff_category === val ? 'text-[var(--brand)]' : 'text-[var(--fg)]'}">{label}</span>
-              <span class="mt-0.5 text-[10px] text-[var(--fg-muted)]">{sub}</span>
+              <span class="mt-0.5 text-[11px] text-[var(--fg-muted)]">{sub}</span>
             </button>
           {/each}
         </div>
@@ -133,7 +137,7 @@
 
       <!-- Identity -->
       <div>
-        <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Identity</p>
+        <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Identity</p>
         <div class="space-y-3">
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Staff number *</label>
@@ -170,7 +174,7 @@
 
       <!-- Employment -->
       <div>
-        <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Employment</p>
+        <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Employment</p>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
@@ -195,7 +199,7 @@
 
       <!-- Contact -->
       <div>
-        <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Contact</p>
+        <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Contact</p>
         <div class="space-y-3">
           {#each [
             { label: 'Phone', key: 'phone', placeholder: '0XX XXX XXXX' },
@@ -214,13 +218,13 @@
       <!-- Positions -->
       {#if manualPositions().length > 0}
         <div>
-          <p class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
             Additional positions
             {#if form.staff_category === 'TEACHING'}
               <span class="ml-1 normal-case font-normal" style="color: var(--brand)">— Teacher auto-assigned</span>
             {/if}
           </p>
-          <p class="mb-3 text-[10px] text-[var(--fg-muted)]">
+          <p class="mb-3 text-xs text-[var(--fg-muted)]">
             Functional roles (Teacher, Class Teacher, House Master) are assigned via their respective modules.
           </p>
           <div class="flex flex-wrap gap-2">
@@ -266,5 +270,6 @@
       </div>
     </div>
 
+  </div>
   </div>
 {/if}

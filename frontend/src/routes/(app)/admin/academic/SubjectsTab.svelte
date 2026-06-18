@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listSubjects, createSubject, updateSubject, type Subject } from '$lib/api/academic';
   import Pagination from '$lib/components/Pagination.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   const qc = useQueryClient();
 
@@ -112,16 +113,20 @@
   {/if}
 
   {#if $subjectsQuery.isPending}
-    <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="h-12 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
+    <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="skeleton h-12"></div>{/each}</div>
   {:else if all.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No subjects yet. Add your first one above.</p>
-    </div>
+    <EmptyState
+      iconPath="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0118 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
+      title="No subjects yet."
+      description="Add your first subject to start assigning them to classes."
+    />
   {:else if filtered.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No subjects match these filters.</p>
-      <button onclick={() => { search = ''; statusFilter = 'all'; }} class="mt-2 text-xs text-[var(--brand)] hover:underline">Clear filters</button>
-    </div>
+    <EmptyState
+      iconPath="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+      title="No subjects match these filters."
+      action={() => { search = ''; statusFilter = 'all'; }}
+      actionLabel="Clear filters"
+    />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
@@ -140,7 +145,7 @@
                 <td class="px-3 py-2"><input bind:value={editForm.code} class="w-20 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 font-mono text-xs uppercase text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" /></td>
                 <td class="px-3 py-2">
                   <input bind:value={editForm.name} class="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
-                  {#if editError}<p class="mt-1 text-[10px] text-red-500">{editError}</p>{/if}
+                  {#if editError}<p class="mt-1 text-[11px] text-red-500">{editError}</p>{/if}
                 </td>
                 <td class="hidden px-4 py-2 sm:table-cell"></td>
                 <td class="px-3 py-2 text-right">

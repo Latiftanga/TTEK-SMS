@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listProgrammes, createProgramme, updateProgramme, type Programme } from '$lib/api/academic';
   import Pagination from '$lib/components/Pagination.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   const qc = useQueryClient();
 
@@ -112,16 +113,20 @@
   {/if}
 
   {#if $programmesQuery.isPending}
-    <div class="space-y-2">{#each [1,2,3] as _}<div class="h-12 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
+    <div class="space-y-2">{#each [1,2,3] as _}<div class="skeleton h-12"></div>{/each}</div>
   {:else if all.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No programmes yet. Add your first one above.</p>
-    </div>
+    <EmptyState
+      iconPath="M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"
+      title="No programmes yet."
+      description="Add your first SHS programme to enable programme-based classes."
+    />
   {:else if filtered.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No programmes match these filters.</p>
-      <button onclick={() => { search = ''; statusFilter = 'all'; }} class="mt-2 text-xs text-[var(--brand)] hover:underline">Clear filters</button>
-    </div>
+    <EmptyState
+      iconPath="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+      title="No programmes match these filters."
+      action={() => { search = ''; statusFilter = 'all'; }}
+      actionLabel="Clear filters"
+    />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
@@ -140,7 +145,7 @@
                 <td class="px-3 py-2"><input bind:value={editForm.code} class="w-20 rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 font-mono text-xs uppercase text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" /></td>
                 <td class="px-3 py-2">
                   <input bind:value={editForm.name} class="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
-                  {#if editError}<p class="mt-1 text-[10px] text-red-500">{editError}</p>{/if}
+                  {#if editError}<p class="mt-1 text-[11px] text-red-500">{editError}</p>{/if}
                 </td>
                 <td class="hidden px-4 py-2 sm:table-cell"></td>
                 <td class="px-3 py-2 text-right">

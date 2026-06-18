@@ -1,22 +1,22 @@
 <script lang="ts">
-  import { page } from '$app/stores';
-  import { getContext } from 'svelte';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { getClassTeacher, assignClassTeacher, type ClassTeacher, type AcademicTerm } from '$lib/api/academic';
+  import { getClassTeacher, assignClassTeacher, type ClassTeacher } from '$lib/api/academic';
   import { listStaff, type StaffSummary } from '$lib/api/staff';
+  import EmptyState from '$lib/components/EmptyState.svelte';
+  import { toast } from '$lib/stores/toast';
+  import { portal } from '$lib/actions/portal';
 
-  const classId = $derived($page.params.id);
-  const termCtx = getContext<{ termId: string; terms: AcademicTerm[] }>('classTerm');
-  const selectedTermId = $derived(termCtx.termId);
+  interface Props { classId: string; selectedTermId: string; }
+  const { classId, selectedTermId }: Props = $props();
 
   const qc = useQueryClient();
 
-  const classTchrQuery = createQuery(() => ({
+  const classTchrQuery = createQuery({
     queryKey: ['class-teacher', classId, selectedTermId],
     queryFn: () => getClassTeacher(classId, selectedTermId),
     enabled: !!selectedTermId,
     staleTime: 60_000,
-  }));
+  });
   const staffQuery = createQuery({ queryKey: ['staff'], queryFn: () => listStaff({ limit: 200 }), staleTime: 5 * 60_000 });
 
   const classTeacher = $derived<ClassTeacher | null>($classTchrQuery.data ?? null);
@@ -26,18 +26,26 @@
   let showAssign      = $state(false);
   let assignStaffId   = $state('');
   let ctSearch        = $state('');
-  const ctFiltered    = $derived(staff.filter(s => s.is_active && (!ctSearch || s.display_name.toLowerCase().includes(ctSearch.toLowerCase()))));
+  const ctFiltered    = $derived(staff.filter(s => s.is_active && s.staff_category === 'TEACHING' && (!ctSearch || s.display_name.toLowerCase().includes(ctSearch.toLowerCase()))));
 
   const assignMut = createMutation({
     mutationFn: () => assignClassTeacher(classId, { staff_member_id: assignStaffId, academic_term_id: selectedTermId }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['class-teacher'] }); showAssign = false; assignStaffId = ''; },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['class-teacher'] });
+      showAssign = false; assignStaffId = '';
+      toast.success('Class teacher assigned.');
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to assign teacher. Check your permissions.';
+      toast.error(msg);
+    },
   });
 
   function openAssign() { showAssign = true; assignStaffId = classTeacher?.staff_member_id ?? ''; ctSearch = ''; }
 </script>
 
 <div class="mb-3 flex items-center justify-between">
-  <h2 class="text-base font-semibold text-[var(--fg)]">Class Teacher</h2>
+  <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Class Teacher</p>
   {#if selectedTermId}
     <button onclick={openAssign}
       class="h-8 rounded-lg border border-[var(--border)] px-3 text-xs font-medium text-[var(--fg)] hover:bg-[var(--hover)]">
@@ -49,7 +57,7 @@
 {#if !selectedTermId}
   <p class="text-sm italic text-[var(--fg-muted)]">Select a term from the header to view and assign the class teacher.</p>
 {:else if $classTchrQuery.isLoading}
-  <p class="text-sm text-[var(--fg-muted)]">Loading…</p>
+  <div class="skeleton h-20"></div>
 {:else if classTeacher}
   {@const teacher = staffMap.get(classTeacher.staff_member_id)}
   <div class="flex items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
@@ -64,16 +72,17 @@
     </div>
   </div>
 {:else}
-  <div class="rounded-xl border border-dashed border-[var(--border)] py-12 text-center">
-    <p class="text-sm text-[var(--fg-muted)]">No class teacher assigned for this term.</p>
-    <button onclick={openAssign} class="mt-2 text-sm text-[var(--brand)] hover:underline">
-      Assign a class teacher
-    </button>
-  </div>
+  <EmptyState
+    iconPath="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+    title="No class teacher assigned for this term."
+    description="Assign a class teacher to manage attendance and student records."
+    action={openAssign}
+    actionLabel="Assign class teacher"
+  />
 {/if}
 
 {#if showAssign}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
       <h2 class="mb-4 text-lg font-semibold text-[var(--fg)]">Assign Class Teacher</h2>
       <input bind:value={ctSearch} placeholder="Search staff…"

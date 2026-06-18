@@ -52,8 +52,8 @@ class AdminDashboard(BaseModel):
     class_attendance: list[ClassAttendanceLine]
 
 
-class HodDashboard(BaseModel):
-    view: Literal["hod"] = "hod"
+class ApproverDashboard(BaseModel):
+    view: Literal["approver"] = "approver"
     greeting_name: str
     pending_approvals: int
     assessments_this_term: int
@@ -70,6 +70,6 @@ class FinanceDashboard(BaseModel):
 
 
 DashboardData = Annotated[
-    TeacherDashboard | HodDashboard | FinanceDashboard | AdminDashboard,
+    TeacherDashboard | ApproverDashboard | FinanceDashboard | AdminDashboard,
     Field(discriminator="view"),
 ]

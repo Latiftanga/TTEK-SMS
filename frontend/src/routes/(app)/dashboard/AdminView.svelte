@@ -130,11 +130,11 @@
                 <span class="text-sm font-bold {low ? 'text-red-600 dark:text-red-400' : 'text-[var(--fg)]'}">{pct}%</span>
               </div>
             </div>
-            <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+            <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
               <div class="h-full rounded-full transition-all duration-700 {low ? 'bg-red-400' : ''}"
                    style="width: {pct}%; {!low ? 'background-color: var(--brand)' : ''}"></div>
             </div>
-            <p class="mt-1 text-[10px] text-[var(--fg-muted)]">{cls.present} of {cls.total} present</p>
+            <p class="mt-1 text-[11px] text-[var(--fg-muted)]">{cls.present} of {cls.total} present</p>
           </div>
         {/each}
       </div>

@@ -98,7 +98,7 @@
             {/each}
           </select>
           {#if programmes.length === 0}
-            <p class="mt-1 text-[10px] text-amber-500">No programmes yet — add them in the Programmes tab first.</p>
+            <p class="mt-1 text-[11px] text-amber-500">No programmes yet — add them in the Programmes tab first.</p>
           {/if}
         </div>
       {/if}

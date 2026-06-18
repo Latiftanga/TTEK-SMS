@@ -194,3 +194,8 @@ class LeaveReview(BaseModel):
 
 # Resolve forward references for StaffMemberDetail
 StaffMemberDetail.model_rebuild()
+
+
+class TempPasswordResult(BaseModel):
+    temporary_password: str
+    display_name: str

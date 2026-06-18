@@ -47,8 +47,8 @@ export interface AdminDashboard {
   class_attendance: ClassAttendanceLine[];
 }
 
-export interface HodDashboard {
-  view: 'hod';
+export interface ApproverDashboard {
+  view: 'approver';
   greeting_name: string;
   pending_approvals: number;
   assessments_this_term: number;
@@ -64,7 +64,7 @@ export interface FinanceDashboard {
   outstanding_students: number;
 }
 
-export type DashboardData = TeacherDashboard | AdminDashboard | HodDashboard | FinanceDashboard;
+export type DashboardData = TeacherDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard;
 
 export async function getDashboard(): Promise<DashboardData> {
   const { data } = await client.get<DashboardData>('/dashboard');

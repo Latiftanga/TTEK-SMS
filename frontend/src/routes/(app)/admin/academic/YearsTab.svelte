@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listYears, createYear, updateYear, setCurrentYear, type AcademicYear } from '$lib/api/academic';
   import TermsSection from './TermsSection.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   const qc = useQueryClient();
 
@@ -122,7 +123,7 @@
   {#if $yearsQuery.isPending}
     <div class="space-y-3">
       {#each [1, 2] as _}
-        <div class="h-16 animate-pulse rounded-xl bg-[var(--card)]"></div>
+        <div class="skeleton h-16"></div>
       {/each}
     </div>
   {:else if $yearsQuery.isError}
@@ -131,10 +132,11 @@
       <button onclick={() => $yearsQuery.refetch()} class="ml-2 underline">Retry</button>
     </div>
   {:else if $yearsQuery.data?.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-10 text-center">
-      <p class="text-sm font-medium text-[var(--fg-muted)]">No academic years yet.</p>
-      <p class="mt-1 text-xs text-[var(--fg-muted)]">Create your first one above.</p>
-    </div>
+    <EmptyState
+      iconPath="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z"
+      title="No academic years yet."
+      description="Create your first academic year to start setting up terms and tracking progress."
+    />
   {:else}
     <div class="space-y-3">
       {#each ($yearsQuery.data ?? []) as year (year.id)}

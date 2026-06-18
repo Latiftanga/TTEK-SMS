@@ -233,7 +233,7 @@
       <dl class="grid gap-x-8 gap-y-3 sm:grid-cols-2">
         {#each DETAILS() as [label, value]}
           <div>
-            <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">{label}</dt>
+            <dt class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">{label}</dt>
             <dd class="mt-0.5 text-sm text-[var(--fg)]">{value}</dd>
           </div>
         {/each}
@@ -281,7 +281,9 @@
     {/if}
 
     {#if staff.emergency_contacts.length === 0 && !showContactForm}
-      <p class="text-sm text-[var(--fg-muted)]">No emergency contacts on file.</p>
+      <div class="rounded-lg border border-dashed border-[var(--border)] py-5 text-center">
+        <p class="text-sm text-[var(--fg-muted)]">No emergency contacts on file.</p>
+      </div>
     {:else}
       <div class="mt-3 space-y-2">
         {#each staff.emergency_contacts as c (c.id)}

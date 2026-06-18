@@ -5,7 +5,7 @@ APPROVAL FLOW
 -------------
 1. Teacher calls submit_scores → Score rows upserted, is_approved=False,
    cached_grade_label cleared, ScoreAuditLog written for every change.
-2. HOD/admin calls approve_scores → is_approved=True, cached_grade_label
+2. Approver/admin calls approve_scores → is_approved=True, cached_grade_label
    resolved from the school's default GradingScale, approved_by/at stamped.
 3. If GradingScale bands change → grading.clear_cached_grades() clears labels
    so next approval recalculates from the new bands.

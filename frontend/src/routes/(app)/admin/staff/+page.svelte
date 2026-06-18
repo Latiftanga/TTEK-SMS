@@ -2,9 +2,13 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
   import { listStaff, type StaffSummary } from '$lib/api/staff';
-  import StaffForm from './StaffForm.svelte';
+  import StaffForm        from './StaffForm.svelte';
+  import StaffImportModal from './StaffImportModal.svelte';
+  import Badge            from '$lib/components/Badge.svelte';
+  import EmptyState       from '$lib/components/EmptyState.svelte';
 
   let drawerOpen    = $state(false);
+  let importOpen    = $state(false);
   let search        = $state('');
   let activeOnly    = $state(true);
   let genderFilter  = $state('');
@@ -63,11 +67,6 @@
   function initials(s: StaffSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }
 
   const GENDER_BG: Record<string, string> = { MALE: '#3B82F6', FEMALE: '#EC4899' };
-  const CAT_STYLE: Record<string, string> = {
-    TEACHING:     'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400',
-    NON_TEACHING: 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400',
-  };
-  const CAT_LABEL: Record<string, string> = { TEACHING: 'Teaching', NON_TEACHING: 'Non-Teaching' };
 </script>
 
 <StaffForm
@@ -75,6 +74,7 @@
   onSuccess={(staff) => { drawerOpen = false; goto(`/admin/staff/${staff.id}`); }}
   onCancel={() => drawerOpen = false}
 />
+<StaffImportModal open={importOpen} onClose={() => importOpen = false} />
 
 <div class="space-y-5">
 
@@ -99,6 +99,15 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
         </svg>
         Export
+      </button>
+      <button onclick={() => importOpen = true}
+        class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)]
+               px-3 py-2 text-sm font-medium text-[var(--fg-muted)] transition
+               hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>
+        Import
       </button>
       <button onclick={() => drawerOpen = true}
         class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white
@@ -163,7 +172,7 @@
   {#if $query.isPending}
     <div class="space-y-2">
       {#each [1,2,3,4,5] as _}
-        <div class="h-16 animate-pulse rounded-xl bg-[var(--card)]"></div>
+        <div class="skeleton h-16"></div>
       {/each}
     </div>
   {:else if $query.isError}
@@ -173,17 +182,17 @@
       <button onclick={() => $query.refetch()} class="ml-2 underline">Retry</button>
     </div>
   {:else if filtered().length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] p-10 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">
-        {search || genderFilter || categoryFilter ? 'No staff match your filters.' : 'No staff on record yet.'}
-      </p>
-      {#if search || genderFilter || categoryFilter}
-        <button onclick={() => { search = ''; genderFilter = ''; categoryFilter = ''; }}
-          class="mt-2 text-sm font-medium transition hover:underline" style="color: var(--brand)">
-          Clear filters
-        </button>
-      {/if}
-    </div>
+    <EmptyState
+      iconPath="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+      title={search || genderFilter || categoryFilter ? 'No staff match your filters.' : 'No staff on record yet.'}
+      description={search || genderFilter || categoryFilter
+        ? 'Try adjusting or clearing your search and filters.'
+        : 'Add your first staff member to get started.'}
+      action={search || genderFilter || categoryFilter
+        ? () => { search = ''; genderFilter = ''; categoryFilter = ''; }
+        : () => { drawerOpen = true; }}
+      actionLabel={search || genderFilter || categoryFilter ? 'Clear filters' : 'Add first staff member'}
+    />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       <table class="w-full text-sm">
@@ -208,13 +217,14 @@
                   </div>
                   <div class="min-w-0">
                     <p class="font-semibold text-[var(--fg)]">{s.display_name}</p>
-                    <div class="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <div class="mt-0.5 flex items-center gap-2 flex-wrap">
                       <span class="text-xs text-[var(--fg-muted)]">{s.staff_number}</span>
                       {#if s.staff_category}
-                        <span class="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide
-                                     {CAT_STYLE[s.staff_category] ?? ''}">
-                          {CAT_LABEL[s.staff_category] ?? s.staff_category}
-                        </span>
+                        <Badge
+                          label={s.staff_category === 'TEACHING' ? 'Teaching' : 'Non-Teaching'}
+                          color={s.staff_category === 'TEACHING' ? 'teal' : 'violet'}
+                          variant="solid"
+                        />
                       {/if}
                     </div>
                   </div>
@@ -227,12 +237,11 @@
                 {s.phone ?? s.email ?? '—'}
               </td>
               <td class="px-4 py-3">
-                <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold
-                             {s.is_active
-                               ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400'
-                               : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}">
-                  {s.is_active ? 'Active' : 'Inactive'}
-                </span>
+                <Badge
+                  label={s.is_active ? 'Active' : 'Inactive'}
+                  color={s.is_active ? 'green' : 'gray'}
+                  variant="dot"
+                />
               </td>
             </tr>
           {/each}

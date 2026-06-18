@@ -44,3 +44,18 @@ export async function changePassword(current: string, next: string): Promise<voi
     new_password: next,
   });
 }
+
+export async function forgotPassword(req: {
+  login_type: LoginType;
+  identifier: string;
+  school_code?: string;
+}): Promise<void> {
+  await client.post('/auth/forgot-password', req);
+}
+
+export async function resetPassword(req: {
+  token: string;
+  new_password: string;
+}): Promise<void> {
+  await client.post('/auth/reset-password', req);
+}

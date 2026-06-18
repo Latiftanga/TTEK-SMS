@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { HodDashboard } from '$lib/api/dashboard';
+  import type { ApproverDashboard } from '$lib/api/dashboard';
   import StatCard from '$lib/components/StatCard.svelte';
 
-  interface Props { data: HodDashboard; }
+  interface Props { data: ApproverDashboard; }
   const { data }: Props = $props();
 
   const hour = new Date().getHours();

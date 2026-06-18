@@ -61,7 +61,7 @@
         schoolCode:  updated.school_code,
         schoolType:  updated.school_type,
         brandColor:  updated.brand_color,
-        logoUrl:     updated.logo_path,
+        logoUrl:     logoSrc(updated.logo_path),
         motto:       updated.motto,
       });
       profileDirty = false; profileOk = true;
@@ -101,7 +101,7 @@
         schoolCode: updated.school_code,
         schoolType: updated.school_type,
         brandColor: updated.brand_color,
-        logoUrl:    updated.logo_path,
+        logoUrl:    logoSrc(updated.logo_path),
         motto:      updated.motto,
       });
     } catch {

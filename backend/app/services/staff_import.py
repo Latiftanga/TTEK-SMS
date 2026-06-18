@@ -26,7 +26,7 @@ from app.models.documents import ImportBatch, ImportRow, ImportStatus
 from app.models.staff import StaffMember
 from app.schemas.documents import ImportBatchResult, ImportRowResult
 from app.schemas.staff import StaffMemberCreate
-from app.services.staff_import_constants import _COLS, DATA_START, make_sentinel
+from app.services.staff_import_constants import _COLS, DATA_START, SENTINEL_COL, make_sentinel
 
 
 def _utcnow() -> datetime:
@@ -76,7 +76,7 @@ async def process_import(
         raise HTTPException(status_code=422, detail="Cannot read file — ensure it is a valid .xlsx.")
 
     ws = wb["Staff Data"] if "Staff Data" in wb.sheetnames else wb.active
-    sentinel = ws["N1"].value
+    sentinel = ws[f"{SENTINEL_COL}1"].value
     expected = make_sentinel(school_code)
     if sentinel != expected:
         if sentinel and str(sentinel).startswith("TTEK_STAFF_IMPORT_"):
@@ -101,6 +101,7 @@ async def process_import(
     await db.flush()
 
     results: list[ImportRowResult] = []
+    warn_results: list[ImportRowResult] = []
     created = failed = 0
 
     for row_num in range(DATA_START, (ws.max_row or DATA_START) + 1):
@@ -119,6 +120,13 @@ async def process_import(
                 raw[field] = _str(cells[col])
 
         position_name = raw.pop("position_name", None)
+        category = raw.get("staff_category")
+        auto_assigned = False
+        if not position_name and category == "TEACHING":
+            # fuzzy fallback: first position whose name contains "teacher"
+            teacher_key = next((k for k in pos_map if "teacher" in k), None)
+            position_name = teacher_key
+            auto_assigned = teacher_key is None  # True means we wanted to assign but couldn't
         pos_id = pos_map.get(position_name.lower()) if position_name else None
         raw["position_ids"] = [pos_id] if pos_id else []
 
@@ -139,7 +147,12 @@ async def process_import(
             last_name=req.last_name,
             date_of_birth=req.date_of_birth,
             gender=req.gender,
+            staff_category=req.staff_category,
+            employment_type=req.employment_type,
+            marital_status=req.marital_status,
             national_id=req.national_id,
+            ssnit_number=req.ssnit_number,
+            address=req.address,
             phone=req.phone,
             email=req.email.lower().strip() if req.email else None,
             is_active=True,
@@ -156,7 +169,13 @@ async def process_import(
                         [{"staff_member_id": member.id, "position_id": pid} for pid in req.position_ids],
                     )
             _log_row(db, batch.id, school_id, row_num, raw, "success", None, member.id)
-            results.append(ImportRowResult(row=row_num, ref=req.staff_number, status="created", error=None))
+            row_result = ImportRowResult(row=row_num, ref=req.staff_number, status="created", error=None)
+            if auto_assigned:
+                row_result.warning = (
+                    "Imported as Teaching staff but no position containing 'Teacher' exists — assign a position manually."
+                )
+                warn_results.append(row_result)
+            results.append(row_result)
             created += 1
         except IntegrityError:
             try:
@@ -185,6 +204,7 @@ async def process_import(
         created=created,
         failed=failed,
         errors=[r for r in results if r.status == "failed"],
+        warnings=warn_results,
     )
 
 
