@@ -8,8 +8,9 @@
   import ProgrammesTab from '../academic/ProgrammesTab.svelte';
   import SmsTab        from './SmsTab.svelte';
   import EmailTab      from './EmailTab.svelte';
+  import AiTab         from './AiTab.svelte';
 
-  type Tab = 'profile' | 'calendar' | 'subjects' | 'programmes' | 'sms' | 'email';
+  type Tab = 'profile' | 'calendar' | 'subjects' | 'programmes' | 'sms' | 'email' | 'ai';
 
   const isSHS = $derived($schoolStore?.schoolType === 'SHS');
 
@@ -20,6 +21,7 @@
     ...(isSHS ? [{ id: 'programmes' as Tab, label: 'Programmes' }] : []),
     { id: 'sms'        as Tab, label: 'SMS'               },
     { id: 'email'      as Tab, label: 'Email'             },
+    { id: 'ai'         as Tab, label: 'AI Assistant'      },
   ]);
 
   const activeTab = $derived<Tab>(
@@ -65,4 +67,6 @@
   <SmsTab />
 {:else if activeTab === 'email'}
   <EmailTab />
+{:else if activeTab === 'ai'}
+  <AiTab />
 {/if}

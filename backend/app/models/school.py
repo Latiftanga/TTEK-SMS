@@ -43,6 +43,13 @@ class SchoolOwnership(str, enum.Enum):
     PRIVATE = "PRIVATE"
 
 
+class AiProvider(str, enum.Enum):
+    GEMINI = "GEMINI"           # Google Gemini — free tier: 1 500 req/day
+    GROQ = "GROQ"               # Groq — free tier: fast Llama 3 models
+    ANTHROPIC = "ANTHROPIC"     # Anthropic Claude
+    OPENAI = "OPENAI"           # OpenAI GPT
+
+
 class SmsProvider(str, enum.Enum):
     AFRICAS_TALKING = "AFRICAS_TALKING"
     HUBTEL = "HUBTEL"
@@ -134,6 +141,7 @@ class School(Base, UUIDPrimaryKey, TimestampMixin):
     configs: Mapped[list[SchoolConfig]] = relationship(back_populates="school")
     sms_configs: Mapped[list[SmsConfig]] = relationship(back_populates="school")
     email_configs: Mapped[list[EmailConfig]] = relationship(back_populates="school")
+    ai_configs: Mapped[list[AiConfig]] = relationship(back_populates="school")
 
 
 class SchoolConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
@@ -214,3 +222,25 @@ class SmsLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AiConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+    """
+    AI provider credentials per school. Only one provider is active at a time.
+
+    api_key is stored but NEVER returned by any GET endpoint.
+    model is optional — if None, the driver uses the best default for the provider.
+    daily_limit_per_teacher caps how many generations a single teacher can
+    trigger per day (enforced via Redis). Default is 10.
+    """
+    __tablename__ = "ai_config"
+
+    provider: Mapped[AiProvider] = mapped_column(
+        SAEnum(AiProvider, name="aiprovider"), nullable=False
+    )
+    api_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    daily_limit_per_teacher: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    school: Mapped[School] = relationship(back_populates="ai_configs")
