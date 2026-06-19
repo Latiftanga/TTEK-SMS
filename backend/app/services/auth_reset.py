@@ -44,7 +44,7 @@ from app.models.auth import User
 from app.models.school import SmsConfig
 from app.models.staff import StaffMember
 from app.schemas.auth import ForgotPasswordRequest, ResetPasswordRequest, VerifyOtpRequest
-from app.services.auth import _find_user_by_identifier
+from app.services.auth_lookup import find_user_by_identifier
 from app.services.sms_driver import build_driver
 
 
@@ -108,7 +108,7 @@ async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession) -> str |
     )
 
     try:
-        user = await _find_user_by_identifier(login_req, db)
+        user = await find_user_by_identifier(login_req, db)
     except HTTPException:
         return None
 
@@ -172,7 +172,7 @@ async def verify_otp(req: VerifyOtpRequest, db: AsyncSession) -> str:
     )
 
     try:
-        user = await _find_user_by_identifier(login_req, db)
+        user = await find_user_by_identifier(login_req, db)
     except HTTPException:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Invalid or expired code.")

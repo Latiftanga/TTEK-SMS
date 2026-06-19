@@ -50,6 +50,7 @@ from app.core.config import settings
 from app.models.auth import LoginType, User, UserSession
 from app.models.school import School
 from app.schemas.auth import LoginRequest, TokenResponse
+from app.services.auth_lookup import find_user_by_identifier
 
 
 def _utcnow() -> datetime:
@@ -84,7 +85,7 @@ async def login(
         401  Credentials are wrong (same error whether user exists or not)
         403  User account exists but has been deactivated
     """
-    user = await _find_user_by_identifier(req, db)
+    user = await find_user_by_identifier(req, db)
 
     # Intentionally combine "user not found" and "wrong password" into one error.
     # This prevents an attacker from enumerating which identifiers are registered.
@@ -124,47 +125,6 @@ async def login(
         access_token=access_token,
         refresh_token=raw_refresh,
         expires_in=settings.jwt_access_token_expire_minutes * 60,
-    )
-
-
-async def _find_user_by_identifier(req: LoginRequest, db: AsyncSession) -> User | None:
-    """
-    Locate a user by the appropriate identifier based on login_type.
-
-    Returns None if no matching user exists (caller decides what error to raise).
-    """
-    if req.login_type == LoginType.EMAIL:
-        return await db.scalar(
-            select(User).where(User.email == req.identifier.lower().strip())
-        )
-
-    if req.login_type == LoginType.PHONE:
-        return await db.scalar(
-            select(User).where(User.phone == req.identifier.strip())
-        )
-
-    # ADMISSION_ID: must first resolve the school to scope the lookup.
-    if not req.school_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="school_code is required when login_type is ADMISSION_ID.",
-        )
-
-    school = await db.scalar(
-        select(School).where(School.school_code == req.school_code.upper())
-    )
-    if not school:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"School with code '{req.school_code.upper()}' not found.",
-        )
-
-    return await db.scalar(
-        select(User).where(
-            User.school_id == school.id,
-            User.admission_id == req.identifier.strip(),
-            User.login_type == LoginType.ADMISSION_ID,
-        )
     )
 
 
