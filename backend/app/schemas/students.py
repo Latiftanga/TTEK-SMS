@@ -6,6 +6,9 @@ from app.models.staff import Gender
 from app.models.students import EnrollmentType, TransferStatus
 
 
+ORPHAN_STATUSES = ("NONE", "HALF_ORPHAN", "FULL_ORPHAN")
+
+
 class StudentCreate(BaseModel):
     admission_number: str
     first_name: str
@@ -17,6 +20,11 @@ class StudentCreate(BaseModel):
     religion: str | None = None
     hometown: str | None = None
     residential_address: str | None = None
+    nhis_number: str | None = None
+    ghana_card_number: str | None = None
+    is_boarding: bool = False
+    orphan_status: str = "NONE"
+    disability: str | None = None
 
     @field_validator("admission_number", "first_name", "last_name")
     @classmethod
@@ -36,6 +44,11 @@ class StudentUpdate(BaseModel):
     religion: str | None = None
     hometown: str | None = None
     residential_address: str | None = None
+    nhis_number: str | None = None
+    ghana_card_number: str | None = None
+    is_boarding: bool | None = None
+    orphan_status: str | None = None
+    disability: str | None = None
     is_active: bool | None = None
 
 
@@ -89,6 +102,9 @@ class StudentSummary(BaseModel):
     display_name: str
     gender: Gender | None
     is_active: bool
+    is_boarding: bool = False
+    current_class_name: str | None = None
+    current_class_id: uuid.UUID | None = None
 
 
 class StudentDetail(StudentSummary):
@@ -97,6 +113,10 @@ class StudentDetail(StudentSummary):
     religion: str | None
     hometown: str | None
     residential_address: str | None
+    nhis_number: str | None
+    ghana_card_number: str | None
+    orphan_status: str
+    disability: str | None
     photo_path: str | None
     medical_record: MedicalRecordRead | None = None
     guardians: list[StudentGuardianRead] = []

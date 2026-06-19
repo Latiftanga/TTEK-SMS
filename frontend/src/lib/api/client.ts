@@ -112,4 +112,5 @@ client.interceptors.response.use(
   }
 );
 
+export { client as api };
 export default client;

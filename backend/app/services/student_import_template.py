@@ -9,8 +9,8 @@ Structure:
   Row 2: Subtitle / instructions summary
   Row 3: Column headers (locked)
   Row 4: Sample/example row (greyed, italic)
-  Rows 5-204: Pre-formatted data-entry area with Gender dropdown
-  Sentinel cell N1 = "TTEK_STUDENT_IMPORT_{school_code}"
+  Rows 5-204: Pre-formatted data-entry area with dropdowns
+  Sentinel cell Q1 = "TTEK_STUDENT_IMPORT_{school_code}"
   "Instructions" sheet with field guide
 """
 from __future__ import annotations
@@ -20,7 +20,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Protection
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from app.services.student_import_constants import _COLS, _DATA_START, _NUM_ROWS, make_sentinel
+from app.services.student_import_constants import (
+    _COLS, _DATA_START, _NUM_ROWS, SENTINEL_CELL, make_sentinel,
+)
 
 
 def _argb(hex_color: str) -> str:
@@ -51,7 +53,7 @@ def build_template(school_name: str, school_code: str, brand_color: str) -> byte
     c.fill  = brand_fill
     c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 32
-    ws["N1"].value = make_sentinel(school_code)
+    ws[SENTINEL_CELL].value = make_sentinel(school_code)
 
     # Row 2 — subtitle
     ws.merge_cells(f"A2:{last_col}2")
@@ -80,6 +82,8 @@ def build_template(school_name: str, school_code: str, brand_color: str) -> byte
         "ADM2024001", "Ama", "Akua", "Boateng",
         "2006-03-15", "FEMALE", "Ghanaian", "Christian", "Kumasi",
         "House No. 5, Adum, Kumasi",
+        "GH-12345678", "GHA-000011223",
+        "No", "None", "",
     ]
     for (col, *_), val in zip(_COLS, sample_vals):
         c = ws[f"{col}4"]
@@ -100,10 +104,26 @@ def build_template(school_name: str, school_code: str, brand_color: str) -> byte
             c.protection = Protection(locked=False)
         ws.row_dimensions[row].height = 17
 
-    # Gender dropdown
+    data_range_end = _DATA_START + _NUM_ROWS - 1
+
+    # Gender dropdown (col F)
     dv_gender = DataValidation(type="list", formula1='"MALE,FEMALE"', allow_blank=True)
-    dv_gender.sqref = f"F{_DATA_START}:F{_DATA_START + _NUM_ROWS - 1}"
+    dv_gender.sqref = f"F{_DATA_START}:F{data_range_end}"
     ws.add_data_validation(dv_gender)
+
+    # Boarding dropdown (col M)
+    dv_boarding = DataValidation(type="list", formula1='"Yes,No"', allow_blank=True)
+    dv_boarding.sqref = f"M{_DATA_START}:M{data_range_end}"
+    ws.add_data_validation(dv_boarding)
+
+    # Orphan status dropdown (col N)
+    dv_orphan = DataValidation(
+        type="list",
+        formula1='"None,Half Orphan,Full Orphan"',
+        allow_blank=True,
+    )
+    dv_orphan.sqref = f"N{_DATA_START}:N{data_range_end}"
+    ws.add_data_validation(dv_orphan)
 
     ws.freeze_panes = f"A{_DATA_START}"
     ws.protection.sheet = True
@@ -118,29 +138,34 @@ def build_template(school_name: str, school_code: str, brand_color: str) -> byte
 
 def _build_instructions_sheet(wb: Workbook, brand_fill: PatternFill, hdr_font: Font) -> None:
     ws = wb.create_sheet("Instructions")
-    ws.column_dimensions["A"].width = 24
-    ws.column_dimensions["B"].width = 62
+    ws.column_dimensions["A"].width = 26
+    ws.column_dimensions["B"].width = 68
     rows = [
         ("TTEK Student Import — Field Guide", None, True),
         (None, None, False),
         ("Field", "Notes / Valid Values", True),
-        ("Admission Number*",  "Unique ID for this student at this school. Required.",   False),
-        ("First Name*",        "Required.",                                               False),
-        ("Middle Name",        "Optional.",                                               False),
-        ("Last Name*",         "Required.",                                               False),
-        ("Date of Birth",      "Format: YYYY-MM-DD  (e.g. 2006-03-15)",                  False),
-        ("Gender",             "Select MALE or FEMALE from the dropdown.",                False),
-        ("Nationality",        "e.g. Ghanaian, Nigerian.",                                False),
-        ("Religion",           "e.g. Christian, Muslim, Traditional.",                   False),
-        ("Hometown",           "Town or city of origin.",                                 False),
-        ("Residential Address","Full address while at school.",                           False),
+        ("Admission Number*",       "Unique ID for this student at this school. Required.",         False),
+        ("First Name*",             "Required.",                                                     False),
+        ("Middle Name",             "Optional.",                                                     False),
+        ("Last Name*",              "Required.",                                                     False),
+        ("Date of Birth",           "Format: YYYY-MM-DD  (e.g. 2006-03-15)",                        False),
+        ("Gender",                  "Select MALE or FEMALE from the dropdown.",                      False),
+        ("Nationality",             "e.g. Ghanaian, Nigerian.",                                      False),
+        ("Religion",                "e.g. Christian, Muslim, Traditional.",                         False),
+        ("Hometown",                "Town or city of origin.",                                       False),
+        ("Residential Address",     "Full address while at school.",                                 False),
+        ("NHIS Number",             "National Health Insurance Scheme number (optional).",           False),
+        ("Ghana Card Number",       "Ghana Card / National ID number (optional).",                   False),
+        ("Boarding (Yes/No)",       "Select Yes if the student lives in a school house; else No.",   False),
+        ("Orphan Status",           "Select None, Half Orphan, or Full Orphan from the dropdown.",  False),
+        ("Disability/Special Needs","Brief description of any disability or special need (optional).", False),
         (None, None, False),
         ("Tips", "", True),
-        ("", "• Do not edit or delete header rows 1–3.",                                  False),
-        ("", "• You may delete or overwrite the example row (row 4).",                    False),
-        ("", "• Leave a cell blank if the information is not yet known.",                 False),
-        ("", "• Save the file as .xlsx before uploading.",                                False),
-        ("", "• Duplicate admission numbers within the same school are rejected.",        False),
+        ("", "• Do not edit or delete header rows 1–3.",                                             False),
+        ("", "• You may delete or overwrite the example row (row 4).",                              False),
+        ("", "• Leave a cell blank if the information is not yet known.",                            False),
+        ("", "• Save the file as .xlsx before uploading.",                                           False),
+        ("", "• Duplicate admission numbers within the same school are rejected.",                   False),
     ]
     for i, (a, b, is_hdr) in enumerate(rows, 1):
         ca = ws.cell(row=i, column=1, value=a)

@@ -63,6 +63,11 @@ class Student(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     religion: Mapped[str | None] = mapped_column(String(50), nullable=True)
     hometown: Mapped[str | None] = mapped_column(String(100), nullable=True)
     residential_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nhis_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ghana_card_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_boarding: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    orphan_status: Mapped[str] = mapped_column(String(20), default="NONE", nullable=False)
+    disability: Mapped[str | None] = mapped_column(String(200), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     medical_record: Mapped[StudentMedicalRecord | None] = relationship(

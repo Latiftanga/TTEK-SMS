@@ -18,8 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.documents import ImportBatch, ImportRow, ImportStatus
 from app.models.students import Student
 from app.schemas.documents import ImportBatchResult, ImportRowResult
-from app.schemas.students import StudentCreate
-from app.services.student_import_constants import _COLS, DATA_START, make_sentinel
+from app.schemas.students import StudentCreate, ORPHAN_STATUSES
+from app.services.student_import_constants import (
+    _COLS, DATA_START, SENTINEL_CELL, make_sentinel,
+)
 
 
 def _utcnow() -> datetime:
@@ -45,6 +47,28 @@ def _str(cell) -> str | None:
     return str(v).strip() or None if v is not None else None
 
 
+def _parse_bool(cell) -> bool:
+    """Parse Yes/No/True/False/1/0 to bool; default False."""
+    v = _str(cell)
+    if v is None:
+        return False
+    return v.lower() in ("yes", "true", "1", "y")
+
+
+def _parse_orphan(cell) -> str:
+    """Map human-readable dropdown value to ORPHAN_STATUS enum string."""
+    v = _str(cell)
+    if v is None:
+        return "NONE"
+    mapping = {
+        "half orphan": "HALF_ORPHAN",
+        "full orphan": "FULL_ORPHAN",
+        "half_orphan": "HALF_ORPHAN",
+        "full_orphan": "FULL_ORPHAN",
+    }
+    return mapping.get(v.lower(), "NONE")
+
+
 async def process_import(
     file_bytes: bytes,
     school_id: uuid.UUID,
@@ -60,7 +84,7 @@ async def process_import(
         raise HTTPException(status_code=422, detail="Cannot read file — ensure it is a valid .xlsx.")
 
     ws = wb["Student Data"] if "Student Data" in wb.sheetnames else wb.active
-    sentinel = ws["N1"].value
+    sentinel = ws[SENTINEL_CELL].value
     expected = make_sentinel(school_code)
     if sentinel != expected:
         if sentinel and str(sentinel).startswith("TTEK_STUDENT_IMPORT_"):
@@ -97,6 +121,10 @@ async def process_import(
         for col, _, field, _, _ in _COLS:
             if field == "date_of_birth":
                 raw[field] = _parse_date(cells[col].value)
+            elif field == "is_boarding":
+                raw[field] = _parse_bool(cells[col])
+            elif field == "orphan_status":
+                raw[field] = _parse_orphan(cells[col])
             else:
                 raw[field] = _str(cells[col])
 
@@ -121,6 +149,11 @@ async def process_import(
             religion=req.religion,
             hometown=req.hometown,
             residential_address=req.residential_address,
+            nhis_number=req.nhis_number,
+            ghana_card_number=req.ghana_card_number,
+            is_boarding=req.is_boarding,
+            orphan_status=req.orphan_status,
+            disability=req.disability,
             is_active=True,
         )
         try:

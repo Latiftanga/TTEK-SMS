@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.academic import Class, SHSProgramme
 from app.models.students import (
     Guardian,
     Student,
@@ -39,7 +40,25 @@ def _display_name(first: str, middle: str | None, last: str) -> str:
     return " ".join(parts)
 
 
-def _to_summary(s: Student) -> StudentSummary:
+def _class_display(level: str, year_group: int, programme: str | None, stream: str | None) -> str:
+    parts = [level, str(year_group)]
+    if programme:
+        parts.append(programme)
+    if stream:
+        parts.append(stream)
+    return " ".join(parts)
+
+
+def _to_summary(
+    s: Student,
+    class_info: tuple[str, int, str | None, str | None, uuid.UUID] | None = None,
+) -> StudentSummary:
+    current_class_name = None
+    current_class_id = None
+    if class_info:
+        level, year_group, programme, stream, cls_id = class_info
+        current_class_name = _class_display(level, year_group, programme, stream)
+        current_class_id = cls_id
     return StudentSummary(
         id=s.id,
         school_id=s.school_id,
@@ -50,6 +69,9 @@ def _to_summary(s: Student) -> StudentSummary:
         display_name=_display_name(s.first_name, s.middle_name, s.last_name),
         gender=s.gender,
         is_active=s.is_active,
+        is_boarding=s.is_boarding,
+        current_class_name=current_class_name,
+        current_class_id=current_class_id,
     )
 
 
@@ -75,6 +97,10 @@ def _to_detail(s: Student) -> StudentDetail:
         religion=s.religion,
         hometown=s.hometown,
         residential_address=s.residential_address,
+        nhis_number=s.nhis_number,
+        ghana_card_number=s.ghana_card_number,
+        orphan_status=s.orphan_status,
+        disability=s.disability,
         photo_path=s.photo_path,
         medical_record=MedicalRecordRead.model_validate(s.medical_record) if s.medical_record else None,
         guardians=[_to_guardian_read(sg) for sg in s.guardians],
@@ -98,6 +124,11 @@ async def create_student(
         religion=req.religion,
         hometown=req.hometown,
         residential_address=req.residential_address,
+        nhis_number=req.nhis_number,
+        ghana_card_number=req.ghana_card_number,
+        is_boarding=req.is_boarding,
+        orphan_status=req.orphan_status,
+        disability=req.disability,
         is_active=True,
     )
     db.add(student)
@@ -112,6 +143,35 @@ async def create_student(
     return _to_detail(student)
 
 
+async def _get_class_map(
+    student_ids: list[uuid.UUID],
+    db: AsyncSession,
+) -> dict[uuid.UUID, tuple[str, int, str | None, str | None, uuid.UUID]]:
+    if not student_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            TermEnrollment.student_id,
+            Class.level,
+            Class.year_group,
+            Class.stream,
+            SHSProgramme.name.label("programme_name"),
+            Class.id.label("class_id"),
+        )
+        .join(Class, Class.id == TermEnrollment.class_id)
+        .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
+        .where(
+            TermEnrollment.student_id.in_(student_ids),
+            TermEnrollment.is_active == True,  # noqa: E712
+        )
+    )
+    result: dict[uuid.UUID, tuple] = {}
+    for r in rows:
+        if r.student_id not in result:
+            result[r.student_id] = (r.level, r.year_group, r.programme_name, r.stream, r.class_id)
+    return result
+
+
 async def list_students(
     school_id: uuid.UUID,
     db: AsyncSession,
@@ -122,17 +182,24 @@ async def list_students(
     search: str | None = None,
     class_id: uuid.UUID | None = None,
     term_id: uuid.UUID | None = None,
+    gender: str | None = None,
+    level: str | None = None,
 ) -> list[StudentSummary]:
     q = select(Student).where(Student.school_id == school_id)
     if active_only:
         q = q.where(Student.is_active == True)  # noqa: E712
-    if class_id:
+    if gender:
+        q = q.where(Student.gender == gender)
+    if class_id or term_id or level:
         q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
-            TermEnrollment.class_id == class_id,
             TermEnrollment.is_active == True,  # noqa: E712
         )
+        if class_id:
+            q = q.where(TermEnrollment.class_id == class_id)
         if term_id:
             q = q.where(TermEnrollment.academic_term_id == term_id)
+        if level:
+            q = q.join(Class, Class.id == TermEnrollment.class_id).where(Class.level == level)
     if search:
         s = f"%{search}%"
         q = q.where(or_(
@@ -140,9 +207,10 @@ async def list_students(
             Student.last_name.ilike(s),
             Student.admission_number.ilike(s),
         ))
-    q = q.order_by(Student.last_name, Student.first_name).offset(skip).limit(limit)
-    rows = await db.scalars(q)
-    return [_to_summary(s) for s in rows]
+    q = q.distinct().order_by(Student.last_name, Student.first_name).offset(skip).limit(limit)
+    students = list(await db.scalars(q))
+    class_map = await _get_class_map([s.id for s in students], db)
+    return [_to_summary(s, class_map.get(s.id)) for s in students]
 
 
 async def get_student(

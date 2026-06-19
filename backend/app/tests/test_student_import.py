@@ -7,9 +7,10 @@ import pytest
 from httpx import AsyncClient
 
 from app.models.school import School
-from app.services.student_import_constants import DATA_START, _COLS, make_sentinel
+from app.services.student_import_constants import DATA_START, _COLS, SENTINEL_CELL, make_sentinel
 
 _XLSX_CT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_NUM_COLS = len(_COLS)
 
 
 def _make_xlsx(rows: list[list], school_code: str) -> bytes:
@@ -18,19 +19,25 @@ def _make_xlsx(rows: list[list], school_code: str) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Student Data"
-    ws["N1"] = make_sentinel(school_code)
+    ws[SENTINEL_CELL] = make_sentinel(school_code)
     for col, label, *_ in _COLS:
         ws[f"{col}3"] = label
     for r_idx, row_vals in enumerate(rows):
         row_num = DATA_START + r_idx
-        for c_idx, val in enumerate(row_vals):
-            ws.cell(row=row_num, column=c_idx + 1, value=val)
+        # Pad/truncate to exactly _NUM_COLS columns
+        padded = list(row_vals) + [None] * _NUM_COLS
+        for c_idx in range(_NUM_COLS):
+            ws.cell(row=row_num, column=c_idx + 1, value=padded[c_idx])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-_BLANK_ROW = [None] * len(_COLS)
+def _row(admission, first, last, middle=None, dob=None, gender=None,
+         nationality=None, religion=None, hometown=None, address=None,
+         nhis=None, ghana_card=None, boarding="No", orphan="None", disability=None):
+    return [admission, first, middle, last, dob, gender, nationality, religion,
+            hometown, address, nhis, ghana_card, boarding, orphan, disability]
 
 
 # ── Template download ─────────────────────────────────────────────────────────
@@ -49,7 +56,7 @@ async def test_template_contains_school_sentinel(client: AsyncClient, auth: dict
     resp = await client.get("/students/import/template", headers=auth)
     wb = load_workbook(io.BytesIO(resp.content), data_only=True)
     ws = wb["Student Data"]
-    assert ws["N1"].value == make_sentinel(school.school_code)
+    assert ws[SENTINEL_CELL].value == make_sentinel(school.school_code)
 
 
 @pytest.mark.asyncio
@@ -60,6 +67,7 @@ async def test_template_has_all_headers(client: AsyncClient, auth: dict):
     ws = wb["Student Data"]
     headers = [ws[f"{col}3"].value for col, *_ in _COLS]
     assert all(h is not None for h in headers)
+    assert len(headers) == 15  # A–O
 
 
 # ── Upload processing ─────────────────────────────────────────────────────────
@@ -67,8 +75,9 @@ async def test_template_has_all_headers(client: AsyncClient, auth: dict):
 @pytest.mark.asyncio
 async def test_import_all_valid(client: AsyncClient, auth: dict, school: School):
     rows = [
-        ["ADM001", "Ama",  None, "Boateng", None, "FEMALE", None, None, None, None],
-        ["ADM002", "Kofi", None, "Asante",  None, "MALE",   None, None, None, None],
+        _row("ADM001", "Ama",  "Boateng", gender="FEMALE", boarding="No"),
+        _row("ADM002", "Kofi", "Asante",  gender="MALE",   boarding="Yes",
+             nhis="GH-99", orphan="Half Orphan"),
     ]
     resp = await client.post(
         "/students/import",
@@ -87,9 +96,9 @@ async def test_import_all_valid(client: AsyncClient, auth: dict, school: School)
 async def test_import_partial_success(client: AsyncClient, auth: dict, school: School):
     """Two valid rows + one missing last_name → 2 created, 1 failed."""
     rows = [
-        ["ADM001", "Ama",  None, "Boateng", None, None, None, None, None, None],
-        ["ADM002", "Kofi", None, "Asante",  None, None, None, None, None, None],
-        ["ADM003", "Yaw",  None, None,      None, None, None, None, None, None],
+        _row("ADM001", "Ama",  "Boateng"),
+        _row("ADM002", "Kofi", "Asante"),
+        _row("ADM003", "Yaw",  None),       # missing last_name
     ]
     resp = await client.post(
         "/students/import",
@@ -106,8 +115,8 @@ async def test_import_partial_success(client: AsyncClient, auth: dict, school: S
 async def test_import_duplicate_admission_number(client: AsyncClient, auth: dict, school: School):
     """Duplicate admission number in same file → first created, second failed."""
     rows = [
-        ["ADM001", "Ama",  None, "Boateng", None, None, None, None, None, None],
-        ["ADM001", "Akua", None, "Mensah",  None, None, None, None, None, None],
+        _row("ADM001", "Ama",  "Boateng"),
+        _row("ADM001", "Akua", "Mensah"),
     ]
     resp = await client.post(
         "/students/import",
@@ -126,7 +135,7 @@ async def test_import_rejects_existing_admission_number(client: AsyncClient, aut
     await client.post("/students", json={
         "admission_number": "PRE001", "first_name": "Existing", "last_name": "Student",
     }, headers=auth)
-    rows = [["PRE001", "New", None, "Person", None, None, None, None, None, None]]
+    rows = [_row("PRE001", "New", "Person")]
     resp = await client.post(
         "/students/import",
         files={"file": ("students.xlsx", _make_xlsx(rows, school.school_code), _XLSX_CT)},
@@ -144,7 +153,7 @@ async def test_import_cross_school_sentinel_rejected(client: AsyncClient, auth: 
     wb = Workbook()
     ws = wb.active
     ws.title = "Student Data"
-    ws["N1"] = make_sentinel("OTHER_SCHOOL")
+    ws[SENTINEL_CELL] = make_sentinel("OTHER_SCHOOL")
     buf = io.BytesIO()
     wb.save(buf)
     resp = await client.post(
@@ -179,3 +188,32 @@ async def test_import_non_xlsx_rejected(client: AsyncClient, auth: dict):
         headers=auth,
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_import_new_fields_saved(client: AsyncClient, auth: dict, school: School):
+    """NHIS, Ghana Card, boarding, orphan status, disability all persisted."""
+    rows = [_row(
+        "ADM999", "Kwame", "Acheampong",
+        nhis="GH-00112233", ghana_card="GHA-999888777",
+        boarding="Yes", orphan="Full Orphan", disability="Hearing impairment",
+    )]
+    resp = await client.post(
+        "/students/import",
+        files={"file": ("students.xlsx", _make_xlsx(rows, school.school_code), _XLSX_CT)},
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 1
+
+    # Fetch the student and check the new fields
+    list_resp = await client.get("/students?search=ADM999", headers=auth)
+    students = list_resp.json()
+    assert len(students) == 1
+    detail_resp = await client.get(f"/students/{students[0]['id']}", headers=auth)
+    s = detail_resp.json()
+    assert s["nhis_number"] == "GH-00112233"
+    assert s["ghana_card_number"] == "GHA-999888777"
+    assert s["is_boarding"] is True
+    assert s["orphan_status"] == "FULL_ORPHAN"
+    assert s["disability"] == "Hearing impairment"

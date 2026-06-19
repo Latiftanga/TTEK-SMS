@@ -68,6 +68,8 @@ async def list_students(
     search: str | None = Query(None),
     class_id: uuid.UUID | None = Query(None),
     term_id: uuid.UUID | None = Query(None),
+    gender: str | None = Query(None),
+    level: str | None = Query(None),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -76,6 +78,32 @@ async def list_students(
         school_id, db,
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
+        gender=gender, level=level,
+    )
+
+
+@router.get("/export")
+async def export_students(
+    active_only: bool = Query(True),
+    class_id: uuid.UUID | None = Query(None),
+    term_id: uuid.UUID | None = Query(None),
+    gender: str | None = Query(None),
+    level: str | None = Query(None),
+    ids=Depends(require_permission("students", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.student_export import export_students_csv
+    from fastapi.responses import StreamingResponse
+    _, school_id = ids
+    csv_bytes = await export_students_csv(
+        school_id, db,
+        active_only=active_only, class_id=class_id, term_id=term_id,
+        gender=gender, level=level,
+    )
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="students.csv"'},
     )
 
 

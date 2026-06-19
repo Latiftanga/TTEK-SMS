@@ -1,6 +1,7 @@
-import client from './client';
+import { api } from './client';
 
 export type Gender = 'MALE' | 'FEMALE';
+export type OrphanStatus = 'NONE' | 'HALF_ORPHAN' | 'FULL_ORPHAN';
 
 export interface StudentSummary {
   id: string;
@@ -12,32 +13,150 @@ export interface StudentSummary {
   display_name: string;
   gender: Gender | null;
   is_active: boolean;
+  is_boarding: boolean;
+  current_class_name: string | null;
+  current_class_id: string | null;
 }
 
-export async function listStudents(params: {
-  class_id?: string;
-  term_id?: string;
-  search?: string;
-  active_only?: boolean;
-  skip?: number;
-  limit?: number;
-}): Promise<StudentSummary[]> {
-  const { data } = await client.get<StudentSummary[]>('/students', { params });
-  return data;
+export interface MedicalRecord {
+  id: string;
+  blood_group: string | null;
+  allergies: string | null;
+  chronic_conditions: string | null;
+  medications: string | null;
+  emergency_notes: string | null;
 }
 
-export async function enrollStudent(req: {
+export interface Guardian {
+  guardian_id: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string | null;
+  occupation: string | null;
+  relation_type: string;
+  is_primary: boolean;
+}
+
+export interface StudentDetail extends StudentSummary {
+  date_of_birth: string | null;
+  nationality: string | null;
+  religion: string | null;
+  hometown: string | null;
+  residential_address: string | null;
+  nhis_number: string | null;
+  ghana_card_number: string | null;
+  orphan_status: OrphanStatus;
+  disability: string | null;
+  photo_path: string | null;
+  medical_record: MedicalRecord | null;
+  guardians: Guardian[];
+}
+
+export interface TermEnrollmentRead {
+  id: string;
   student_id: string;
   class_id: string;
   academic_term_id: string;
-}): Promise<{ id: string; class_display_name: string }> {
-  const { data } = await client.post('/students/term-enrollments', req);
-  return data;
+  class_display_name: string;
+  is_active: boolean;
+  created_at: string;
 }
 
-export async function bulkEnrollStudents(
-  items: { student_id: string; class_id: string; academic_term_id: string }[]
-): Promise<{ enrolled: number; skipped: number }> {
-  const { data } = await client.post('/students/bulk-term-enrollments', { items });
-  return data;
+export interface StudentCreate {
+  admission_number: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  date_of_birth?: string;
+  gender?: Gender;
+  nationality?: string;
+  religion?: string;
+  hometown?: string;
+  residential_address?: string;
+  nhis_number?: string;
+  ghana_card_number?: string;
+  is_boarding?: boolean;
+  orphan_status?: OrphanStatus;
+  disability?: string;
 }
+
+export interface GuardianCreate {
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email?: string;
+  occupation?: string;
+  address?: string;
+  relation_type: string;
+  is_primary?: boolean;
+}
+
+export interface MedicalRecordUpsert {
+  blood_group?: string;
+  allergies?: string;
+  chronic_conditions?: string;
+  medications?: string;
+  emergency_notes?: string;
+}
+
+export interface ImportBatchResult {
+  batch_id: string;
+  total_rows: number;
+  created: number;
+  skipped: number;
+  errors: { row: number; reason: string }[];
+}
+
+export interface StudentListParams {
+  active_only?: boolean;
+  skip?: number;
+  limit?: number;
+  search?: string;
+  class_id?: string;
+  term_id?: string;
+  gender?: string;
+  level?: string;
+}
+
+export const listStudents = (params: StudentListParams = {}): Promise<StudentSummary[]> =>
+  api.get('/students', { params }).then(r => r.data);
+
+export const getStudent = (id: string): Promise<StudentDetail> =>
+  api.get(`/students/${id}`).then(r => r.data);
+
+export const createStudent = (data: StudentCreate): Promise<StudentDetail> =>
+  api.post('/students', data).then(r => r.data);
+
+export const updateStudent = (id: string, data: Partial<StudentCreate & { is_active: boolean }>): Promise<StudentDetail> =>
+  api.patch(`/students/${id}`, data).then(r => r.data);
+
+export const addGuardian = (studentId: string, data: GuardianCreate): Promise<Guardian> =>
+  api.post(`/students/${studentId}/guardians`, data).then(r => r.data);
+
+export const removeGuardian = (studentId: string, guardianId: string): Promise<void> =>
+  api.delete(`/students/${studentId}/guardians/${guardianId}`).then(r => r.data);
+
+export const upsertMedical = (studentId: string, data: MedicalRecordUpsert): Promise<MedicalRecord> =>
+  api.put(`/students/${studentId}/medical`, data).then(r => r.data);
+
+export const listTermEnrollments = (studentId: string): Promise<TermEnrollmentRead[]> =>
+  api.get(`/students/${studentId}/term-enrollments`).then(r => r.data);
+
+export const enrollStudent = (req: { student_id: string; class_id: string; academic_term_id: string }): Promise<TermEnrollmentRead> =>
+  api.post('/students/term-enrollments', req).then(r => r.data);
+
+export const bulkEnrollStudents = (items: { student_id: string; class_id: string; academic_term_id: string }[]) =>
+  api.post('/students/bulk-term-enrollments', { items }).then(r => r.data);
+
+export const downloadImportTemplate = () =>
+  api.get('/students/import/template', { responseType: 'blob' }).then(r => r.data);
+
+export const importStudents = (file: File): Promise<ImportBatchResult> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post('/students/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data);
+};
+
+export const exportStudentsCsv = (params: StudentListParams = {}): Promise<Blob> =>
+  api.get('/students/export', { params, responseType: 'blob' }).then(r => r.data);
