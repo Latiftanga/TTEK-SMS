@@ -50,8 +50,9 @@ export async function forgotPassword(req: {
   login_type: LoginType;
   identifier: string;
   school_code?: string;
-}): Promise<void> {
-  await client.post('/auth/forgot-password', req);
+}): Promise<{ dev_otp?: string }> {
+  const { data } = await client.post<{ dev_otp?: string }>('/auth/forgot-password', req);
+  return data ?? {};
 }
 
 export async function verifyOtp(req: {

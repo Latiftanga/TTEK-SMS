@@ -14,6 +14,7 @@
   let schoolCode  = $state(get(school)?.schoolCode ?? get(subdomain) ?? '');
   let sendPending = $state(false);
   let sendError   = $state('');
+  let devOtp      = $state(''); // only populated in dev mode when no SMS driver
 
   // Step 2 — OTP
   let otpDigits   = $state<string[]>(['', '', '', '', '', '']);
@@ -65,7 +66,7 @@
     }
     sendPending = true;
     try {
-      await forgotPassword({
+      const res = await forgotPassword({
         login_type: loginType,
         identifier: trimmed,
         school_code: schoolCode.trim() || undefined,
@@ -73,11 +74,14 @@
       loginTypeState  = loginType;
       identifierState = trimmed;
       schoolCodeState = schoolCode.trim();
-      otpDigits       = ['', '', '', '', '', ''];
+      devOtp    = res.dev_otp ?? '';
+      // Pre-fill OTP boxes in dev mode
+      const preDigits = devOtp ? devOtp.split('') : ['', '', '', '', '', ''];
+      otpDigits = preDigits.length === 6 ? preDigits : ['', '', '', '', '', ''];
       step = 'otp';
       startCountdown();
       await tick();
-      otpInputs[0]?.focus();
+      otpInputs[devOtp ? 5 : 0]?.focus();
     } catch (e: unknown) {
       sendError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         ?? 'Could not send code. Try again.';
@@ -93,14 +97,17 @@
     otpDigits = ['', '', '', '', '', ''];
     otpError  = '';
     try {
-      await forgotPassword({
+      const res = await forgotPassword({
         login_type: loginTypeState as any,
         identifier: identifierState,
         school_code: schoolCodeState || undefined,
       });
+      devOtp = res.dev_otp ?? '';
+      const preDigits = devOtp ? devOtp.split('') : ['', '', '', '', '', ''];
+      otpDigits = preDigits.length === 6 ? preDigits : ['', '', '', '', '', ''];
       startCountdown();
       await tick();
-      otpInputs[0]?.focus();
+      otpInputs[devOtp ? 5 : 0]?.focus();
     } catch {
       otpError = 'Could not resend code. Try again.';
     }
@@ -307,6 +314,19 @@
 
       <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 space-y-6"
            style="box-shadow: var(--shadow-lg), 0 0 0 1px var(--border)">
+
+        <!-- Dev-mode hint banner -->
+        {#if devOtp}
+          <div class="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">
+              Dev mode — no SMS sent
+            </p>
+            <p class="text-sm text-amber-900 dark:text-amber-300">
+              Your OTP is <span class="font-bold tracking-widest">{devOtp}</span>
+              <span class="ml-1 text-xs text-amber-600 dark:text-amber-500">(pre-filled above)</span>
+            </p>
+          </div>
+        {/if}
 
         <!-- OTP digit boxes -->
         <div class="flex justify-center gap-2.5">

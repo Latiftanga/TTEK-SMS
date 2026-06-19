@@ -26,6 +26,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
 from app.models.auth import User
@@ -184,7 +185,7 @@ async def get_invite_info(
     return await invite_svc.get_invitation_info(token, db)
 
 
-@router.post("/forgot-password", status_code=204)
+@router.post("/forgot-password")
 async def forgot_password(
     req: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
@@ -195,8 +196,16 @@ async def forgot_password(
     Always returns 204 regardless of whether the identifier is found,
     preventing account enumeration.  The OTP is delivered via the school's
     active SMS provider and expires in 10 minutes.
+
+    DEV ONLY: When settings.is_development is True, the response body
+    contains {"dev_otp": "123456"} so the flow can be tested without a
+    real SMS provider.  This field is never present in production.
     """
-    await reset_svc.forgot_password(req, db)
+    from fastapi.responses import JSONResponse
+    otp = await reset_svc.forgot_password(req, db)
+    if settings.is_development and otp:
+        return JSONResponse(status_code=200, content={"dev_otp": otp})
+    return JSONResponse(status_code=204, content=None)
 
 
 @router.post("/verify-otp")
