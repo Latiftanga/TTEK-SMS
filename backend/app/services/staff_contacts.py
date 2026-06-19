@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.staff import StaffEmergencyContact, StaffMember, StaffQualification
-from app.schemas.staff import EmergencyContactCreate, QualificationCreate
+from app.schemas.staff import EmergencyContactCreate, QualificationCreate, QualificationUpdate
 
 
 async def add_emergency_contact(
@@ -68,6 +68,34 @@ async def add_qualification(
         year_obtained=req.year_obtained,
     )
     db.add(qual)
+    await db.flush()
+    return qual
+
+
+async def update_qualification(
+    staff_id: uuid.UUID,
+    qual_id: uuid.UUID,
+    req: QualificationUpdate,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> StaffQualification:
+    qual = await db.scalar(
+        select(StaffQualification).where(
+            StaffQualification.id == qual_id,
+            StaffQualification.staff_member_id == staff_id,
+            StaffQualification.school_id == school_id,
+        )
+    )
+    if not qual:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Qualification not found.")
+    if req.institution is not None:
+        qual.institution = req.institution.strip()
+    if req.qualification_type is not None:
+        qual.qualification_type = req.qualification_type.strip()
+    if req.field_of_study is not None:
+        qual.field_of_study = req.field_of_study.strip() or None
+    if req.year_obtained is not None:
+        qual.year_obtained = req.year_obtained
     await db.flush()
     return qual
 

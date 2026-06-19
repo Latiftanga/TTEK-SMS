@@ -26,7 +26,7 @@
   let showAssign      = $state(false);
   let assignStaffId   = $state('');
   let ctSearch        = $state('');
-  const ctFiltered    = $derived(staff.filter(s => s.is_active && s.staff_category === 'TEACHING' && (!ctSearch || s.display_name.toLowerCase().includes(ctSearch.toLowerCase()))));
+  const ctFiltered    = $derived(staff.filter(s => s.is_active && s.staff_type === 'TEACHING' && (!ctSearch || s.display_name.toLowerCase().includes(ctSearch.toLowerCase()))));
 
   const assignMut = createMutation({
     mutationFn: () => assignClassTeacher(classId, { staff_member_id: assignStaffId, academic_term_id: selectedTermId }),

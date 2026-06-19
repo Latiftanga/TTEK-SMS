@@ -21,9 +21,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.auth import StaffPosition
 from app.models.documents import ImportBatch, ImportRow, ImportStatus
-from app.models.staff import StaffMember
+from app.models.staff import StaffCategory, StaffMember
 from app.schemas.documents import ImportBatchResult, ImportRowResult
 from app.schemas.staff import StaffMemberCreate
 from app.services.staff_import_constants import _COLS, DATA_START, SENTINEL_COL, make_sentinel
@@ -52,13 +51,14 @@ def _str(cell) -> str | None:
     return str(v).strip() or None if v is not None else None
 
 
-async def _load_position_map(school_id: uuid.UUID, db: AsyncSession) -> dict[str, uuid.UUID]:
+async def _load_category_map(school_id: uuid.UUID, db) -> dict[str, uuid.UUID]:
     rows = await db.scalars(
-        select(StaffPosition).where(
-            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None))
+        select(StaffCategory).where(
+            or_(StaffCategory.school_id == school_id, StaffCategory.school_id.is_(None)),
+            StaffCategory.is_active == True,
         )
     )
-    return {p.name.lower(): p.id for p in rows}
+    return {c.name.lower(): c.id for c in rows}
 
 
 async def process_import(
@@ -66,7 +66,7 @@ async def process_import(
     school_id: uuid.UUID,
     school_code: str,
     user_id: uuid.UUID,
-    db: AsyncSession,
+    db,
 ) -> ImportBatchResult:
     from openpyxl import load_workbook
 
@@ -90,7 +90,7 @@ async def process_import(
             detail = "Unrecognised template. Download the official template from GET /staff/import/template."
         raise HTTPException(status_code=422, detail=detail)
 
-    pos_map = await _load_position_map(school_id, db)
+    category_map = await _load_category_map(school_id, db)
 
     batch = ImportBatch(
         school_id=school_id, import_type="staff", status=ImportStatus.PROCESSING,
@@ -101,7 +101,6 @@ async def process_import(
     await db.flush()
 
     results: list[ImportRowResult] = []
-    warn_results: list[ImportRowResult] = []
     created = failed = 0
 
     for row_num in range(DATA_START, (ws.max_row or DATA_START) + 1):
@@ -119,16 +118,9 @@ async def process_import(
             else:
                 raw[field] = _str(cells[col])
 
-        position_name = raw.pop("position_name", None)
-        category = raw.get("staff_category")
-        auto_assigned = False
-        if not position_name and category == "TEACHING":
-            # fuzzy fallback: first position whose name contains "teacher"
-            teacher_key = next((k for k in pos_map if "teacher" in k), None)
-            position_name = teacher_key
-            auto_assigned = teacher_key is None  # True means we wanted to assign but couldn't
-        pos_id = pos_map.get(position_name.lower()) if position_name else None
-        raw["position_ids"] = [pos_id] if pos_id else []
+        category_name = raw.pop("job_class_name", None)
+        raw["category_id"] = category_map.get(category_name.lower()) if category_name else None
+        raw["position_ids"] = []
 
         try:
             req = StaffMemberCreate(**raw)
@@ -145,9 +137,9 @@ async def process_import(
             first_name=req.first_name,
             middle_name=req.middle_name,
             last_name=req.last_name,
+            category_id=req.category_id,
             date_of_birth=req.date_of_birth,
             gender=req.gender,
-            staff_category=req.staff_category,
             employment_type=req.employment_type,
             marital_status=req.marital_status,
             national_id=req.national_id,
@@ -162,20 +154,8 @@ async def process_import(
             async with db.begin_nested():
                 db.add(member)
                 await db.flush()
-                if req.position_ids:
-                    from app.models.staff import staff_member_positions as smp
-                    await db.execute(
-                        smp.insert(),
-                        [{"staff_member_id": member.id, "position_id": pid} for pid in req.position_ids],
-                    )
             _log_row(db, batch.id, school_id, row_num, raw, "success", None, member.id)
-            row_result = ImportRowResult(row=row_num, ref=req.staff_number, status="created", error=None)
-            if auto_assigned:
-                row_result.warning = (
-                    "Imported as Teaching staff but no position containing 'Teacher' exists — assign a position manually."
-                )
-                warn_results.append(row_result)
-            results.append(row_result)
+            results.append(ImportRowResult(row=row_num, ref=req.staff_number, status="created", error=None))
             created += 1
         except IntegrityError:
             try:
@@ -204,12 +184,12 @@ async def process_import(
         created=created,
         failed=failed,
         errors=[r for r in results if r.status == "failed"],
-        warnings=warn_results,
+        warnings=[],
     )
 
 
 def _log_row(
-    db: AsyncSession,
+    db,
     batch_id: uuid.UUID,
     school_id: uuid.UUID,
     row_num: int,

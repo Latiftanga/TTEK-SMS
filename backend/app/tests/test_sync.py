@@ -29,11 +29,11 @@ async def assessment_type(db_session: AsyncSession, school: School) -> Assessmen
 
 @pytest.fixture
 async def subject(db_session: AsyncSession, school: School):
-    from app.models.academic import SubjectCatalogue, SubjectType, Subject
-    cat = SubjectCatalogue(name="English", code="ENG_SYNC", subject_type=SubjectType.CORE)
+    from app.models.academic import SubjectCatalogue, SubjectType, Subject, SchoolLevel
+    cat = SubjectCatalogue(name="English", code="ENG_SYNC", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, is_active=True)
+    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="ENG", name="English", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     return subj

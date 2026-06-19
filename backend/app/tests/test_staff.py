@@ -12,6 +12,7 @@ import pytest_asyncio
 
 from app.models.auth import StaffPosition
 from app.models.school import School
+from app.models.staff import StaffCategory, StaffRank, StaffType
 from sqlalchemy import select
 
 
@@ -22,6 +23,32 @@ async def _get_position_id(db_session: AsyncSession) -> str:
     pos = await db_session.scalar(select(StaffPosition).limit(1))
     assert pos is not None, "Run seed_reference_data.py first"
     return str(pos.id)
+
+
+async def _seed_rank(db_session: AsyncSession) -> tuple[str, str]:
+    """Create a template category + rank and return (category_id, rank_id)."""
+    cat = await db_session.scalar(
+        select(StaffCategory).where(StaffCategory.code == "TEACHING", StaffCategory.school_id.is_(None))
+    )
+    if not cat:
+        cat = StaffCategory(
+            school_id=None, name="Teaching Staff", code="TEACHING",
+            staff_type=StaffType.TEACHING, is_template=True, is_active=True,
+        )
+        db_session.add(cat)
+        await db_session.flush()
+
+    rank = await db_session.scalar(
+        select(StaffRank).where(StaffRank.category_id == cat.id, StaffRank.title == "Superintendent I")
+    )
+    if not rank:
+        rank = StaffRank(
+            school_id=None, category_id=cat.id, title="Superintendent I",
+            is_template=True, is_active=True,
+        )
+        db_session.add(rank)
+        await db_session.flush()
+    return str(cat.id), str(rank.id)
 
 
 def _staff_payload(**overrides) -> dict:
@@ -153,39 +180,50 @@ async def test_add_and_delete_qualification(client: AsyncClient, auth: dict):
 # ── Promotions ────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_record_teaching_promotion_auto_assigns_teacher_position(
+async def test_record_promotion(
     client: AsyncClient, auth: dict, db_session: AsyncSession
 ):
     staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    _, rank_id = await _seed_rank(db_session)
 
     resp = await client.post(f"/staff/{staff_id}/promotions", json={
-        "staff_category": "TEACHING",
-        "to_grade": "Superintendent I",
+        "to_rank_id": rank_id,
         "effective_date": "2024-01-15",
         "reason": "Annual review",
     }, headers=auth)
     assert resp.status_code == 201
     promo = resp.json()
-    assert promo["staff_category"] == "TEACHING"
-    assert promo["to_grade"] == "Superintendent I"
+    assert promo["to_rank_title"] == "Superintendent I"
+    assert promo["from_rank_id"] is None
+    assert promo["reason"] == "Annual review"
 
-    # Teacher position should be auto-assigned
-    detail = (await client.get(f"/staff/{staff_id}", headers=auth)).json()
-    assert "Teacher" in detail["position_names"]
+
+@pytest.mark.asyncio
+async def test_promotion_invalid_rank(client: AsyncClient, auth: dict):
+    """Promotion with non-existent to_rank_id must 404."""
+    import uuid
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    resp = await client.post(f"/staff/{staff_id}/promotions", json={
+        "to_rank_id": str(uuid.uuid4()),
+        "effective_date": "2024-01-15",
+    }, headers=auth)
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_list_promotions(client: AsyncClient, auth: dict, db_session: AsyncSession):
     staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    _, rank_id = await _seed_rank(db_session)
     await client.post(f"/staff/{staff_id}/promotions", json={
-        "staff_category": "TEACHING",
-        "to_grade": "Superintendent I",
+        "to_rank_id": rank_id,
         "effective_date": "2024-01-15",
     }, headers=auth)
 
     resp = await client.get(f"/staff/{staff_id}/promotions", headers=auth)
     assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    promos = resp.json()
+    assert len(promos) == 1
+    assert promos[0]["to_rank_title"] == "Superintendent I"
 
 
 # ── Leave ─────────────────────────────────────────────────────────────────────

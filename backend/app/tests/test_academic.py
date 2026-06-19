@@ -135,15 +135,14 @@ async def test_create_class_display_name(client: AsyncClient, auth: dict):
     }, headers=auth)).json()["id"]
 
     resp = await client.post("/academic/classes", json={
-        "academic_year_id": year_id,
-        "level": "SHS 2",
-        "year_group": 2023,
+        "level": "SHS",
+        "year_group": 2,
         "programme_id": prog_id,
         "stream": "A",
     }, headers=auth)
     assert resp.status_code == 201
     data = resp.json()
-    assert data["display_name"] == "SHS 2 General Science A (2023)"
+    assert data["display_name"] == "2 General Science A"
     assert data["programme_name"] == "General Science"
 
 
@@ -154,14 +153,13 @@ async def test_create_basic_class_no_programme(client: AsyncClient, auth: dict):
     }, headers=auth)).json()["id"]
 
     resp = await client.post("/academic/classes", json={
-        "academic_year_id": year_id,
-        "level": "JHS 2",
-        "year_group": 2023,
+        "level": "JHS",
+        "year_group": 2,
         "stream": "B",
     }, headers=auth)
     assert resp.status_code == 201
     data = resp.json()
-    assert data["display_name"] == "JHS 2 B (2023)"
+    assert data["display_name"] == "JHS 2 B"
     assert data["programme_id"] is None
 
 

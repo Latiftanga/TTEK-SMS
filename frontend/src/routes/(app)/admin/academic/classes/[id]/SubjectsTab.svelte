@@ -70,7 +70,7 @@
   let assigningSubjectId = $state<string | null>(null);
   let assignSTStaffId    = $state('');
   let stSearch           = $state('');
-  const stFiltered = $derived(staff.filter(s => s.is_active && s.staff_category === 'TEACHING' && (!stSearch || s.display_name.toLowerCase().includes(stSearch.toLowerCase()))));
+  const stFiltered = $derived(staff.filter(s => s.is_active && s.staff_type === 'TEACHING' && (!stSearch || s.display_name.toLowerCase().includes(stSearch.toLowerCase()))));
   const assignSTMut = createMutation({
     mutationFn: ({ subjectId, staffId }: { subjectId: string; staffId: string }) =>
       assignSubjectTeacher(classId, { subject_id: subjectId, staff_member_id: staffId, academic_term_id: selectedTermId }),

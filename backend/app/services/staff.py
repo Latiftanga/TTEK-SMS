@@ -38,8 +38,10 @@ def _to_summary(member: StaffMember) -> StaffMemberSummary:
         middle_name=member.middle_name,
         last_name=member.last_name,
         display_name=_display_name(member.first_name, member.middle_name, member.last_name),
+        category_id=member.category_id,
+        category_name=member.category.name if member.category else None,
+        staff_type=member.category.staff_type if member.category else None,
         gender=member.gender,
-        staff_category=member.staff_category,
         employment_type=member.employment_type,
         phone=member.phone,
         email=member.email,
@@ -75,9 +77,9 @@ async def create_staff(
         first_name=req.first_name.strip(),
         middle_name=req.middle_name.strip() if req.middle_name else None,
         last_name=req.last_name.strip(),
+        category_id=req.category_id,
         date_of_birth=req.date_of_birth,
         gender=req.gender,
-        staff_category=req.staff_category,
         employment_type=req.employment_type,
         marital_status=req.marital_status,
         national_id=req.national_id,
@@ -96,15 +98,12 @@ async def create_staff(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Staff number '{req.staff_number}' is already in use at this school.",
         )
-    final_position_ids = list(req.position_ids)
-    if req.staff_category and req.staff_category.value == "TEACHING":
-        final_position_ids = await _merge_teacher_position(final_position_ids, school_id, db)
-    if final_position_ids:
+    if req.position_ids:
         await db.execute(
             staff_member_positions.insert(),
-            [{"staff_member_id": member.id, "position_id": pid} for pid in final_position_ids],
+            [{"staff_member_id": member.id, "position_id": pid} for pid in req.position_ids],
         )
-    await db.refresh(member, attribute_names=["positions", "qualifications", "emergency_contacts"])
+    await db.refresh(member, attribute_names=["positions", "qualifications", "emergency_contacts", "category"])
     return _to_detail(member)
 
 
@@ -119,7 +118,7 @@ async def list_staff(
     q = (
         select(StaffMember)
         .where(StaffMember.school_id == school_id)
-        .options(selectinload(StaffMember.positions))
+        .options(selectinload(StaffMember.positions), selectinload(StaffMember.category))
         .order_by(StaffMember.last_name, StaffMember.first_name)
         .offset(skip)
         .limit(limit)
@@ -142,6 +141,7 @@ async def get_staff(
             selectinload(StaffMember.positions),
             selectinload(StaffMember.qualifications),
             selectinload(StaffMember.emergency_contacts),
+            selectinload(StaffMember.category),
         )
     )
     if not member:
@@ -162,6 +162,7 @@ async def update_staff(
             selectinload(StaffMember.positions),
             selectinload(StaffMember.qualifications),
             selectinload(StaffMember.emergency_contacts),
+            selectinload(StaffMember.category),
         )
     )
     if not member:
@@ -173,11 +174,7 @@ async def update_staff(
     for field, val in update_data.items():
         setattr(member, field, val)
 
-    # If category is being set to TEACHING, ensure Teacher position is included
-    new_category = update_data.get("staff_category") or member.staff_category
     if new_position_ids is not None:
-        if new_category and new_category.value == "TEACHING":
-            new_position_ids = await _merge_teacher_position(new_position_ids, school_id, db)
         await db.execute(
             delete(staff_member_positions).where(
                 staff_member_positions.c.staff_member_id == staff_id
@@ -189,40 +186,9 @@ async def update_staff(
                 [{"staff_member_id": staff_id, "position_id": pid} for pid in new_position_ids],
             )
         await db.refresh(member, attribute_names=["positions"])
-    elif "staff_category" in update_data and update_data["staff_category"] and update_data["staff_category"].value == "TEACHING":
-        # Category changed to TEACHING but positions not explicitly updated — auto-add Teacher
-        current_ids = [p.id for p in member.positions]
-        merged = await _merge_teacher_position(current_ids, school_id, db)
-        added = [pid for pid in merged if pid not in current_ids]
-        if added:
-            await db.execute(
-                staff_member_positions.insert(),
-                [{"staff_member_id": staff_id, "position_id": pid} for pid in added],
-            )
-            await db.refresh(member, attribute_names=["positions"])
+
+    if "category_id" in update_data:
+        await db.refresh(member, attribute_names=["category"])
 
     await db.flush()
     return _to_detail(member)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-async def _merge_teacher_position(
-    position_ids: list[uuid.UUID],
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> list[uuid.UUID]:
-    """Return position_ids with the TEACHER position guaranteed to be included."""
-    from app.models.auth import StaffPosition
-    from sqlalchemy import or_
-    teacher = await db.scalar(
-        select(StaffPosition).where(
-            StaffPosition.code == "TEACHER",
-            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)),
-        ).order_by(StaffPosition.school_id.nulls_last()).limit(1)
-    )
-    if teacher and teacher.id not in position_ids:
-        return [*position_ids, teacher.id]
-    return position_ids
-
-

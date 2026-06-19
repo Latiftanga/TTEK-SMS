@@ -131,7 +131,7 @@ async def academic_term(db_session: AsyncSession, school: School, academic_year:
 @pytest_asyncio.fixture
 async def school_class(db_session: AsyncSession, school: School, academic_year: AcademicYear) -> Class:
     cls = Class(
-        school_id=school.id, academic_year_id=academic_year.id,
+        school_id=school.id,
         level="SHS", year_group=2, stream="A", is_active=True,
     )
     db_session.add(cls)

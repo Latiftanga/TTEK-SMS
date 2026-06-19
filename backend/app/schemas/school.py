@@ -5,7 +5,7 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models.school import EmailProvider, SchoolType, SmsProvider
+from app.models.school import EmailProvider, SchoolOwnership, SchoolType, SmsProvider
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
@@ -129,6 +129,7 @@ class SchoolRead(BaseModel):
     short_name: str | None
     school_code: str
     school_type: SchoolType
+    ownership: SchoolOwnership
     region_id: uuid.UUID
     district_id: uuid.UUID
     phone: str | None

@@ -16,6 +16,7 @@ export interface SchoolRead {
   short_name: string | null;
   school_code: string;
   school_type: 'BASIC' | 'SHS' | 'TECHNICAL' | 'VOCATIONAL' | 'PRIVATE';
+  ownership: 'PUBLIC' | 'PRIVATE';
   phone: string | null;
   email: string | null;
   address: string | null;

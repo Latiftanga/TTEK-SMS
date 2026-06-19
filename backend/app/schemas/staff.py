@@ -2,7 +2,53 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, field_validator
-from app.models.staff import EmploymentType, Gender, LeaveStatus, MaritalStatus, StaffCategory
+from app.models.staff import EmploymentType, Gender, LeaveStatus, MaritalStatus, StaffType
+
+
+class StaffCategoryCreate(BaseModel):
+    name: str
+    code: str
+    staff_type: StaffType | None = None
+
+    @field_validator("name", "code")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Field must not be blank")
+        return v.strip()
+
+
+class StaffCategoryRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    code: str
+    staff_type: StaffType | None
+    is_template: bool
+    is_active: bool
+    school_id: uuid.UUID | None
+    model_config = {"from_attributes": True}
+
+
+class StaffRankCreate(BaseModel):
+    title: str
+    category_id: uuid.UUID
+
+    @field_validator("title")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Field must not be blank")
+        return v.strip()
+
+
+class StaffRankRead(BaseModel):
+    id: uuid.UUID
+    title: str
+    category_id: uuid.UUID
+    is_template: bool
+    is_active: bool
+    school_id: uuid.UUID | None
+    model_config = {"from_attributes": True}
 
 
 class PositionRead(BaseModel):
@@ -16,9 +62,9 @@ class StaffMemberCreate(BaseModel):
     first_name: str
     middle_name: str | None = None
     last_name: str
+    category_id: uuid.UUID | None = None
     date_of_birth: date | None = None
     gender: Gender | None = None
-    staff_category: StaffCategory | None = None
     employment_type: EmploymentType | None = None
     marital_status: MaritalStatus | None = None
     national_id: str | None = None
@@ -41,9 +87,9 @@ class StaffMemberUpdate(BaseModel):
     first_name: str | None = None
     middle_name: str | None = None
     last_name: str | None = None
+    category_id: uuid.UUID | None = None
     date_of_birth: date | None = None
     gender: Gender | None = None
-    staff_category: StaffCategory | None = None
     employment_type: EmploymentType | None = None
     marital_status: MaritalStatus | None = None
     national_id: str | None = None
@@ -65,8 +111,10 @@ class StaffMemberSummary(BaseModel):
     middle_name: str | None
     last_name: str
     display_name: str
+    category_id: uuid.UUID | None
+    category_name: str | None
+    staff_type: StaffType | None
     gender: Gender | None
-    staff_category: StaffCategory | None
     employment_type: EmploymentType | None
     phone: str | None
     email: str | None
@@ -112,6 +160,13 @@ class QualificationCreate(BaseModel):
     year_obtained: int | None = None
 
 
+class QualificationUpdate(BaseModel):
+    institution: str | None = None
+    qualification_type: str | None = None
+    field_of_study: str | None = None
+    year_obtained: int | None = None
+
+
 class QualificationRead(BaseModel):
     id: uuid.UUID
     institution: str
@@ -123,21 +178,26 @@ class QualificationRead(BaseModel):
 
 
 class PromotionCreate(BaseModel):
-    staff_category: str  # "TEACHING" or "NON_TEACHING"
-    non_teaching_group: str | None = None
-    from_grade: str | None = None
-    to_grade: str
+    from_rank_id: uuid.UUID | None = None
+    to_rank_id: uuid.UUID
     effective_date: date
+    reason: str | None = None
+
+
+class PromotionUpdate(BaseModel):
+    from_rank_id: uuid.UUID | None = None
+    to_rank_id: uuid.UUID | None = None
+    effective_date: date | None = None
     reason: str | None = None
 
 
 class PromotionRead(BaseModel):
     id: uuid.UUID
     staff_member_id: uuid.UUID
-    staff_category: str
-    non_teaching_group: str | None
-    from_grade: str | None
-    to_grade: str
+    from_rank_id: uuid.UUID | None
+    to_rank_id: uuid.UUID | None
+    from_rank_title: str | None = None
+    to_rank_title: str | None = None
     effective_date: date
     reason: str | None
     created_at: datetime

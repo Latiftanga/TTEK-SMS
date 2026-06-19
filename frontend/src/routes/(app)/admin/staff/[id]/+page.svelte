@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getStaff, updateStaff, resetStaffPassword, type TempPasswordResult } from '$lib/api/staff';
+  import { getMySchool } from '$lib/api/schools';
   import { toast } from '$lib/stores/toast';
   import Badge                from '$lib/components/Badge.svelte';
   import ProfileTab           from './ProfileTab.svelte';
@@ -20,13 +21,19 @@
     staleTime: 2 * 60_000,
   });
 
+  const schoolQuery = createQuery({
+    queryKey: ['my-school'],
+    queryFn:  getMySchool,
+    staleTime: 10 * 60_000,
+  });
+
   type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave';
-  const TABS: { key: Tab; label: string }[] = [
+  const TABS = $derived((): { key: Tab; label: string }[] => [
     { key: 'profile',        label: 'Profile'        },
     { key: 'qualifications', label: 'Qualifications' },
-    { key: 'promotions',     label: 'Promotions'     },
+    ...($schoolQuery.data?.ownership !== 'PRIVATE' ? [{ key: 'promotions' as Tab, label: 'Promotions' }] : []),
     { key: 'leave',          label: 'Leave'          },
-  ];
+  ]);
   const activeTab = $derived(() => (($page.url.searchParams.get('tab') as Tab) ?? 'profile'));
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
 
@@ -107,12 +114,8 @@
         <div class="flex flex-wrap items-center gap-2.5 mb-1">
           <h1 class="text-xl font-bold text-[var(--fg)]">{s.display_name}</h1>
           <Badge label={s.is_active ? 'Active' : 'Inactive'} color={s.is_active ? 'green' : 'gray'} variant="dot" />
-          {#if s.staff_category}
-            <Badge
-              label={s.staff_category === 'TEACHING' ? 'Teaching' : 'Non-Teaching'}
-              color={s.staff_category === 'TEACHING' ? 'teal' : 'violet'}
-              variant="solid"
-            />
+          {#if s.category_name}
+            <Badge label={s.category_name} color="violet" variant="solid" />
           {/if}
         </div>
 
@@ -186,7 +189,7 @@
     <div>
       <!-- Pill tabs -->
       <div class="mb-5 flex flex-wrap gap-1 rounded-xl bg-[var(--hover)] p-1">
-        {#each TABS as t}
+        {#each TABS() as t}
           <button onclick={() => setTab(t.key)}
             class="rounded-lg px-4 py-2 text-sm font-medium transition
                    {activeTab() === t.key
@@ -218,7 +221,7 @@
         </p>
         <dl class="space-y-3">
           {#each ([
-            ['Category',      s.staff_category === 'TEACHING' ? 'Teaching' : s.staff_category === 'NON_TEACHING' ? 'Non-Teaching' : '—'],
+            ['Category',      s.category_name ?? '—'],
             ['Type',          s.employment_type ? EMP_LABEL[s.employment_type] : '—'],
             ['Joined',        fmtDate(s.joined_date)],
             ['Date of birth', fmtDate(s.date_of_birth)],

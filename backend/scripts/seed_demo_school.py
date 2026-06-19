@@ -5,17 +5,17 @@ Run inside Docker:
     docker compose exec api python scripts/seed_demo_school.py
 
 Creates:
-  Basic School  (subdomain: basic)
-    admin@basic.school / Demo1234!
-    teacher@basic.school / Demo1234!
-    finance@basic.school / Demo1234!
+  GES Basic School  (subdomain: basic, ownership: PUBLIC)
+    admin@basic.school   / Demo1234!  — School Administrator
+    teacher@basic.school / Demo1234!  — Teacher
+    finance@basic.school / Demo1234!  — Finance Officer
 
-  Senior High School  (subdomain: shs)
-    admin@shs.school / Demo1234!
-    teacher@shs.school / Demo1234!
-    finance@shs.school / Demo1234!
+  Demonstration Senior High School  (subdomain: shs, ownership: PUBLIC)
+    admin@shs.school   / Demo1234!  — School Administrator
+    teacher@shs.school / Demo1234!  — Teacher
+    finance@shs.school / Demo1234!  — Finance Officer
 
-Visit http://localhost:5173 and enter school code: basic  OR  shs
+Safe to re-run: skips existing rows and fills any gaps.
 """
 import asyncio
 import sys
@@ -26,121 +26,146 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.core.auth import hash_password
-from app.models import school as school_models, auth as auth_models, staff as staff_models  # noqa: F401
+# All models must be imported so SQLAlchemy resolves FK references
+from app.models import school as _sm, auth as _am, staff as _stm  # noqa: F401
 from app.models import academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
-from app.models.school import School, SchoolType, GhanaRegion, GhanaDistrict
+from app.models.school import School, SchoolType, SchoolOwnership, GhanaRegion, GhanaDistrict
 from app.models.auth import User, LoginType, StaffPosition, PositionPermission
-from app.models.staff import StaffMember, staff_member_positions
+from app.models.staff import StaffMember, StaffCategory, staff_member_positions
 
 DEMO_PASSWORD = "Demo1234!"
 
 DEMO_SCHOOLS = [
     {
-        "subdomain": "basic",
-        "school_code": "BASIC-DEMO",
-        "name": "GES Basic School",
-        "short_name": "Basic School",
-        "school_type": "BASIC",
-        "brand_color": "#15803d",  # green
-        "motto": "Learning for Life",
+        "subdomain":    "basic",
+        "school_code":  "BASIC-DEMO",
+        "name":         "Basic School",
+        "short_name":   "Basic School",
+        "school_type":  "BASIC",
+        "ownership":    "PUBLIC",
+        "brand_color":  "#15803d",
+        "motto":        "Learning for Life",
         "email_domain": "basic.school",
     },
     {
-        "subdomain": "shs",
-        "school_code": "SHS-DEMO",
-        "name": "GES Senior High School",
-        "short_name": "Senior High School",
-        "school_type": "SHS",
-        "brand_color": "#1e40af",  # blue
-        "motto": "Excellence in Education",
+        "subdomain":    "shs",
+        "school_code":  "SHS-DEMO",
+        "name":         "Senior High School",
+        "short_name":   "SHS",
+        "school_type":  "SHS",
+        "ownership":    "PUBLIC",
+        "brand_color":  "#1e40af",
+        "motto":        "Excellence in Education",
         "email_domain": "shs.school",
     },
 ]
 
+# Category codes seeded by seed_reference_data.py
+CATEGORY_BY_ROLE = {
+    "admin":   "ADMINISTRATIVE",
+    "teacher": "TEACHING",
+    "finance": "ACCOUNTING",
+}
+
+
+async def get_category_id(db, code: str) -> object:
+    cat = await db.scalar(
+        select(StaffCategory).where(
+            StaffCategory.code == code,
+            StaffCategory.school_id.is_(None),  # GES template
+        )
+    )
+    return cat.id if cat else None
+
 
 async def get_or_create_position(db, school_id, name: str, perms: list[str]) -> StaffPosition:
-    existing = await db.scalar(
+    pos = await db.scalar(
         select(StaffPosition).where(
             StaffPosition.school_id == school_id,
             StaffPosition.name == name,
         )
     )
-    if not existing:
+    if not pos:
         code = name.upper().replace(" ", "_")[:50]
-        existing = StaffPosition(school_id=school_id, name=name, code=code, is_template=False)
-        db.add(existing)
+        pos = StaffPosition(school_id=school_id, name=name, code=code, is_template=False)
+        db.add(pos)
         await db.flush()
 
-    # Sync permissions — add any that are missing (idempotent on re-runs).
     existing_perms = {
         (p.module, p.action)
         for p in await db.scalars(
-            select(PositionPermission).where(PositionPermission.position_id == existing.id)
+            select(PositionPermission).where(PositionPermission.position_id == pos.id)
         )
     }
     for perm_str in perms:
         module, action = perm_str.split(".")
         if (module, action) not in existing_perms:
             db.add(PositionPermission(
-                position_id=existing.id,
-                module=module,
-                action=action,
-                is_allowed=True,
+                position_id=pos.id, module=module, action=action, is_allowed=True,
             ))
-    return existing
+    return pos
 
 
-async def create_staff_user(db, school_id, first: str, last: str, email: str, position) -> User:
-    existing = await db.scalar(select(User).where(User.email == email))
-    if existing:
-        # Ensure position assignment exists (handles post-migration re-runs)
-        if existing.staff_member_id:
+async def create_staff_user(
+    db, school_id, role: str, first: str, last: str,
+    email: str, staff_num: str, position: StaffPosition, category_id,
+) -> None:
+    existing_user = await db.scalar(select(User).where(User.email == email))
+    if existing_user:
+        # Patch category_id if missing
+        if existing_user.staff_member_id and category_id:
+            member = await db.get(StaffMember, existing_user.staff_member_id)
+            if member and member.category_id is None:
+                member.category_id = category_id
+                print(f"  Patched category for {email}")
+        # Ensure position link
+        if existing_user.staff_member_id:
             has_pos = await db.scalar(
                 select(staff_member_positions).where(
-                    staff_member_positions.c.staff_member_id == existing.staff_member_id,
+                    staff_member_positions.c.staff_member_id == existing_user.staff_member_id,
                     staff_member_positions.c.position_id == position.id,
                 )
             )
             if not has_pos:
                 await db.execute(
                     staff_member_positions.insert().values(
-                        staff_member_id=existing.staff_member_id, position_id=position.id
+                        staff_member_id=existing_user.staff_member_id,
+                        position_id=position.id,
                     )
                 )
-                print(f"  Re-assigned position '{position.name}' to {email}")
-            else:
-                print(f"  User already exists: {email}")
-        return existing
+        print(f"  Exists:  {email}")
+        return
 
     member = StaffMember(
         school_id=school_id,
-        staff_number=f"STAFF-{first[:3].upper()}",
+        staff_number=staff_num,
         first_name=first,
         last_name=last,
         email=email,
         is_active=True,
+        category_id=category_id,
     )
     db.add(member)
     await db.flush()
     await db.execute(
-        staff_member_positions.insert().values(staff_member_id=member.id, position_id=position.id)
+        staff_member_positions.insert().values(
+            staff_member_id=member.id, position_id=position.id,
+        )
     )
-
-    user = User(
+    db.add(User(
         school_id=school_id,
         login_type=LoginType.EMAIL,
         email=email,
         password_hash=hash_password(DEMO_PASSWORD),
         is_active=True,
         staff_member_id=member.id,
-    )
-    db.add(user)
-    return user
+    ))
+    print(f"  Created: {email} / {DEMO_PASSWORD}")
 
 
-async def seed_school(db, cfg: dict, region_id, district_id):
+async def seed_school(db, cfg: dict, region_id, district_id) -> None:
     subdomain = cfg["subdomain"]
-    domain = cfg["email_domain"]
+    domain    = cfg["email_domain"]
 
     school = await db.scalar(select(School).where(School.subdomain == subdomain))
     if not school:
@@ -149,6 +174,7 @@ async def seed_school(db, cfg: dict, region_id, district_id):
             short_name=cfg["short_name"],
             school_code=cfg["school_code"],
             school_type=SchoolType[cfg["school_type"]],
+            ownership=SchoolOwnership[cfg["ownership"]],
             region_id=region_id,
             district_id=district_id,
             subdomain=subdomain,
@@ -158,9 +184,9 @@ async def seed_school(db, cfg: dict, region_id, district_id):
         )
         db.add(school)
         await db.flush()
-        print(f"\nCreated: {school.name}  (code: {subdomain})")
+        print(f"\nCreated: {school.name}  ({subdomain})")
     else:
-        print(f"\nExists:  {school.name}  (code: {subdomain})")
+        print(f"\nExists:  {school.name}  ({subdomain})")
 
     school_id = school.id
 
@@ -189,34 +215,38 @@ async def seed_school(db, cfg: dict, region_id, district_id):
         "fees.view", "fees.create", "fees.collect",
     ])
 
-    for first, last, role, pos in [
-        ("Admin", "User",    "admin",   admin_pos),
-        ("Teacher", "User",  "teacher", teacher_pos),
-        ("Finance", "User",  "finance", finance_pos),
-    ]:
-        email = f"{role}@{domain}"
-        await create_staff_user(db, school_id, first, last, email, pos)
-        print(f"  {email} / {DEMO_PASSWORD}")
+    admin_cat   = await get_category_id(db, CATEGORY_BY_ROLE["admin"])
+    teacher_cat = await get_category_id(db, CATEGORY_BY_ROLE["teacher"])
+    finance_cat = await get_category_id(db, CATEGORY_BY_ROLE["finance"])
+
+    staff_defs = [
+        ("admin",   "Admin",   "User", f"admin@{domain}",   f"{subdomain.upper()}-ADM-001", admin_pos,   admin_cat),
+        ("teacher", "Teacher", "User", f"teacher@{domain}", f"{subdomain.upper()}-TEA-001", teacher_pos, teacher_cat),
+        ("finance", "Finance", "User", f"finance@{domain}", f"{subdomain.upper()}-FIN-001", finance_pos, finance_cat),
+    ]
+    for role, first, last, email, staff_num, pos, cat_id in staff_defs:
+        await create_staff_user(db, school_id, role, first, last, email, staff_num, pos, cat_id)
 
 
-async def seed():
+async def seed() -> None:
     async with AsyncSessionLocal() as db:
-        # Use the first available region/district from reference data
-        region = await db.scalar(select(GhanaRegion).limit(1))
+        region   = await db.scalar(select(GhanaRegion).limit(1))
         district = await db.scalar(select(GhanaDistrict).limit(1))
         if not region or not district:
-            print("ERROR: Reference data not seeded. Run seed_reference_data.py first.")
+            print("ERROR: Run seed_reference_data.py first.")
             return
 
         for cfg in DEMO_SCHOOLS:
             await seed_school(db, cfg, region.id, district.id)
+
         await db.commit()
 
-    print("\n─────────────────────────────────────────")
+    print("\n─────────────────────────────────────────────")
     print("Visit http://localhost:5173")
-    print("School code 'basic'  →  GES Basic School (green)")
-    print("School code 'shs'    →  GES Senior High School (blue)")
-    print("─────────────────────────────────────────")
+    print("  basic  →  GES Basic School        (green)")
+    print("  shs    →  Demo Senior High School  (blue)")
+    print("  Password for all accounts: Demo1234!")
+    print("─────────────────────────────────────────────")
 
 
 if __name__ == "__main__":

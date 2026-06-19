@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-  import { createStaff, listPositions, type StaffCategory, type StaffDetail } from '$lib/api/staff';
+  import { createStaff, listCategories, type StaffDetail } from '$lib/api/staff';
   import { toast } from '$lib/stores/toast';
   import { portal } from '$lib/actions/portal';
 
@@ -13,32 +13,20 @@
 
   const qc = useQueryClient();
 
-  const positionsQuery = createQuery({
-    queryKey: ['positions'],
-    queryFn: listPositions,
+  const categoriesQuery = createQuery({
+    queryKey: ['staff-categories'],
+    queryFn: listCategories,
     staleTime: 10 * 60_000,
   });
 
   let form = $state({
     staff_number: '', first_name: '', last_name: '', middle_name: '',
     gender: '' as '' | 'MALE' | 'FEMALE',
-    staff_category: '' as '' | StaffCategory,
+    category_id: '' as string,
     employment_type: '' as '' | 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN',
-    position_ids: [] as string[],
     phone: '', email: '', joined_date: '',
   });
   let formError = $state('');
-
-  const teacherPositionId = $derived(() =>
-    ($positionsQuery.data ?? []).find(p => p.name === 'Teacher')?.id ?? null
-  );
-
-  $effect(() => {
-    const tid = teacherPositionId();
-    if (!tid) return;
-    if (form.staff_category === 'TEACHING' && !form.position_ids.includes(tid))
-      form.position_ids = [...form.position_ids, tid];
-  });
 
   const createMut = createMutation({
     mutationFn: createStaff,
@@ -46,8 +34,8 @@
       qc.invalidateQueries({ queryKey: ['staff'] });
       form = {
         staff_number: '', first_name: '', last_name: '', middle_name: '',
-        gender: '', staff_category: '', employment_type: '',
-        position_ids: [], phone: '', email: '', joined_date: '',
+        gender: '', category_id: '', employment_type: '',
+        phone: '', email: '', joined_date: '',
       };
       formError = '';
       onSuccess(data);
@@ -64,27 +52,19 @@
     if (!form.staff_number || !form.first_name || !form.last_name) {
       formError = 'Staff number, first name, and last name are required.'; return;
     }
-    if (!form.staff_category) { formError = 'Please select Teaching or Non-Teaching.'; return; }
     $createMut.mutate({
       staff_number:    form.staff_number,
       first_name:      form.first_name,
       last_name:       form.last_name,
       middle_name:     form.middle_name     || undefined,
       gender:          (form.gender         || undefined) as 'MALE' | 'FEMALE' | undefined,
-      staff_category:  form.staff_category  as StaffCategory,
+      category_id:     form.category_id     || undefined,
       employment_type: (form.employment_type || undefined) as 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN' | undefined,
-      position_ids:    form.position_ids.length ? form.position_ids : undefined,
       phone:           form.phone           || undefined,
       email:           form.email           || undefined,
       joined_date:     form.joined_date     || undefined,
     });
   }
-
-  const manualPositions = $derived(() =>
-    ($positionsQuery.data ?? []).filter(p =>
-      !['Teacher', 'House Master / Mistress', 'Class Teacher'].includes(p.name)
-    )
-  );
 </script>
 
 {#if open}
@@ -112,28 +92,6 @@
 
     <!-- Scrollable body -->
     <div class="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-
-      <!-- Category -->
-      <div>
-        <p class="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Staff category *</p>
-        <div class="grid grid-cols-2 gap-2">
-          {#each [
-            ['TEACHING',     'Teaching',     'Classroom & subject teachers'],
-            ['NON_TEACHING', 'Non-Teaching', 'Admin, finance, support staff'],
-          ] as [val, label, sub]}
-            <button type="button"
-              onclick={() => form.staff_category = val as StaffCategory}
-              class="flex flex-col items-start rounded-xl border p-3 text-left transition
-                     {form.staff_category === val
-                       ? 'border-[var(--brand)] bg-[var(--brand-dim)]'
-                       : 'border-[var(--border)] hover:bg-[var(--hover)]'}">
-              <span class="text-sm font-semibold leading-snug
-                           {form.staff_category === val ? 'text-[var(--brand)]' : 'text-[var(--fg)]'}">{label}</span>
-              <span class="mt-0.5 text-[11px] text-[var(--fg-muted)]">{sub}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
 
       <!-- Identity -->
       <div>
@@ -175,24 +133,37 @@
       <!-- Employment -->
       <div>
         <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Employment</p>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="space-y-3">
           <div>
-            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
-            <select bind:value={form.employment_type}
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Category</label>
+            <select bind:value={form.category_id}
               class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                      text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-              <option value="">Select…</option>
-              <option value="PERMANENT">Permanent</option>
-              <option value="CONTRACT">Contract</option>
-              <option value="NATIONAL_SERVICE">National Service</option>
-              <option value="INTERN">Intern</option>
+              <option value="">Select category…</option>
+              {#each $categoriesQuery.data ?? [] as cat (cat.id)}
+                <option value={cat.id}>{cat.name}</option>
+              {/each}
             </select>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
-            <input type="date" bind:value={form.joined_date}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
-                     text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
+              <select bind:value={form.employment_type}
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                       text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+                <option value="">Select…</option>
+                <option value="PERMANENT">Permanent</option>
+                <option value="CONTRACT">Contract</option>
+                <option value="NATIONAL_SERVICE">National Service</option>
+                <option value="INTERN">Intern</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
+              <input type="date" bind:value={form.joined_date}
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                       text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+            </div>
           </div>
         </div>
       </div>
@@ -214,39 +185,6 @@
           {/each}
         </div>
       </div>
-
-      <!-- Positions -->
-      {#if manualPositions().length > 0}
-        <div>
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
-            Additional positions
-            {#if form.staff_category === 'TEACHING'}
-              <span class="ml-1 normal-case font-normal" style="color: var(--brand)">— Teacher auto-assigned</span>
-            {/if}
-          </p>
-          <p class="mb-3 text-xs text-[var(--fg-muted)]">
-            Functional roles (Teacher, Class Teacher, House Master) are assigned via their respective modules.
-          </p>
-          <div class="flex flex-wrap gap-2">
-            {#each manualPositions() as p (p.id)}
-              <label class="flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition
-                            {form.position_ids.includes(p.id)
-                              ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]'
-                              : 'border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
-                <input type="checkbox" class="accent-[var(--brand)] h-3 w-3"
-                  checked={form.position_ids.includes(p.id)}
-                  onchange={() => {
-                    if (form.position_ids.includes(p.id))
-                      form.position_ids = form.position_ids.filter(id => id !== p.id);
-                    else
-                      form.position_ids = [...form.position_ids, p.id];
-                  }} />
-                {p.name}
-              </label>
-            {/each}
-          </div>
-        </div>
-      {/if}
 
     </div>
 

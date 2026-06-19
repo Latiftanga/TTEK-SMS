@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-  import { updateStaff, listPositions, addEmergencyContact, deleteEmergencyContact, type StaffCategory, type StaffDetail } from '$lib/api/staff';
+  import { updateStaff, listCategories, addEmergencyContact, deleteEmergencyContact, type StaffDetail } from '$lib/api/staff';
+  import PositionsCard from './PositionsCard.svelte';
 
   interface Props { staff: StaffDetail; staffId: string; }
   const { staff, staffId }: Props = $props();
@@ -8,9 +9,9 @@
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ['staff', staffId] });
 
-  const positionsQuery = createQuery({
-    queryKey: ['positions'],
-    queryFn: listPositions,
+  const categoriesQuery = createQuery({
+    queryKey: ['staff-categories'],
+    queryFn: listCategories,
     staleTime: 10 * 60_000,
   });
 
@@ -18,9 +19,8 @@
   let editing  = $state(false);
   let editForm = $state({
     first_name: '', last_name: '', middle_name: '', phone: '', email: '',
-    position_ids: [] as string[],
+    category_id: '' as string,
     gender: '' as '' | 'MALE' | 'FEMALE',
-    staff_category: '' as '' | StaffCategory,
     employment_type: '' as '' | 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN',
     marital_status: '' as '' | 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED' | 'SEPARATED',
     national_id: '', ssnit_number: '', address: '',
@@ -34,9 +34,8 @@
       middle_name:     staff.middle_name     ?? '',
       phone:           staff.phone           ?? '',
       email:           staff.email           ?? '',
-      position_ids:    [...staff.position_ids],
+      category_id:     staff.category_id     ?? '',
       gender:          staff.gender          ?? '',
-      staff_category:  staff.staff_category  ?? '',
       employment_type: staff.employment_type ?? '',
       marital_status:  staff.marital_status  ?? '',
       national_id:     staff.national_id     ?? '',
@@ -52,9 +51,8 @@
       middle_name:     editForm.middle_name     || undefined,
       phone:           editForm.phone           || undefined,
       email:           editForm.email           || undefined,
-      position_ids:    editForm.position_ids,
+      category_id:     editForm.category_id     || undefined,
       gender:          (editForm.gender         || undefined) as 'MALE' | 'FEMALE' | undefined,
-      staff_category:  (editForm.staff_category || undefined) as StaffCategory | undefined,
       employment_type: (editForm.employment_type || undefined) as 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN' | undefined,
       marital_status:  (editForm.marital_status || undefined) as 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED' | 'SEPARATED' | undefined,
       national_id:     editForm.national_id     || undefined,
@@ -88,14 +86,13 @@
     return new Date(d).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
-  const CATEGORY_LABEL: Record<string, string> = { TEACHING: 'Teaching', NON_TEACHING: 'Non-Teaching' };
   const EMPLOYMENT_LABEL: Record<string, string> = { PERMANENT: 'Permanent', CONTRACT: 'Contract', NATIONAL_SERVICE: 'National Service', INTERN: 'Intern' };
   const MARITAL_LABEL: Record<string, string> = { SINGLE: 'Single', MARRIED: 'Married', DIVORCED: 'Divorced', WIDOWED: 'Widowed', SEPARATED: 'Separated' };
 
   const DETAILS = $derived(() => [
     ['Full name',       staff.display_name],
     ['Staff number',    staff.staff_number],
-    ['Category',        staff.staff_category ? CATEGORY_LABEL[staff.staff_category] : '—'],
+    ['Category',        staff.category_name ?? '—'],
     ['Employment type', staff.employment_type ? EMPLOYMENT_LABEL[staff.employment_type] : '—'],
     ['Gender',          staff.gender ? staff.gender.charAt(0) + staff.gender.slice(1).toLowerCase() : '—'],
     ['Marital status',  staff.marital_status ? MARITAL_LABEL[staff.marital_status] : '—'],
@@ -103,7 +100,6 @@
     ['Ghana Card',      staff.national_id   ?? '—'],
     ['SSNIT No.',       staff.ssnit_number  ?? '—'],
     ['Address',         staff.address       ?? '—'],
-    ['Position(s)',     staff.position_names.length ? staff.position_names.join(', ') : '—'],
     ['Date joined',     fmtDate(staff.joined_date)],
   ] as [string, string][]);
 </script>
@@ -134,22 +130,19 @@
               class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
         {/each}
-        <!-- Category toggle -->
+
+        <!-- Category -->
         <div class="sm:col-span-2">
-          <p class="mb-2 text-xs font-medium text-[var(--fg-muted)]">Staff category</p>
-          <div class="flex gap-2">
-            {#each [['TEACHING', 'Teaching'], ['NON_TEACHING', 'Non-Teaching']] as [val, label]}
-              <button type="button"
-                onclick={() => editForm.staff_category = val as StaffCategory}
-                class="rounded-xl border px-4 py-2 text-sm font-medium transition
-                       {editForm.staff_category === val
-                         ? 'border-[var(--brand)] text-[var(--brand)] bg-[var(--hover)]'
-                         : 'border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
-                {label}
-              </button>
+          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Category</label>
+          <select bind:value={editForm.category_id}
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+            <option value="">Not specified</option>
+            {#each $categoriesQuery.data ?? [] as cat (cat.id)}
+              <option value={cat.id}>{cat.name}</option>
             {/each}
-          </div>
+          </select>
         </div>
+
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
           <select bind:value={editForm.employment_type}
@@ -188,25 +181,7 @@
           <textarea bind:value={editForm.address} rows="2" placeholder="Street, Town, Region"
             class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none resize-none"></textarea>
         </div>
-        <div class="sm:col-span-2">
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Positions</label>
-          <div class="flex flex-wrap gap-2">
-            {#each ($positionsQuery.data ?? []).filter(p => !['Teacher', 'House Master / Mistress', 'Class Teacher'].includes(p.name)) as p (p.id)}
-              <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--hover)]
-                            {editForm.position_ids.includes(p.id) ? 'border-[var(--brand)]' : ''}">
-                <input type="checkbox" class="accent-[var(--brand)]"
-                  checked={editForm.position_ids.includes(p.id)}
-                  onchange={() => {
-                    if (editForm.position_ids.includes(p.id))
-                      editForm.position_ids = editForm.position_ids.filter(id => id !== p.id);
-                    else
-                      editForm.position_ids = [...editForm.position_ids, p.id];
-                  }} />
-                {p.name}
-              </label>
-            {/each}
-          </div>
-        </div>
+
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
           <select bind:value={editForm.gender}
@@ -240,6 +215,9 @@
       </dl>
     {/if}
   </div>
+
+  <!-- Authority positions -->
+  <PositionsCard {staff} {staffId} />
 
   <!-- Emergency contacts -->
   <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">

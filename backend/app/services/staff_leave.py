@@ -4,8 +4,9 @@ Separated from services/staff.py to keep files under 300 lines.
 
 PROMOTION INVARIANT
 -------------------
-Promotions track Ghana GES civil-service grade changes (Teaching or Non-Teaching).
-from_grade is null for the first recorded promotion.
+Promotions track rank changes via FK to StaffRank.
+from_rank_id is null for the first recorded promotion.
+Current rank is derived at query time from the most recent promotion's to_rank.title.
 
 LEAVE INVARIANT
 ---------------
@@ -18,16 +19,29 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import or_
-from app.models.auth import StaffPosition
-from app.models.staff import LeaveStatus, StaffLeave, StaffMember, StaffPromotion, staff_member_positions
-from app.schemas.staff import LeaveCreate, LeaveRead, LeaveReview, PromotionCreate, PromotionRead
+from app.models.staff import LeaveStatus, StaffLeave, StaffMember, StaffPromotion, StaffRank
+from app.schemas.staff import LeaveCreate, LeaveRead, LeaveReview, PromotionCreate, PromotionRead, PromotionUpdate
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _promotion_to_read(p: StaffPromotion) -> PromotionRead:
+    return PromotionRead(
+        id=p.id,
+        staff_member_id=p.staff_member_id,
+        from_rank_id=p.from_rank_id,
+        to_rank_id=p.to_rank_id,
+        from_rank_title=p.from_rank.title if p.from_rank else None,
+        to_rank_title=p.to_rank.title if p.to_rank else None,
+        effective_date=p.effective_date,
+        reason=p.reason,
+        created_at=p.created_at,
+    )
 
 
 async def record_promotion(
@@ -42,17 +56,16 @@ async def record_promotion(
     )
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
-    if req.staff_category == "NON_TEACHING" and not req.non_teaching_group:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="non_teaching_group is required for NON_TEACHING category.")
+
+    to_rank = await db.get(StaffRank, req.to_rank_id)
+    if not to_rank:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="to_rank_id not found.")
 
     promotion = StaffPromotion(
         school_id=school_id,
         staff_member_id=staff_id,
-        staff_category=req.staff_category,
-        non_teaching_group=req.non_teaching_group,
-        from_grade=req.from_grade,
-        to_grade=req.to_grade,
+        from_rank_id=req.from_rank_id,
+        to_rank_id=req.to_rank_id,
         effective_date=req.effective_date,
         reason=req.reason,
         approved_by_id=approved_by_id,
@@ -60,43 +73,8 @@ async def record_promotion(
     )
     db.add(promotion)
     await db.flush()
-
-    # Auto-assign the Teacher position when a TEACHING promotion is recorded.
-    if req.staff_category == "TEACHING":
-        await _ensure_teacher_position(staff_id, school_id, db)
-
-    return PromotionRead.model_validate(promotion)
-
-
-async def _ensure_teacher_position(
-    staff_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    """Add the TEACHER position to a staff member if they don't already have it."""
-    teacher_pos = await db.scalar(
-        select(StaffPosition).where(
-            StaffPosition.code == "TEACHER",
-            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)),
-        ).order_by(StaffPosition.school_id.nulls_last()).limit(1)
-    )
-    if not teacher_pos:
-        return
-
-    existing = await db.scalar(
-        select(staff_member_positions).where(
-            staff_member_positions.c.staff_member_id == staff_id,
-            staff_member_positions.c.position_id == teacher_pos.id,
-        )
-    )
-    if not existing:
-        await db.execute(
-            staff_member_positions.insert().values(
-                staff_member_id=staff_id, position_id=teacher_pos.id
-            )
-        )
-        from app.core.permissions import invalidate_permissions
-        await invalidate_permissions(staff_id)
+    await db.refresh(promotion, attribute_names=["from_rank", "to_rank"])
+    return _promotion_to_read(promotion)
 
 
 async def list_promotions(
@@ -107,9 +85,62 @@ async def list_promotions(
     rows = await db.scalars(
         select(StaffPromotion)
         .where(StaffPromotion.staff_member_id == staff_id, StaffPromotion.school_id == school_id)
+        .options(selectinload(StaffPromotion.from_rank), selectinload(StaffPromotion.to_rank))
         .order_by(StaffPromotion.effective_date.desc())
     )
-    return [PromotionRead.model_validate(p) for p in rows]
+    return [_promotion_to_read(p) for p in rows]
+
+
+async def delete_promotion(
+    staff_id: uuid.UUID,
+    promotion_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    p = await db.scalar(
+        select(StaffPromotion).where(
+            StaffPromotion.id == promotion_id,
+            StaffPromotion.staff_member_id == staff_id,
+            StaffPromotion.school_id == school_id,
+        )
+    )
+    if not p:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promotion not found.")
+    await db.delete(p)
+    await db.flush()
+
+
+async def update_promotion(
+    staff_id: uuid.UUID,
+    promotion_id: uuid.UUID,
+    req: PromotionUpdate,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> PromotionRead:
+    p = await db.scalar(
+        select(StaffPromotion)
+        .where(
+            StaffPromotion.id == promotion_id,
+            StaffPromotion.staff_member_id == staff_id,
+            StaffPromotion.school_id == school_id,
+        )
+        .options(selectinload(StaffPromotion.from_rank), selectinload(StaffPromotion.to_rank))
+    )
+    if not p:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promotion not found.")
+    if req.to_rank_id is not None:
+        if not await db.get(StaffRank, req.to_rank_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="to_rank_id not found.")
+        p.to_rank_id = req.to_rank_id
+    if req.from_rank_id is not None:
+        p.from_rank_id = req.from_rank_id
+    if req.effective_date is not None:
+        p.effective_date = req.effective_date
+    if req.reason is not None:
+        p.reason = req.reason or None
+    await db.flush()
+    await db.refresh(p, attribute_names=["from_rank", "to_rank"])
+    return _promotion_to_read(p)
 
 
 async def submit_leave(
@@ -186,5 +217,3 @@ async def review_leave(
     leave.reviewed_at = _utcnow()
     await db.flush()
     return leave
-
-

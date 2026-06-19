@@ -38,6 +38,11 @@ class SchoolType(str, enum.Enum):
     SHS = "SHS"
 
 
+class SchoolOwnership(str, enum.Enum):
+    PUBLIC = "PUBLIC"
+    PRIVATE = "PRIVATE"
+
+
 class SmsProvider(str, enum.Enum):
     AFRICAS_TALKING = "AFRICAS_TALKING"
     HUBTEL = "HUBTEL"
@@ -93,6 +98,9 @@ class School(Base, UUIDPrimaryKey, TimestampMixin):
     short_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     school_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     school_type: Mapped[SchoolType] = mapped_column(SAEnum(SchoolType, name="schooltype"), nullable=False)
+    ownership: Mapped[SchoolOwnership] = mapped_column(
+        SAEnum(SchoolOwnership, name="schoolownership"), nullable=False, default=SchoolOwnership.PUBLIC
+    )
     region_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ghana_region.id"), nullable=False
     )

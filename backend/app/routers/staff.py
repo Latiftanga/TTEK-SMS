@@ -6,9 +6,9 @@ GET  /staff, /staff/{id}               staff.view
 POST /staff                            staff.create
 PATCH /staff/{id}                      staff.edit
 POST /staff/{id}/invite                school.manage_users
-POST/DELETE contacts & qualifications  staff.edit
-POST /staff/{id}/promotions            staff.edit
-GET  /staff/{id}/promotions            staff.view
+POST/PATCH/DELETE contacts & qualifications  staff.edit
+POST/PATCH/DELETE /staff/{id}/promotions     staff.edit
+GET  /staff/{id}/promotions                  staff.view
 POST /staff/{id}/leave                 staff.edit
 GET  /staff/{id}/leave                 staff.view
 GET  /staff/leave/pending              staff.approve_leave
@@ -34,8 +34,10 @@ from app.schemas.staff import (
     LeaveReview,
     PromotionCreate,
     PromotionRead,
+    PromotionUpdate,
     QualificationCreate,
     QualificationRead,
+    QualificationUpdate,
     StaffMemberCreate,
     StaffMemberDetail,
     StaffMemberSummary,
@@ -79,24 +81,28 @@ async def download_import_template(
     ids=Depends(require_permission("staff", "create")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return a branded .xlsx template pre-loaded with school positions as a dropdown."""
-    from app.models.auth import StaffPosition
-    from app.models.school import School
+    """Return a branded .xlsx template pre-loaded with categories as a dropdown."""
+    from app.models.school import School, SchoolOwnership
+    from app.models.staff import StaffCategory
     from sqlalchemy import or_, select
 
     _, school_id = ids
     school = await db.get(School, school_id)
-    pos_rows = await db.scalars(
-        select(StaffPosition).where(
-            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None))
-        ).order_by(StaffPosition.name)
+    is_public = school and school.ownership == SchoolOwnership.PUBLIC
+    condition = (
+        or_(StaffCategory.school_id == school_id, StaffCategory.school_id.is_(None))
+        if is_public else
+        StaffCategory.school_id == school_id
     )
-    position_names = [p.name for p in pos_rows]
+    cat_rows = await db.scalars(
+        select(StaffCategory).where(condition, StaffCategory.is_active == True).order_by(StaffCategory.name)
+    )
+    job_class_names = [c.name for c in cat_rows]
     xlsx_bytes = build_template(
         school_name=school.name if school else "School",
         school_code=school.school_code if school else "SCHOOL",
         brand_color=school.brand_color if school else "#1e40af",
-        position_names=position_names,
+        job_class_names=job_class_names,
     )
     filename = f"staff_import_{school.school_code if school else 'template'}.xlsx"
     return StreamingResponse(
@@ -272,6 +278,19 @@ async def add_qualification(
     return QualificationRead.model_validate(qual)
 
 
+@router.patch("/{staff_id}/qualifications/{qual_id}", response_model=QualificationRead)
+async def update_qualification(
+    staff_id: uuid.UUID,
+    qual_id: uuid.UUID,
+    req: QualificationUpdate,
+    ids=Depends(require_permission("staff", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    qual = await contacts_svc.update_qualification(staff_id, qual_id, req, school_id, db)
+    return QualificationRead.model_validate(qual)
+
+
 @router.delete("/{staff_id}/qualifications/{qual_id}", status_code=204)
 async def delete_qualification(
     staff_id: uuid.UUID,
@@ -281,6 +300,29 @@ async def delete_qualification(
 ):
     _, school_id = ids
     await contacts_svc.delete_qualification(staff_id, qual_id, school_id, db)
+
+
+@router.patch("/{staff_id}/promotions/{promotion_id}", response_model=PromotionRead)
+async def update_promotion(
+    staff_id: uuid.UUID,
+    promotion_id: uuid.UUID,
+    req: PromotionUpdate,
+    ids=Depends(require_permission("staff", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await leave_svc.update_promotion(staff_id, promotion_id, req, school_id, db)
+
+
+@router.delete("/{staff_id}/promotions/{promotion_id}", status_code=204)
+async def delete_promotion(
+    staff_id: uuid.UUID,
+    promotion_id: uuid.UUID,
+    ids=Depends(require_permission("staff", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await leave_svc.delete_promotion(staff_id, promotion_id, school_id, db)
 
 
 @router.post("/{staff_id}/promotions", response_model=PromotionRead, status_code=201)
@@ -325,3 +367,39 @@ async def list_leave(
     _, school_id = ids
     leaves = await leave_svc.list_leave(staff_id, school_id, db)
     return [LeaveRead.model_validate(l) for l in leaves]
+
+
+@router.get("/export/excel")
+async def export_staff_excel(
+    category_id: uuid.UUID | None = Query(None),
+    active_only: bool = Query(True),
+    ids=Depends(require_permission("staff", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export the staff register as an Excel workbook (.xlsx)."""
+    from app.services.staff_export import export_excel
+    _, school_id = ids
+    xlsx = await export_excel(school_id, db, category_id=category_id, active_only=active_only)
+    return StreamingResponse(
+        iter([xlsx]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="staff_register.xlsx"'},
+    )
+
+
+@router.get("/export/pdf")
+async def export_staff_pdf(
+    category_id: uuid.UUID | None = Query(None),
+    active_only: bool = Query(True),
+    ids=Depends(require_permission("staff", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export the staff register as a PDF (A4 landscape)."""
+    from app.services.staff_export import export_pdf
+    _, school_id = ids
+    pdf = await export_pdf(school_id, db, category_id=category_id, active_only=active_only)
+    return StreamingResponse(
+        iter([pdf]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="staff_register.pdf"'},
+    )

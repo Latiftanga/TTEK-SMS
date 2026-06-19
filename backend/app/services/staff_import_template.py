@@ -11,7 +11,7 @@ The template contains:
   - Row 4: Sample/example row (greyed, italic)
   - Rows 5-204: Pre-formatted data-entry area with dropdowns for enum fields
   - Sentinel cell {SENTINEL_COL}1 = "TTEK_STAFF_IMPORT_{school_code}" (validated by importer)
-  - Hidden "_positions" sheet (dropdown source)
+  - Hidden "_job_classes" sheet (dropdown source for Job Class column)
   - "Instructions" sheet with field guide
 """
 from __future__ import annotations
@@ -30,11 +30,11 @@ def _argb(hex_color: str) -> str:
     return "FF" + hex_color.lstrip("#").upper()
 
 
-def build_template(school_name: str, school_code: str, brand_color: str, position_names: list[str]) -> bytes:
+def build_template(school_name: str, school_code: str, brand_color: str, job_class_names: list[str]) -> bytes:
     """Return branded .xlsx bytes for the staff import template."""
     wb = Workbook()
 
-    _add_positions_sheet(wb, position_names)
+    _add_job_classes_sheet(wb, job_class_names)
 
     ws = wb.active
     ws.title = "Staff Data"
@@ -85,8 +85,8 @@ def build_template(school_name: str, school_code: str, brand_color: str, positio
     sample_vals = [
         "TST001", "Kwame", "Adu", "Mensah", "MALE", "1985-06-15",
         "GHA-001234567", "C0012345678", "0244000000", "k.mensah@school.edu.gh",
-        position_names[0] if position_names else "",
-        "TEACHING", "PERMANENT", "MARRIED", "Accra, Greater Accra", "2020-09-01",
+        job_class_names[0] if job_class_names else "Teaching",
+        "PERMANENT", "MARRIED", "Accra, Greater Accra", "2020-09-01",
     ]
     for (col, *_), val in zip(_COLS, sample_vals):
         c = ws[f"{col}{4}"]
@@ -108,33 +108,25 @@ def build_template(school_name: str, school_code: str, brand_color: str, positio
         ws.row_dimensions[row].height = 17
 
     # Dropdowns
-    data_range = f"{_DATA_START}:{_DATA_START + _NUM_ROWS - 1}"
-
     dv_gender = DataValidation(type="list", formula1='"MALE,FEMALE"', allow_blank=True)
     dv_gender.sqref = f"E{_DATA_START}:E{_DATA_START + _NUM_ROWS - 1}"
     ws.add_data_validation(dv_gender)
 
-    if position_names:
-        dv_pos = DataValidation(
+    if job_class_names:
+        dv_jc = DataValidation(
             type="list",
-            formula1=f"'_positions'!$A$1:$A${len(position_names)}",
+            formula1=f"'_job_classes'!$A$1:$A${len(job_class_names)}",
             allow_blank=True,
         )
-        dv_pos.sqref = f"K{_DATA_START}:K{_DATA_START + _NUM_ROWS - 1}"
-        ws.add_data_validation(dv_pos)
-
-    dv_category = DataValidation(
-        type="list", formula1='"TEACHING,NON_TEACHING"', allow_blank=True,
-    )
-    dv_category.sqref = f"L{_DATA_START}:L{_DATA_START + _NUM_ROWS - 1}"
-    ws.add_data_validation(dv_category)
+        dv_jc.sqref = f"K{_DATA_START}:K{_DATA_START + _NUM_ROWS - 1}"
+        ws.add_data_validation(dv_jc)
 
     dv_emptype = DataValidation(
         type="list",
         formula1='"PERMANENT,CONTRACT,NATIONAL_SERVICE,INTERN"',
         allow_blank=True,
     )
-    dv_emptype.sqref = f"M{_DATA_START}:M{_DATA_START + _NUM_ROWS - 1}"
+    dv_emptype.sqref = f"L{_DATA_START}:L{_DATA_START + _NUM_ROWS - 1}"
     ws.add_data_validation(dv_emptype)
 
     dv_marital = DataValidation(
@@ -142,7 +134,7 @@ def build_template(school_name: str, school_code: str, brand_color: str, positio
         formula1='"SINGLE,MARRIED,DIVORCED,WIDOWED,SEPARATED"',
         allow_blank=True,
     )
-    dv_marital.sqref = f"N{_DATA_START}:N{_DATA_START + _NUM_ROWS - 1}"
+    dv_marital.sqref = f"M{_DATA_START}:M{_DATA_START + _NUM_ROWS - 1}"
     ws.add_data_validation(dv_marital)
 
     ws.freeze_panes = f"A{_DATA_START}"
@@ -156,10 +148,10 @@ def build_template(school_name: str, school_code: str, brand_color: str, positio
     return buf.getvalue()
 
 
-def _add_positions_sheet(wb: Workbook, position_names: list[str]) -> None:
-    ws = wb.create_sheet("_positions")
+def _add_job_classes_sheet(wb: Workbook, job_class_names: list[str]) -> None:
+    ws = wb.create_sheet("_job_classes")
     ws.sheet_state = "hidden"
-    for i, name in enumerate(position_names, 1):
+    for i, name in enumerate(job_class_names, 1):
         ws.cell(row=i, column=1, value=name)
 
 
@@ -181,15 +173,14 @@ def _add_instructions_sheet(wb: Workbook, brand_fill: PatternFill, hdr_font: Fon
         ("SSNIT Number",    "SSNIT contributor ID (starts with C).",                            False),
         ("Phone",           "Mobile number, e.g. 0244000000.",                                  False),
         ("Email",           "Work or personal email address.",                                  False),
-        ("Position",        "Select from the dropdown. Can be assigned later.",                 False),
-        ("Staff Category",  "Select TEACHING or NON_TEACHING from the dropdown.",              False),
+        ("Job Class",       "Select from dropdown. Leave blank if unknown.",                    False),
         ("Employment Type", "Select PERMANENT, CONTRACT, NATIONAL_SERVICE, or INTERN.",        False),
         ("Marital Status",  "Select from: SINGLE, MARRIED, DIVORCED, WIDOWED, SEPARATED.",    False),
         ("Address",         "Residential address.",                                             False),
         ("Date Joined",     "Date joined this school. Format: YYYY-MM-DD",                     False),
         (None, None, False),
         ("Tips", "", True),
-        ("", "• Create all staff positions before downloading this template so the Position dropdown is complete.",  False),
+        ("", "• Positions (HOD, Class Teacher, etc.) are assigned through the staff profile, not this sheet.",  False),
         ("", "• Do not edit or delete header rows 1–3.",                                        False),
         ("", "• You may delete or overwrite the example row (row 4).",                          False),
         ("", "• Leave a cell blank if the information is not yet known.",                       False),

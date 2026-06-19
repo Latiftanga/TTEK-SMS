@@ -16,19 +16,18 @@ _COLS: list[tuple[str, str, str, bool, int]] = [
     ("H", "SSNIT Number",    "ssnit_number",    False, 16),
     ("I", "Phone",           "phone",           False, 14),
     ("J", "Email",           "email",           False, 25),
-    ("K", "Position",        "position_name",   False, 20),
-    ("L", "Staff Category",  "staff_category",  False, 16),
-    ("M", "Employment Type", "employment_type", False, 18),
-    ("N", "Marital Status",  "marital_status",  False, 15),
-    ("O", "Address",         "address",         False, 28),
-    ("P", "Date Joined",     "joined_date",     False, 14),
+    ("K", "Job Class",       "job_class_name",  False, 20),
+    ("L", "Employment Type", "employment_type", False, 18),
+    ("M", "Marital Status",  "marital_status",  False, 15),
+    ("N", "Address",         "address",         False, 28),
+    ("O", "Date Joined",     "joined_date",     False, 14),
 ]
 
 HEADER_ROW  = 3
 SAMPLE_ROW  = 4
 DATA_START  = 5
 NUM_ROWS    = 200
-SENTINEL_COL = "R"   # always 2 cols right of last data col (P), outside the merged title
+SENTINEL_COL = "Q"   # 2 cols right of last data col (O)
 
 # Keep underscore-prefixed aliases used by staff_import_template.py
 _DATA_START = DATA_START

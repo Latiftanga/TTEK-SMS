@@ -9,7 +9,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.models.school import School
-from app.services.staff_import_constants import DATA_START, _COLS, make_sentinel
+from app.services.staff_import_constants import DATA_START, SENTINEL_COL, _COLS, make_sentinel
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ def _make_xlsx(rows: list[list], school_code: str) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Staff Data"
-    ws["N1"] = make_sentinel(school_code)
+    ws[f"{SENTINEL_COL}1"] = make_sentinel(school_code)
     for col, label, *_ in _COLS:
         ws[f"{col}3"] = label
     for r_idx, row_vals in enumerate(rows):
@@ -54,7 +54,7 @@ async def test_template_contains_sentinel(client: AsyncClient, auth: dict, schoo
     resp = await client.get("/staff/import/template", headers=auth)
     wb = load_workbook(io.BytesIO(resp.content), data_only=True)
     ws = wb["Staff Data"]
-    assert ws["N1"].value == make_sentinel(school.school_code)
+    assert ws[f"{SENTINEL_COL}1"].value == make_sentinel(school.school_code)
 
 
 @pytest.mark.asyncio
@@ -151,7 +151,7 @@ async def test_import_cross_school_sentinel_rejected(client: AsyncClient, auth: 
     wb = Workbook()
     ws = wb.active
     ws.title = "Staff Data"
-    ws["N1"] = make_sentinel("OTHER_SCHOOL")   # different school code
+    ws[f"{SENTINEL_COL}1"] = make_sentinel("OTHER_SCHOOL")   # different school code
     buf = io.BytesIO()
     wb.save(buf)
     resp = await client.post(
