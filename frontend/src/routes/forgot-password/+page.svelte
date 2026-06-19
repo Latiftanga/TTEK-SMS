@@ -55,13 +55,16 @@
     return `${m}:${(s % 60).toString().padStart(2, '0')}`;
   }
 
+  let detectedType = $derived(identifier.trim() ? detectLoginType(identifier.trim()) : null);
+  let needsSchoolCode = $derived(detectedType === 'ADMISSION_ID');
+
   async function handleSend() {
     sendError = '';
     const trimmed = identifier.trim();
-    if (!trimmed) { sendError = 'Enter your email or phone number.'; return; }
+    if (!trimmed) { sendError = 'Enter your email, phone number, or student ID.'; return; }
     const loginType = detectLoginType(trimmed);
     if (loginType === 'ADMISSION_ID' && !schoolCode.trim()) {
-      sendError = 'Enter your school code for student ID login.';
+      sendError = 'Enter your school code — required for student ID login.';
       return;
     }
     sendPending = true;
@@ -242,32 +245,41 @@
           </svg>
         </div>
         <h1 class="text-xl font-bold text-[var(--fg)]">Forgot your password?</h1>
-        <p class="mt-1.5 text-sm text-[var(--fg-muted)]">We'll send a 6-digit code to your registered phone.</p>
+        <p class="mt-1.5 text-sm text-[var(--fg-muted)]">Enter your email or phone — we'll send a code to your registered number. No school code needed.</p>
       </div>
 
       <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 space-y-4"
            style="box-shadow: var(--shadow-lg), 0 0 0 1px var(--border)">
         <div>
-          <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5">Email or phone number</label>
+          <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5">
+            Email, phone number, or student ID
+          </label>
           <input type="text" bind:value={identifier}
             onkeydown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="you@school.com or 024…" autocomplete="username"
+            placeholder="you@school.com · 024… · STU-2024-001"
+            autocomplete="username"
             class="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--input-bg)]
                    px-4 py-3 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)]
                    focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 focus:border-[var(--brand)] transition" />
+          {#if detectedType && detectedType !== 'ADMISSION_ID'}
+            <p class="mt-1.5 text-xs text-[var(--fg-muted)]">
+              {detectedType === 'EMAIL' ? '✓ Email detected — no school code needed.' : '✓ Phone detected — no school code needed.'}
+            </p>
+          {/if}
         </div>
 
-        <div>
-          <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5">
-            School code <span class="font-normal text-[var(--fg-muted)]">(if required)</span>
-          </label>
-          <input type="text" bind:value={schoolCode}
-            onkeydown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="e.g. presec" autocomplete="off" spellcheck={false}
-            class="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--input-bg)]
-                   px-4 py-3 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)]
-                   focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 focus:border-[var(--brand)] transition lowercase" />
-        </div>
+        {#if needsSchoolCode}
+          <div>
+            <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5">School code</label>
+            <input type="text" bind:value={schoolCode}
+              onkeydown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="e.g. presec" autocomplete="off" spellcheck={false}
+              class="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--input-bg)]
+                     px-4 py-3 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)]
+                     focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 focus:border-[var(--brand)] transition lowercase" />
+            <p class="mt-1.5 text-xs text-[var(--fg-muted)]">Required for student ID login. Ask your class teacher if unsure.</p>
+          </div>
+        {/if}
 
         {#if sendError}
           <p class="rounded-xl bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-600 dark:text-red-400">{sendError}</p>
