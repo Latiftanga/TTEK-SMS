@@ -8,6 +8,21 @@
   let showPwd    = $state(false);
   let submitting = $state(false);
 
+  function strength(pw: string) {
+    if (!pw) return { score: 0, label: '', color: '' };
+    let s = 0;
+    if (pw.length >= 8)          s++;
+    if (pw.length >= 12)         s++;
+    if (/[A-Z]/.test(pw))        s++;
+    if (/[0-9]/.test(pw))        s++;
+    if (/[^A-Za-z0-9]/.test(pw)) s++;
+    if (s <= 1) return { score: s, label: 'Weak',   color: '#ef4444' };
+    if (s === 2) return { score: s, label: 'Fair',   color: '#f97316' };
+    if (s === 3) return { score: s, label: 'Good',   color: '#eab308' };
+    return          { score: s, label: 'Strong', color: '#22c55e' };
+  }
+  let pwStrength = $derived(strength(next));
+
   async function submit() {
     if (!current) { toast.error('Enter your current password.'); return; }
     if (next.length < 8) { toast.error('New password must be at least 8 characters.'); return; }
@@ -56,6 +71,17 @@
           <input bind:value={next} type={showPwd ? 'text' : 'password'} placeholder="Min. 8 characters"
             class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-2.5 text-sm
                    text-[var(--fg)] placeholder-[var(--fg-subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)] transition" />
+          {#if next}
+            <div class="mt-2 space-y-1">
+              <div class="flex gap-1">
+                {#each [1, 2, 3, 4, 5] as n}
+                  <div class="h-1 flex-1 rounded-full transition-all"
+                       style="background: {n <= pwStrength.score ? pwStrength.color : 'var(--border)'}"></div>
+                {/each}
+              </div>
+              <p class="text-[11px] font-medium" style="color: {pwStrength.color}">{pwStrength.label}</p>
+            </div>
+          {/if}
         </label>
 
         <label class="block">

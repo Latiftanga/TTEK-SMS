@@ -15,6 +15,7 @@
   let identifier   = $state('');
   let password     = $state('');
   let showPassword = $state(false);
+  let rememberMe   = $state(false);
 
   let branding      = $state<SchoolBranding | null>(null);
   let brandingState = $state<'idle' | 'loading' | 'found' | 'not-found'>('idle');
@@ -105,6 +106,7 @@
         identifier: identifier.trim(),
         password,
         school_code: schoolCode.trim() || undefined,
+        remember_me: rememberMe,
       });
       auth.setToken(tokens.access_token);
       const user = await getMe();
@@ -139,6 +141,7 @@
       bind:identifier
       bind:password
       bind:showPassword
+      bind:rememberMe
       {branding}
       {brandingState}
       {formError}

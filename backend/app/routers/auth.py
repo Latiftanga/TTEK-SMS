@@ -40,7 +40,9 @@ from app.schemas.auth import (
     RefreshRequest,
     ResetPasswordRequest,
     TokenResponse,
+    UpdateProfileRequest,
     UserRead,
+    VerifyOtpRequest,
 )
 from app.services import auth as auth_svc
 from app.services import auth_invite as invite_svc
@@ -188,13 +190,28 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Request a password reset token.
+    Send a 6-digit OTP to the user's registered phone number.
 
-    Always returns 204 regardless of whether the identifier exists,
-    preventing user enumeration.  The raw token is returned in the response
-    body during development; in production this will trigger an email/SMS.
+    Always returns 204 regardless of whether the identifier is found,
+    preventing account enumeration.  The OTP is delivered via the school's
+    active SMS provider and expires in 10 minutes.
     """
     await reset_svc.forgot_password(req, db)
+
+
+@router.post("/verify-otp")
+async def verify_otp(
+    req: VerifyOtpRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Verify the 6-digit OTP and return a short-lived reset token.
+
+    The reset token must be passed to POST /auth/reset-password within 10 minutes.
+    Returns 400 if the OTP is wrong, 429 after 5 failed attempts.
+    """
+    raw_token = await reset_svc.verify_otp(req, db)
+    return {"reset_token": raw_token}
 
 
 @router.post("/reset-password", status_code=204)
@@ -203,9 +220,25 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Consume a reset token and set a new password.
+    Consume the reset token from /verify-otp and set a new password.
 
-    The token is single-use and expires after 1 hour.
+    Single-use token, expires 10 minutes after OTP verification.
     Returns 400 if the token is invalid, expired, or already used.
     """
     await reset_svc.reset_password(req, db)
+
+
+@router.patch("/me/profile", status_code=204)
+async def update_profile(
+    req: UpdateProfileRequest,
+    ids: tuple[uuid.UUID, uuid.UUID | None] = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update the current user's own contact information.
+
+    Only phone and address may be updated this way — HR fields (name,
+    category, rank, contract) require admin access via the staff endpoints.
+    """
+    user_id, _ = ids
+    await reset_svc.update_profile(user_id, req.phone, req.address, db)

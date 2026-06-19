@@ -7,6 +7,7 @@
     identifier: string;
     password: string;
     showPassword: boolean;
+    rememberMe: boolean;
     branding: SchoolBranding | null;
     brandingState: 'idle' | 'loading' | 'found' | 'not-found';
     formError: string;
@@ -22,6 +23,7 @@
     identifier = $bindable(),
     password = $bindable(),
     showPassword = $bindable(),
+    rememberMe = $bindable(),
     branding,
     brandingState,
     formError,
@@ -165,6 +167,25 @@
       </button>
     </div>
   </div>
+
+  <!-- Remember me -->
+  <label class="flex items-center gap-2.5 cursor-pointer select-none">
+    <div class="relative">
+      <input type="checkbox" bind:checked={rememberMe} class="sr-only peer" />
+      <div class="h-4.5 w-4.5 rounded-[5px] border border-[var(--border-strong)]
+                  bg-[var(--input-bg)] transition peer-checked:border-transparent
+                  peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--brand)]/30"
+           style="background: {rememberMe ? 'var(--brand)' : ''}">
+        {#if rememberMe}
+          <svg class="absolute inset-0 m-auto h-3 w-3 text-white" fill="none" viewBox="0 0 24 24"
+               stroke="currentColor" stroke-width="3.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+          </svg>
+        {/if}
+      </div>
+    </div>
+    <span class="text-sm text-[var(--fg-muted)]">Keep me signed in for 30 days</span>
+  </label>
 
   {#if formError}
     <div class="rounded-xl border border-red-100 dark:border-red-900 bg-red-50 dark:bg-red-950/40

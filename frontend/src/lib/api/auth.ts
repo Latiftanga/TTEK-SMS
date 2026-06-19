@@ -8,6 +8,7 @@ export interface LoginRequest {
   identifier: string;
   password: string;
   school_code?: string;
+  remember_me?: boolean;
 }
 
 export interface TokenResponse {
@@ -53,9 +54,26 @@ export async function forgotPassword(req: {
   await client.post('/auth/forgot-password', req);
 }
 
+export async function verifyOtp(req: {
+  login_type: LoginType;
+  identifier: string;
+  school_code?: string;
+  otp: string;
+}): Promise<{ reset_token: string }> {
+  const { data } = await client.post<{ reset_token: string }>('/auth/verify-otp', req);
+  return data;
+}
+
 export async function resetPassword(req: {
   token: string;
   new_password: string;
 }): Promise<void> {
   await client.post('/auth/reset-password', req);
+}
+
+export async function updateProfile(req: {
+  phone?: string;
+  address?: string;
+}): Promise<void> {
+  await client.patch('/auth/me/profile', req);
 }

@@ -10,6 +10,7 @@ class LoginRequest(BaseModel):
     identifier: str    # email / phone / admission_id depending on login_type
     password: str
     school_code: str | None = None  # required for ADMISSION_ID login
+    remember_me: bool = False       # extend refresh token to 30 days
 
 
 class TokenResponse(BaseModel):
@@ -112,6 +113,21 @@ class ForgotPasswordRequest(BaseModel):
     school_code: str | None = None  # required for ADMISSION_ID
 
 
+class VerifyOtpRequest(BaseModel):
+    login_type: LoginType
+    identifier: str
+    school_code: str | None = None
+    otp: str  # 6-digit string
+
+    @field_validator("otp")
+    @classmethod
+    def otp_format(cls, v: str) -> str:
+        v = v.strip()
+        if not v.isdigit() or len(v) != 6:
+            raise ValueError("OTP must be exactly 6 digits")
+        return v
+
+
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
@@ -122,3 +138,13 @@ class ResetPasswordRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+class UpdateProfileRequest(BaseModel):
+    phone: str | None = None
+    address: str | None = None
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def phone_strip(cls, v: str | None) -> str | None:
+        return v.strip() if v else v

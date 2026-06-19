@@ -32,7 +32,7 @@ SECURITY DECISIONS (important for future debugging)
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -103,13 +103,17 @@ async def login(
         )
 
     raw_refresh, refresh_hash = create_refresh_token()
+    expires_at = (
+        _utcnow() + timedelta(days=30) if req.remember_me
+        else refresh_token_expiry()
+    )
     session = UserSession(
         user_id=user.id,
         school_id=user.school_id,
         refresh_token_hash=refresh_hash,
         ip_address=ip,
         created_at=_utcnow(),
-        expires_at=refresh_token_expiry(),
+        expires_at=expires_at,
     )
     db.add(session)
     user.last_login_at = _utcnow()
