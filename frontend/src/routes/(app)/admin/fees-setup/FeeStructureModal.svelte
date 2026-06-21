@@ -9,13 +9,12 @@
     termId: string;
     termName: string;
     feeTypes: FeeType[];
+    levels: string[];
     onClose: () => void;
   }
-  const { editing, termId, termName, feeTypes, onClose }: Props = $props();
+  const { editing, termId, termName, feeTypes, levels, onClose }: Props = $props();
 
   const qc = useQueryClient();
-
-  const LEVELS = ['BASIC', 'JHS', 'SHS', 'PRIMARY', 'NURSERY', 'KINDERGARTEN'];
 
   let feeTypeId    = $state(editing?.fee_type_id ?? '');
   let amount       = $state(editing?.amount ?? '');
@@ -89,7 +88,7 @@
           <span class="label-xs">Applies to level <span class="font-normal text-[var(--fg-subtle)]">(leave blank for all)</span></span>
           <select bind:value={appliesLevel} class="sel mt-1">
             <option value="">All levels</option>
-            {#each LEVELS as l}<option value={l}>{l}</option>{/each}
+            {#each levels as l}<option value={l}>{l}</option>{/each}
           </select>
         </label>
       {/if}

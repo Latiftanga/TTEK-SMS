@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
-  import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
+  import { listAllTerms, listClasses, type AcademicTerm } from '$lib/api/academic';
   import {
     listFeeTypes, listFeeStructures, bulkAssignFees, ghs,
     type FeeType, type FeeStructure,
@@ -22,6 +22,10 @@
   $effect(() => {
     if (!termId && terms.length) termId = terms.find(t => t.is_current)?.id ?? terms[0]?.id ?? '';
   });
+
+  // Class levels (derived from school's actual classes)
+  const classesQ  = createQuery({ queryKey: ['classes'], queryFn: listClasses, staleTime: 10 * 60_000 });
+  const classLevels = $derived([...new Set(($classesQ.data ?? []).map(c => c.level))].sort());
 
   // Fee types
   const typesQ  = createQuery({ queryKey: ['fee-types'], queryFn: listFeeTypes, staleTime: 5 * 60_000 });
@@ -166,6 +170,7 @@
     {termId}
     termName={currentTermName()}
     {feeTypes}
+    levels={classLevels}
     onClose={() => structModal = null}
   />
 {/if}
