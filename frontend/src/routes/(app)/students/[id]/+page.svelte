@@ -8,6 +8,7 @@
   import GuardiansTab  from './GuardiansTab.svelte';
   import EnrollmentTab from './EnrollmentTab.svelte';
   import MedicalTab    from './MedicalTab.svelte';
+  import FeesTab       from './FeesTab.svelte';
 
   const qc = useQueryClient();
   const studentId = $derived($page.params.id);
@@ -18,11 +19,12 @@
     staleTime: 2 * 60_000,
   });
 
-  type Tab = 'profile' | 'guardians' | 'enrollment' | 'medical';
+  type Tab = 'profile' | 'guardians' | 'enrollment' | 'medical' | 'fees';
   const TABS: { key: Tab; label: string }[] = [
     { key: 'profile',    label: 'Profile'    },
     { key: 'guardians',  label: 'Guardians'  },
     { key: 'enrollment', label: 'Enrollment' },
+    { key: 'fees',       label: 'Fees'       },
     { key: 'medical',    label: 'Medical'    },
   ];
   const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
@@ -146,6 +148,8 @@
     <GuardiansTab student={s} studentId={studentId} />
   {:else if activeTab === 'enrollment'}
     <EnrollmentTab studentId={studentId} />
+  {:else if activeTab === 'fees'}
+    <FeesTab studentId={studentId} />
   {:else if activeTab === 'medical'}
     <MedicalTab studentId={studentId} medical={s.medical_record} />
   {/if}
