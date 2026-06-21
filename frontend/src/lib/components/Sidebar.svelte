@@ -49,7 +49,7 @@
     return exact ? p === href : p.startsWith(href);
   }
 
-  const schoolInitials = $derived(() => {
+  const schoolInitials = $derived.by(() => {
     const n = $school?.name ?? 'S';
     const words = n.split(' ').filter((w: string) => w.length > 1);
     return (words.length >= 2 ? words[0][0] + words[1][0] : n.slice(0, 2)).toUpperCase();
@@ -109,7 +109,7 @@
     {:else}
       <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white"
            style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 70%, #7c3aed) 100%)">
-        {schoolInitials()}
+        {schoolInitials}
       </div>
     {/if}
 

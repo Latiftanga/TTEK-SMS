@@ -14,13 +14,13 @@
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
   });
 
-  const schoolInitials = $derived(() => {
+  const schoolInitials = $derived.by(() => {
     const n = $school?.name ?? 'S';
     const words = n.split(' ').filter((w: string) => w.length > 1);
     return (words.length >= 2 ? words[0][0] + words[1][0] : n.slice(0, 2)).toUpperCase();
   });
 
-  const userInitials = $derived(() => {
+  const userInitials = $derived.by(() => {
     const name = $currentUser?.display_name;
     if (name) {
       const parts = name.trim().split(' ').filter(Boolean);
@@ -33,14 +33,14 @@
     return 'U';
   });
 
-  const displayLabel = $derived(() =>
+  const displayLabel = $derived.by(() =>
     $currentUser?.display_name
     ?? $currentUser?.email
     ?? $currentUser?.phone
     ?? 'Account'
   );
 
-  const subLabel = $derived(() => {
+  const subLabel = $derived.by(() => {
     if ($currentUser?.is_superadmin) return 'Platform Admin';
     return $school?.name ?? null;
   });
@@ -87,7 +87,7 @@
     {:else}
       <div class="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
            style="background-color: var(--brand)">
-        {schoolInitials()}
+        {schoolInitials}
       </div>
     {/if}
     <p class="truncate text-sm font-bold text-[var(--fg)] max-w-[160px]"
@@ -147,16 +147,16 @@
         <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl
                     text-xs font-bold text-white select-none"
              style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 60%, #7c3aed) 100%)">
-          {userInitials()}
+          {userInitials}
         </div>
         <!-- Name — desktop only -->
         <div class="hidden lg:block text-left">
           <p class="text-sm font-medium text-[var(--fg)] leading-tight max-w-[140px] truncate">
-            {displayLabel()}
+            {displayLabel}
           </p>
-          {#if subLabel()}
+          {#if subLabel}
             <p class="text-xs text-[var(--fg-muted)] leading-tight truncate max-w-[140px]">
-              {subLabel()}
+              {subLabel}
             </p>
           {/if}
         </div>
@@ -176,7 +176,7 @@
 
           <!-- User identity header -->
           <div class="px-4 py-3 border-b border-[var(--border)]">
-            <p class="text-sm font-semibold text-[var(--fg)] truncate">{displayLabel()}</p>
+            <p class="text-sm font-semibold text-[var(--fg)] truncate">{displayLabel}</p>
             {#if $currentUser?.email && $currentUser.display_name}
               <p class="text-xs text-[var(--fg-muted)] truncate mt-0.5">{$currentUser.email}</p>
             {/if}
