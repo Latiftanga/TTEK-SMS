@@ -2,10 +2,12 @@
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { createQuery } from '@tanstack/svelte-query';
   import { currentUser, auth } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
   import { logout } from '$lib/api/auth';
+  import { getCurrentYear } from '$lib/api/academic';
   import { NAV_GROUPS, ROLE_LABELS, IC, type NavRole } from '$lib/nav';
 
   interface Props { open: boolean; onclose: () => void; }
@@ -18,6 +20,10 @@
     if (browser) localStorage.setItem('sidebar_collapsed', String(collapsed));
   }
 
+  // ── Academic context ─────────────────────────────────────────────────────────
+  const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
+  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
+
   // ── Role resolution ──────────────────────────────────────────────────────────
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
   const role         = $derived($userRole as NavRole | null);
@@ -29,17 +35,15 @@
     return roles.includes(role);
   }
 
-  // ── Filtered groups ──────────────────────────────────────────────────────────
   const visibleGroups = $derived(
     NAV_GROUPS
       .map(g => ({ ...g, items: g.items.filter(i => canSee(i.roles)) }))
       .filter(g => {
-        if (g.heading && !isAdmin) return false; // admin-only section
+        if (g.heading && !isAdmin) return false;
         return g.items.length > 0;
       })
   );
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
   function isActive(href: string, exact?: boolean) {
     const p = $page.url.pathname;
     return exact ? p === href : p.startsWith(href);
@@ -51,8 +55,8 @@
     return (words.length >= 2 ? words[0][0] + words[1][0] : n.slice(0, 2)).toUpperCase();
   });
 
-  const userLabel  = $derived($currentUser?.display_name ?? $currentUser?.email ?? $currentUser?.phone ?? '—');
-  const roleLabel  = $derived(
+  const userLabel = $derived($currentUser?.display_name ?? $currentUser?.email ?? $currentUser?.phone ?? '—');
+  const roleLabel = $derived(
     isSuperadmin ? 'Platform Admin'
     : role ? (ROLE_LABELS[role] ?? 'Staff member')
     : 'Staff member'
@@ -67,23 +71,26 @@
     goto('/login');
   }
 
-  const linkClass = (active: boolean) =>
-    `group flex items-center rounded-lg transition-all duration-150 text-sm
-     ${collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2'}
-     ${active ? 'font-semibold' : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}`;
+  const linkBase = $derived(collapsed
+    ? 'group flex items-center justify-center rounded-lg p-2.5 transition-all duration-150 text-sm'
+    : 'group flex items-center gap-3 rounded-lg px-3 py-2 transition-all duration-150 text-sm'
+  );
+
+  function linkClass(active: boolean) {
+    return `${linkBase} ${active
+      ? 'font-semibold'
+      : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}`;
+  }
 
   const iconClass = (active: boolean) =>
-    `h-[18px] w-[18px] shrink-0 transition-transform duration-150 ${active ? '' : 'group-hover:scale-110'}`;
+    `h-[18px] w-[18px] shrink-0 transition-colors duration-150 ${active ? '' : 'group-hover:text-[var(--fg)]'}`;
 </script>
 
-<!-- Mobile backdrop -->
 {#if open}
-  <button
-    type="button"
+  <button type="button"
     class="fixed inset-0 z-30 w-full bg-black/40 backdrop-blur-sm lg:hidden border-0"
-    onclick={onclose}
-    aria-label="Close navigation"
-  ></button>
+    onclick={onclose} aria-label="Close navigation">
+  </button>
 {/if}
 
 <aside
@@ -92,16 +99,15 @@
          {collapsed ? 'w-[64px]' : 'w-[240px]'}
          {open ? 'translate-x-0' : '-translate-x-full'}
          lg:translate-x-0 lg:static lg:z-auto"
-  style="box-shadow: 1px 0 0 var(--border), 2px 0 12px rgba(0,0,0,0.04);"
 >
-  <!-- School header -->
+  <!-- ── School header ────────────────────────────────────────────────────── -->
   <div class="flex h-14 shrink-0 items-center border-b border-[var(--border)]
               {collapsed ? 'justify-center px-0' : 'gap-3 px-4'}">
     {#if $school?.logoUrl}
       <img src={$school.logoUrl} alt={$school.name}
-           class="h-9 w-9 shrink-0 rounded-xl object-contain ring-1 ring-[var(--border)]" />
+           class="h-8 w-8 shrink-0 rounded-xl object-contain ring-1 ring-[var(--border)]" />
     {:else}
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white"
            style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 70%, #7c3aed) 100%)">
         {schoolInitials()}
       </div>
@@ -109,7 +115,7 @@
 
     {#if !collapsed}
       <div class="min-w-0 flex-1">
-        <p class="truncate text-[0.8125rem] font-semibold text-[var(--fg)] leading-snug" title={$school?.name}>
+        <p class="truncate text-[0.8125rem] font-semibold leading-snug text-[var(--fg)]" title={$school?.name}>
           {$school?.shortName ?? $school?.name ?? 'My School'}
         </p>
         <p class="truncate text-[10px] text-[var(--fg-muted)]">
@@ -117,16 +123,16 @@
         </p>
       </div>
       <button onclick={toggleCollapse} title="Collapse" aria-label="Collapse sidebar"
-        class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors
-               text-[var(--fg-subtle)] hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
+        class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md
+               text-[var(--fg-subtle)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           {@html IC.chevronL}
         </svg>
       </button>
     {:else}
       <button onclick={toggleCollapse} title="Expand" aria-label="Expand sidebar"
-        class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors
-               text-[var(--fg-subtle)] hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
+        class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md
+               text-[var(--fg-subtle)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           {@html IC.chevronR}
         </svg>
@@ -134,13 +140,47 @@
     {/if}
   </div>
 
-  <!-- Navigation -->
+  <!-- ── Academic year / term strip ──────────────────────────────────────── -->
+  {#if $yearQ.data}
+    <a href="/admin/academic"
+       onclick={onclose}
+       title={collapsed ? `${currentTerm?.name ?? 'No term'} · ${$yearQ.data.name}` : undefined}
+       class="flex shrink-0 items-center border-b border-[var(--border)] transition-colors hover:bg-[var(--hover)]
+              {collapsed ? 'justify-center px-2 py-3' : 'gap-2.5 px-4 py-2.5'}">
+      <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+           style="background: color-mix(in oklab, var(--brand) 10%, transparent)">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2"
+             viewBox="0 0 24 24" style="color: var(--brand)">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25
+               2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0
+               0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+        </svg>
+      </div>
+      {#if !collapsed}
+        <div class="min-w-0 flex-1">
+          <p class="text-[11px] font-semibold text-[var(--fg)]">
+            {currentTerm?.name ?? 'No active term'}
+          </p>
+          <p class="text-[10px] text-[var(--fg-muted)]">{$yearQ.data.name}</p>
+        </div>
+        {#if currentTerm}
+          <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                style="background: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand)">
+            Current
+          </span>
+        {/if}
+      {/if}
+    </a>
+  {/if}
+
+  <!-- ── Navigation ───────────────────────────────────────────────────────── -->
   <nav class="flex-1 overflow-y-auto py-3 {collapsed ? 'px-2' : 'px-3'}" aria-label="Main navigation">
     {#each visibleGroups as group, gi}
       {#if group.heading}
         {#if !collapsed}
           <div class="px-3 pb-1 {gi > 0 ? 'pt-5' : 'pt-3'}">
-            <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
+            <p class="text-[9.5px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
               {group.heading}
             </p>
           </div>
@@ -153,19 +193,20 @@
         {#each group.items as item}
           {@const active = isActive(item.href, item.exact)}
           <li>
-            <a
-              href={item.href}
-              onclick={onclose}
-              title={collapsed ? item.label : undefined}
-              aria-current={active ? 'page' : undefined}
-              class={linkClass(active)}
-              style={active ? 'background-color: var(--nav-active-bg); color: var(--nav-active-color);' : ''}
-            >
+            <a href={item.href}
+               onclick={onclose}
+               title={collapsed ? item.label : undefined}
+               aria-current={active ? 'page' : undefined}
+               class={linkClass(active)}
+               style={active
+                 ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);'
+                 : ''}>
               <svg class={iconClass(active)}
                    fill="none" stroke="currentColor"
-                   stroke-width={active ? '2.1' : '1.6'}
+                   stroke-width={active ? '2.2' : '1.6'}
                    viewBox="0 0 24 24"
-                   aria-hidden="true">
+                   aria-hidden="true"
+                   style={active ? 'color: var(--brand)' : ''}>
                 {@html item.icon}
               </svg>
               {#if !collapsed}
@@ -178,7 +219,7 @@
     {/each}
   </nav>
 
-  <!-- User strip -->
+  <!-- ── User strip ───────────────────────────────────────────────────────── -->
   <div class="shrink-0 border-t border-[var(--border)] p-2">
     {#if collapsed}
       <div class="flex flex-col items-center gap-1">

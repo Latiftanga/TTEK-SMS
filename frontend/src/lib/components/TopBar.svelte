@@ -1,10 +1,11 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { createQuery } from '@tanstack/svelte-query';
   import ThemeToggle from './ThemeToggle.svelte';
   import { school } from '$lib/stores/school';
   import { auth, currentUser } from '$lib/stores/auth';
   import { logout } from '$lib/api/auth';
-  import { get } from 'svelte/store';
+  import { getCurrentYear } from '$lib/api/academic';
 
   interface Props { toggleSidebar: () => void; }
   const { toggleSidebar }: Props = $props();
@@ -43,6 +44,9 @@
     if ($currentUser?.is_superadmin) return 'Platform Admin';
     return $school?.name ?? null;
   });
+
+  const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
+  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
 
   let menuOpen = $state(false);
 
@@ -92,8 +96,39 @@
     </p>
   </div>
 
-  <!-- Desktop: date -->
-  <span class="hidden text-sm text-[var(--fg-muted)] lg:block">{today}</span>
+  <!-- Desktop: academic context + date -->
+  <div class="hidden items-center gap-3 lg:flex">
+    {#if $yearQ.data && currentTerm}
+      <div class="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-1.5">
+        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2"
+             viewBox="0 0 24 24" style="color: var(--brand)">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25
+               2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0
+               0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+        </svg>
+        <span class="text-xs font-semibold text-[var(--fg)]">{currentTerm.name}</span>
+        <span class="text-[var(--fg-subtle)]">·</span>
+        <span class="text-xs text-[var(--fg-muted)]">{$yearQ.data.name}</span>
+      </div>
+    {/if}
+    <span class="text-sm text-[var(--fg-muted)]">{today}</span>
+  </div>
+
+  <!-- Mobile: term chip -->
+  {#if $yearQ.data && currentTerm}
+    <div class="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 lg:hidden">
+      <svg class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" stroke-width="2"
+           viewBox="0 0 24 24" style="color: var(--brand)">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25
+             2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0
+             0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+      </svg>
+      <span class="text-[11px] font-semibold text-[var(--fg)]">{currentTerm.name}</span>
+      <span class="text-[10px] text-[var(--fg-muted)]">{$yearQ.data.name}</span>
+    </div>
+  {/if}
 
   <!-- Right side -->
   <div class="ml-auto flex items-center gap-2">
