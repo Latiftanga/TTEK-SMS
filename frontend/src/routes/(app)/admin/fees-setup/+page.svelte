@@ -109,8 +109,14 @@
           <span>Fee Type</span><span class="text-right">Amount</span><span>Scope</span><span>Mandatory</span><span></span>
         </div>
         {#each structures as s}
+          {@const feeType = feeTypes.find(t => t.id === s.fee_type_id)}
           <div class="grid grid-cols-[1fr_auto] items-center gap-2 border-b border-[var(--border)] px-5 py-3 last:border-0 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:gap-4">
-            <span class="text-sm font-medium text-[var(--fg)]">{s.fee_type_name}</span>
+            <div>
+              <span class="text-sm font-medium text-[var(--fg)]">{s.fee_type_name}</span>
+              {#if feeType && !feeType.is_recurring}
+                <span class="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">One-time · assign to one term only</span>
+              {/if}
+            </div>
             <span class="tabular-nums text-sm text-[var(--fg)]">{ghs(s.amount)}</span>
             <span class="hidden text-xs text-[var(--fg-muted)] sm:block">{s.applies_to_level ?? 'All levels'}</span>
             <span class="hidden text-xs sm:block {s.is_mandatory ? 'text-green-600 dark:text-green-400' : 'text-[var(--fg-subtle)]'}">{s.is_mandatory ? '✓' : '—'}</span>
@@ -147,7 +153,11 @@
               <p class="text-sm font-medium text-[var(--fg)]">{t.name}</p>
               <p class="text-xs text-[var(--fg-muted)]">{t.code}{t.school_id === null ? ' · Platform template' : ''}</p>
             </div>
-            <span class="text-xs text-[var(--fg-muted)]">{t.is_recurring ? 'Recurring' : 'One-time'}</span>
+            {#if t.is_recurring}
+              <span class="text-xs text-[var(--fg-muted)]">Recurring</span>
+            {:else}
+              <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">One-time annual</span>
+            {/if}
             <span class="text-xs {t.is_active ? 'text-green-600 dark:text-green-400' : 'text-[var(--fg-subtle)]'}">{t.is_active ? 'Active' : 'Inactive'}</span>
             {#if t.school_id !== null}
               <button onclick={() => typeModal = { editing: t }}
