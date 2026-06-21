@@ -1,7 +1,7 @@
 import { api } from './client';
 
 export type PaymentMethod = 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'CHEQUE' | 'OTHER';
-export type DiscountType = 'SCHOLARSHIP' | 'BURSARY' | 'SIBLING' | 'STAFF_WARD' | 'OTHER';
+export type DiscountType = 'SCHOLARSHIP' | 'BURSARY' | 'SIBLING' | 'STAFF_WARD' | 'EXEMPTION' | 'OTHER';
 
 export interface FeeType {
   id: string;
@@ -21,8 +21,10 @@ export interface FeeStructure {
   fee_type_name: string;
   amount: string;
   is_mandatory: boolean;
+  applies_to_class_id: string | null;
   applies_to_year_group: number | null;
   applies_to_programme_id: string | null;
+  boarding_only: boolean;
 }
 
 export interface BulkAssignResult {
@@ -92,6 +94,7 @@ export const DISCOUNT_TYPE_LABELS: Record<DiscountType, string> = {
   BURSARY: 'Bursary',
   SIBLING: 'Sibling',
   STAFF_WARD: 'Staff Ward',
+  EXEMPTION: 'Exemption',
   OTHER: 'Other',
 };
 
@@ -114,8 +117,16 @@ export const updateFeeType = (id: string, data: { name?: string; description?: s
 export const listFeeStructures = (termId: string) =>
   api.get<FeeStructure[]>('/fees/structures', { params: { term_id: termId } }).then(r => r.data);
 
-export const createFeeStructure = (data: { academic_term_id: string; fee_type_id: string; amount: number; is_mandatory?: boolean; applies_to_year_group?: number }) =>
-  api.post<FeeStructure>('/fees/structures', data).then(r => r.data);
+export const createFeeStructure = (data: {
+  academic_term_id: string;
+  fee_type_id: string;
+  amount: number;
+  is_mandatory?: boolean;
+  applies_to_class_id?: string;
+  applies_to_year_group?: number;
+  applies_to_programme_id?: string;
+  boarding_only?: boolean;
+}) => api.post<FeeStructure>('/fees/structures', data).then(r => r.data);
 
 export const updateFeeStructure = (id: string, data: { amount?: number; is_mandatory?: boolean }) =>
   api.patch<FeeStructure>(`/fees/structures/${id}`, data).then(r => r.data);

@@ -67,6 +67,7 @@ class DiscountType(str, enum.Enum):
     BURSARY = "BURSARY"
     SIBLING = "SIBLING"
     STAFF_WARD = "STAFF_WARD"
+    EXEMPTION = "EXEMPTION"
     OTHER = "OTHER"
 
 
@@ -98,11 +99,16 @@ class FeeStructure(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     is_mandatory: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # NULL means "applies to all year groups / all programmes" for that dimension.
+    # Scope — mutually exclusive: class_id OR (year_group + programme_id), never both.
+    # NULL on all three means the fee applies to every enrolled student.
+    applies_to_class_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("class.id", ondelete="SET NULL"), nullable=True
+    )
     applies_to_year_group: Mapped[int | None] = mapped_column(Integer, nullable=True)
     applies_to_programme_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("shs_programme.id"), nullable=True
     )
+    boarding_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     fee_type: Mapped[FeeType] = relationship(back_populates="structures")
     student_records: Mapped[list[StudentFeeRecord]] = relationship(back_populates="fee_structure")

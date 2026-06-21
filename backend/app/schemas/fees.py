@@ -44,8 +44,10 @@ class FeeStructureCreate(BaseModel):
     fee_type_id: uuid.UUID
     amount: Decimal
     is_mandatory: bool = True
+    applies_to_class_id: uuid.UUID | None = None
     applies_to_year_group: int | None = None
     applies_to_programme_id: uuid.UUID | None = None
+    boarding_only: bool = False
 
     @field_validator("amount")
     @classmethod
@@ -53,6 +55,14 @@ class FeeStructureCreate(BaseModel):
         if v <= 0:
             raise ValueError("amount must be positive")
         return v
+
+    @model_validator(mode="after")
+    def class_xor_cohort(self) -> "FeeStructureCreate":
+        if self.applies_to_class_id and (self.applies_to_year_group or self.applies_to_programme_id):
+            raise ValueError(
+                "Use either applies_to_class_id OR (applies_to_year_group / applies_to_programme_id), not both."
+            )
+        return self
 
 
 class FeeStructureUpdate(BaseModel):
@@ -75,8 +85,10 @@ class FeeStructureRead(BaseModel):
     fee_type_name: str
     amount: Decimal
     is_mandatory: bool
+    applies_to_class_id: uuid.UUID | None
     applies_to_year_group: int | None
     applies_to_programme_id: uuid.UUID | None
+    boarding_only: bool
 
 
 class BulkAssignResult(BaseModel):

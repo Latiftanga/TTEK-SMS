@@ -119,10 +119,11 @@
             </div>
             <span class="tabular-nums text-sm text-[var(--fg)]">{ghs(s.amount)}</span>
             <span class="hidden text-xs text-[var(--fg-muted)] sm:block">
-              {#if s.applies_to_year_group}
-                {@const rep = classes.find(c => c.year_group === s.applies_to_year_group)}
-                {rep ? `${rep.level} ${s.applies_to_year_group}` : `Year ${s.applies_to_year_group}`}
-              {:else}All year groups{/if}
+              {#if s.applies_to_class_id}
+                {classes.find(c => c.id === s.applies_to_class_id)?.display_name ?? 'Specific class'}
+              {:else if s.applies_to_year_group || s.applies_to_programme_id}
+                {#if s.applies_to_year_group}{@const r = classes.find(c => c.year_group === s.applies_to_year_group)}{r ? `${r.level} ${s.applies_to_year_group}` : `Year ${s.applies_to_year_group}`}{/if}{s.applies_to_year_group && s.applies_to_programme_id ? ' · ' : ''}{#if s.applies_to_programme_id}{classes.find(c => c.programme_id === s.applies_to_programme_id)?.programme_name ?? ''}{/if}
+              {:else}All students{/if}{s.boarding_only ? ' (boarding)' : ''}
             </span>
             <span class="hidden text-xs sm:block {s.is_mandatory ? 'text-green-600 dark:text-green-400' : 'text-[var(--fg-subtle)]'}">{s.is_mandatory ? '✓' : '—'}</span>
             <div class="flex items-center gap-2">
