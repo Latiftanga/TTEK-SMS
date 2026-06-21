@@ -23,6 +23,10 @@
   // ── Academic context ─────────────────────────────────────────────────────────
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
   const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
+  const termTooltip = $derived.by(() => {
+    if (!collapsed || !$yearQ.data) return undefined;
+    return `${currentTerm ? currentTerm.name : 'No term'} · ${$yearQ.data.name}`;
+  });
 
   // ── Role resolution ──────────────────────────────────────────────────────────
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
@@ -144,7 +148,7 @@
   {#if $yearQ.data}
     <a href="/admin/academic"
        onclick={onclose}
-       title={collapsed ? `${currentTerm?.name ?? 'No term'} · ${$yearQ.data.name}` : undefined}
+       title={termTooltip}
        class="flex shrink-0 items-center border-b border-[var(--border)] transition-colors hover:bg-[var(--hover)]
               {collapsed ? 'justify-center px-2 py-3' : 'gap-2.5 px-4 py-2.5'}">
       <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
@@ -195,7 +199,7 @@
           <li>
             <a href={item.href}
                onclick={onclose}
-               title={collapsed ? item.label : undefined}
+               title={collapsed ? item.label : null}
                aria-current={active ? 'page' : undefined}
                class={linkClass(active)}
                style={active
