@@ -6,13 +6,15 @@
   import ProfileTab       from './ProfileTab.svelte';
   import CommunicationTab from './CommunicationTab.svelte';
   import AiTab            from './AiTab.svelte';
+  import HousingTab       from './HousingTab.svelte';
 
-  type Tab = 'profile' | 'communication' | 'ai';
+  type Tab = 'profile' | 'communication' | 'ai' | 'housing';
 
   const tabs = [
     { id: 'profile',       label: 'Profile'        },
     { id: 'communication', label: 'Communication'  },
     { id: 'ai',            label: 'AI Assistant'   },
+    { id: 'housing',       label: 'Housing'        },
   ];
 
   const activeTab = $derived<Tab>(
@@ -24,7 +26,7 @@
   }
 </script>
 
-<PageHeader title="School Setup" description="Manage your school's profile and communication channels." />
+<PageHeader title="School Setup" description="Profile, communication channels, AI features, and boarding configuration." />
 
 <div class="mb-6">
   <TabBar {tabs} active={activeTab} onchange={setTab} />
@@ -36,4 +38,6 @@
   <CommunicationTab />
 {:else if activeTab === 'ai'}
   <AiTab />
+{:else if activeTab === 'housing'}
+  <HousingTab />
 {/if}

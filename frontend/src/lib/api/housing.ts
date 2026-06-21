@@ -1,12 +1,88 @@
 import { api } from './client';
 
+export type HouseGender = 'MALE' | 'FEMALE' | 'MIXED';
+export type ExeatStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface Room {
+  id: string;
+  house_id: string;
+  room_number: string;
+  capacity: number | null;
+  room_type: string;
+}
+
 export interface House {
   id: string;
   school_id: string;
   name: string;
   code: string;
+  gender: HouseGender;
   capacity: number | null;
+  color: string | null;
+  is_active: boolean;
+  rooms: Room[];
+}
+
+export interface AssignmentRead {
+  id: string;
+  student_id: string;
+  house_id: string;
+  room_id: string | null;
+  academic_year_id: string;
+  assigned_at: string;
+  vacated_at: string | null;
+}
+
+export interface ExeatRead {
+  id: string;
+  student_id: string;
+  reason: string;
+  destination: string;
+  departure_date: string;
+  return_date: string;
+  status: ExeatStatus;
+  approved_by_id: string | null;
+  actual_return_date: string | null;
+  created_at: string;
 }
 
 export const listHouses = (): Promise<House[]> =>
-  api.get('/houses').then(r => r.data);
+  api.get('/housing/houses').then(r => r.data);
+
+export const createHouse = (req: {
+  name: string; code: string; gender: HouseGender;
+  capacity?: number | null; color?: string | null;
+}): Promise<House> => api.post('/housing/houses', req).then(r => r.data);
+
+export const updateHouse = (houseId: string, req: {
+  name?: string; capacity?: number | null; color?: string | null; is_active?: boolean;
+}): Promise<House> => api.patch(`/housing/houses/${houseId}`, req).then(r => r.data);
+
+export const addRoom = (houseId: string, req: {
+  room_number: string; capacity?: number | null; room_type?: string;
+}): Promise<Room> => api.post(`/housing/houses/${houseId}/rooms`, req).then(r => r.data);
+
+export const getStudentAssignment = (studentId: string, yearId: string): Promise<AssignmentRead | null> =>
+  api.get(`/housing/students/${studentId}/assignment`, { params: { year_id: yearId } }).then(r => r.data);
+
+export const createAssignment = (req: {
+  student_id: string; house_id: string; room_id?: string | null;
+  academic_year_id: string; assigned_at: string;
+}): Promise<AssignmentRead> => api.post('/housing/assignments', req).then(r => r.data);
+
+export const vacateAssignment = (assignmentId: string, vacated_at: string): Promise<AssignmentRead> =>
+  api.patch(`/housing/assignments/${assignmentId}/vacate`, { vacated_at }).then(r => r.data);
+
+export const listStudentExeats = (studentId: string): Promise<ExeatRead[]> =>
+  api.get(`/housing/students/${studentId}/exeats`).then(r => r.data);
+
+export const createExeat = (req: {
+  student_id: string; reason: string; destination: string;
+  departure_date: string; return_date: string;
+}): Promise<ExeatRead> => api.post('/housing/exeats', req).then(r => r.data);
+
+export const approveExeat = (exeatId: string, status: 'APPROVED' | 'REJECTED'): Promise<ExeatRead> =>
+  api.patch(`/housing/exeats/${exeatId}/approve`, { status }).then(r => r.data);
+
+export const recordReturn = (exeatId: string, actual_return_date: string): Promise<ExeatRead> =>
+  api.patch(`/housing/exeats/${exeatId}/return`, { actual_return_date }).then(r => r.data);
