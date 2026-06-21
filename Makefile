@@ -30,6 +30,7 @@ setup: .env
 	docker compose up -d --build
 	@echo "→ Waiting for API to be ready…"
 	@until docker compose exec api python -c "print('ok')" > /dev/null 2>&1; do sleep 2; done
+	@$(MAKE) --no-print-directory migrate
 	@$(MAKE) --no-print-directory seed
 	@$(MAKE) --no-print-directory superadmin
 	@echo ""
@@ -87,6 +88,7 @@ reset:
 	@$(MAKE) --no-print-directory dev
 	@echo "→ Waiting for API to be ready…"
 	@until docker compose exec api python -c "print('ok')" > /dev/null 2>&1; do sleep 2; done
+	@$(MAKE) --no-print-directory migrate
 	@$(MAKE) --no-print-directory seed
 	@$(MAKE) --no-print-directory superadmin
 	@echo "✓ Fresh environment ready."
