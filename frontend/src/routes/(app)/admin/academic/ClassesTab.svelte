@@ -126,10 +126,7 @@
         <button onclick={clearFilters} class="text-xs text-[var(--fg-muted)] underline transition hover:text-[var(--fg)]">Clear</button>
       {/if}
     </div>
-    <button
-      onclick={() => showAddForm = !showAddForm}
-      class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-      style="background-color: var(--brand)">
+    <button onclick={() => showAddForm = !showAddForm} class="btn-primary">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
       Add class
     </button>

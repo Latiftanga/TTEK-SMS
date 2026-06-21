@@ -98,8 +98,7 @@
               <p class="text-sm italic text-[var(--fg-subtle)]">No teacher assigned for this year.</p>
             {/if}
           </div>
-          <button onclick={openPicker}
-            class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:bg-[var(--hover)]">
+          <button onclick={openPicker} class="btn-ghost">
             {currentTeacher ? 'Change' : 'Assign'}
           </button>
         </div>
@@ -123,9 +122,8 @@
             {/if}
           </div>
           <div class="flex justify-end gap-2 pt-1">
-            <button onclick={closePicker} class="rounded-lg px-3 py-1.5 text-xs text-[var(--fg-muted)] hover:bg-[var(--hover)]">Cancel</button>
-            <button onclick={() => $assignMut.mutate()} disabled={!pickedStaff || $assignMut.isPending}
-              class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 transition hover:opacity-90" style="background: var(--brand)">
+            <button onclick={closePicker} class="btn-ghost">Cancel</button>
+            <button onclick={() => $assignMut.mutate()} disabled={!pickedStaff || $assignMut.isPending} class="btn-primary">
               {$assignMut.isPending ? 'Saving…' : 'Confirm'}
             </button>
           </div>

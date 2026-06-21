@@ -101,14 +101,9 @@
   </div>
   {#if formError}<p class="mt-2 text-xs text-red-500">{formError}</p>{/if}
   <div class="mt-4 flex gap-2">
-    <button onclick={submit} disabled={$createClassMut.isPending}
-      class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-      style="background-color: var(--brand)">
+    <button onclick={submit} disabled={$createClassMut.isPending} class="btn-primary">
       {$createClassMut.isPending ? 'Creating…' : 'Create class'}
     </button>
-    <button onclick={onClose}
-      class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">
-      Cancel
-    </button>
+    <button onclick={onClose} class="btn-ghost">Cancel</button>
   </div>
 </div>

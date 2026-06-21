@@ -6,6 +6,7 @@
   import { getMySchool } from '$lib/api/schools';
   import { toast } from '$lib/stores/toast';
   import Badge                from '$lib/components/Badge.svelte';
+  import TabBar               from '$lib/components/TabBar.svelte';
   import ProfileTab           from './ProfileTab.svelte';
   import QualificationsTab    from './QualificationsTab.svelte';
   import PromotionsTab        from './PromotionsTab.svelte';
@@ -164,18 +165,10 @@
 
       <!-- Actions -->
       <div class="flex shrink-0 flex-col gap-2">
-        <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium
-                 text-[var(--fg-muted)] transition disabled:opacity-50
-                 {s.is_active
-                   ? 'hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/40 dark:hover:text-red-400'
-                   : 'hover:bg-[var(--hover)] hover:text-[var(--fg)]'}">
+        <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending} class="btn-ghost">
           {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
         </button>
-        <button onclick={() => confirmReset = true}
-          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium
-                 text-[var(--fg-muted)] transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700
-                 dark:hover:border-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-400">
+        <button onclick={() => confirmReset = true} class="btn-ghost">
           Reset password
         </button>
       </div>
@@ -187,17 +180,13 @@
 
     <!-- LEFT: tabs + content -->
     <div>
-      <!-- Pill tabs -->
-      <div class="mb-5 flex flex-wrap gap-1 rounded-xl bg-[var(--hover)] p-1">
-        {#each TABS as t}
-          <button onclick={() => setTab(t.key)}
-            class="rounded-lg px-4 py-2 text-sm font-medium transition
-                   {activeTab === t.key
-                     ? 'bg-[var(--card)] text-[var(--fg)] shadow-sm ring-1 ring-[var(--border)]'
-                     : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
-            {t.label}
-          </button>
-        {/each}
+      <div class="mb-5">
+        <TabBar
+          tabs={TABS.map(t => ({ id: t.key, label: t.label }))}
+          active={activeTab}
+          onchange={(id) => setTab(id as typeof activeTab)}
+          variant="pill"
+        />
       </div>
 
       {#if activeTab === 'profile'}

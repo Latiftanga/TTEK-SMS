@@ -186,9 +186,7 @@
           Changes saved.
         </p>
       {/if}
-      <button onclick={() => $profileMut.mutate()} disabled={$profileMut.isPending || !profileDirty}
-        class="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-        style="background-color: var(--brand)">
+      <button onclick={() => $profileMut.mutate()} disabled={$profileMut.isPending || !profileDirty} class="btn-primary">
         {$profileMut.isPending ? 'Saving…' : 'Save changes'}
       </button>
     </div>
@@ -209,7 +207,7 @@
       </div>
       <input bind:this={logoInput} type="file" accept="image/jpeg,image/png,image/webp" class="hidden" onchange={handleLogoChange} />
       <button onclick={() => logoInput.click()} disabled={logoUploading}
-        class="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)] disabled:opacity-50">
+        class="btn-ghost w-full justify-center">
         {#if logoUploading}
           <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
           Uploading…

@@ -57,13 +57,8 @@
     </div>
 
     <div class="flex justify-end gap-3 border-t border-[var(--border)] px-6 py-4">
-      <button onclick={onClose}
-        class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-        Cancel
-      </button>
-      <button onclick={() => $saveMut.mutate()} disabled={$saveMut.isPending}
-        class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 transition hover:opacity-90"
-        style="background: var(--brand)">
+      <button onclick={onClose} class="btn-ghost">Cancel</button>
+      <button onclick={() => $saveMut.mutate()} disabled={$saveMut.isPending} class="btn-primary">
         {$saveMut.isPending ? 'Saving…' : 'Save'}
       </button>
     </div>
