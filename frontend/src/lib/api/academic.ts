@@ -64,7 +64,7 @@ export interface ClassTeacher {
   school_id: string;
   class_id: string;
   staff_member_id: string;
-  academic_term_id: string;
+  academic_year_id: string;
   is_active: boolean;
 }
 
@@ -203,10 +203,10 @@ export async function assignSubjects(
   return data;
 }
 
-export async function getClassTeacher(classId: string, termId: string): Promise<ClassTeacher | null> {
+export async function getClassTeacher(classId: string, yearId: string): Promise<ClassTeacher | null> {
   const { data } = await client.get<ClassTeacher | null>(
     `/academic/classes/${classId}/class-teacher`,
-    { params: { term_id: termId } }
+    { params: { year_id: yearId } }
   );
   return data;
 }
@@ -225,7 +225,7 @@ export async function removeClassSubject(classId: string, subjectId: string): Pr
 
 export async function assignClassTeacher(
   classId: string,
-  req: { staff_member_id: string; academic_term_id: string }
+  req: { staff_member_id: string; academic_year_id: string }
 ): Promise<ClassTeacher> {
   const { data } = await client.post<ClassTeacher>(
     `/academic/classes/${classId}/class-teacher`,

@@ -11,9 +11,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment, AssessmentType
 from app.models.school import School
-from app.models.students import TermEnrollment
+from app.models.students import StudentClassAssignment
 from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead,
     AssessmentTypeCreate, AssessmentTypeRead,
@@ -134,22 +135,21 @@ async def publish_assessment(
     a.is_published = True
     await db.flush()
 
-    # Notify guardians of all enrolled students in this class+term
+    # Notify guardians of all class members for this academic year
     school = await db.get(School, school_id)
-    from app.models.academic import AcademicTerm
     term = await db.get(AcademicTerm, a.academic_term_id)
     if school and term:
-        enrollments = await db.scalars(
-            select(TermEnrollment).where(
-                TermEnrollment.class_id == a.class_id,
-                TermEnrollment.academic_term_id == a.academic_term_id,
-                TermEnrollment.school_id == school_id,
-                TermEnrollment.is_active.is_(True),
+        assignments = await db.scalars(
+            select(StudentClassAssignment).where(
+                StudentClassAssignment.class_id == a.class_id,
+                StudentClassAssignment.academic_year_id == term.academic_year_id,
+                StudentClassAssignment.school_id == school_id,
+                StudentClassAssignment.is_active.is_(True),
             )
         )
-        for enrollment in enrollments:
+        for sca in assignments:
             await sms_svc.notify_report_published(
-                student_id=enrollment.student_id,
+                student_id=sca.student_id,
                 school_id=school_id,
                 school_short=school.short_name or school.name,
                 school_code=school.school_code,

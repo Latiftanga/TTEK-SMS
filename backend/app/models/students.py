@@ -2,24 +2,32 @@
 Group 5 — Student records, guardians, enrollment, and subject registration.
 
 Tables in this group:
-  student              — the student's personal record (permanent, school-scoped)
-  student_medical_record — blood group, allergies, emergency medical notes
-  guardian             — parent or guardian contact
-  student_guardian     — links students to their guardians (many-to-many)
-  student_enrollment   — the moment a student was first enrolled (NEW or TRANSFER)
-  term_enrollment      — links a student to a class for a specific term;
-                         created by the class teacher when the student physically reports
-  subject_registration — which subjects a student is taking in a given term enrollment
-  transfer_request     — formal request to move a student to another school
+  student                  — the student's personal record (permanent, school-scoped)
+  student_medical_record   — blood group, allergies, emergency medical notes
+  guardian                 — parent or guardian contact
+  student_guardian         — links students to their guardians (many-to-many)
+  student_enrollment       — the moment a student was first enrolled (NEW or TRANSFER)
+  student_class_assignment — which class a student belongs to for an academic year;
+                             created by admin when assigning students to classes
+  term_enrollment          — confirms the student physically arrived for a specific term;
+                             created by the class teacher when the student reports
+  subject_registration     — which subjects a student is taking in a given term enrollment
+  transfer_request         — formal request to move a student to another school
+
+CLASS MEMBERSHIP vs TERM ATTENDANCE
+-------------------------------------
+StudentClassAssignment = "Student X is in Form 2A for 2024/2025" (year-level, stable)
+TermEnrollment         = "Student X physically reported for Term 2" (per-term confirmation)
+
+These are deliberately separate. A student remains a class member even if they miss
+a term. TermEnrollment gates report card generation and attendance marking but does
+NOT define class membership.
 
 TERM ENROLLMENT RULE
 --------------------
 A TermEnrollment is only created when the class teacher confirms the student
-has physically arrived for the term.  Pre-enrollment (before term starts) is
-not modelled — a student either shows up or they don't.
-
-This is why TermEnrollment.enrolled_by_id is NOT NULL: a human teacher always
-creates it.  Automated bulk imports go through the ImportBatch flow instead.
+has physically arrived for the term. A StudentClassAssignment must already exist
+for the student + academic year before a TermEnrollment can be created.
 """
 from __future__ import annotations
 import uuid
@@ -75,6 +83,7 @@ class Student(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     )
     guardians: Mapped[list[StudentGuardian]] = relationship(back_populates="student")
     enrollments: Mapped[list[StudentEnrollment]] = relationship(back_populates="student")
+    class_assignments: Mapped[list[StudentClassAssignment]] = relationship(back_populates="student")
     term_enrollments: Mapped[list[TermEnrollment]] = relationship(back_populates="student")
 
 
@@ -140,6 +149,29 @@ class StudentEnrollment(Base, UUIDPrimaryKey, SchoolScopedMixin):
     student: Mapped[Student] = relationship(back_populates="enrollments")
 
 
+class StudentClassAssignment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+    __tablename__ = "student_class_assignment"
+    __table_args__ = (
+        UniqueConstraint("student_id", "academic_year_id", name="uq_student_class_year"),
+    )
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("class.id"), nullable=False, index=True
+    )
+    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("academic_year.id"), nullable=False
+    )
+    assigned_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    student: Mapped[Student] = relationship(back_populates="class_assignments")
+
+
 class TermEnrollment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "term_enrollment"
     __table_args__ = (
@@ -148,9 +180,6 @@ class TermEnrollment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
 
     student_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    class_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("class.id"), nullable=False, index=True
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False

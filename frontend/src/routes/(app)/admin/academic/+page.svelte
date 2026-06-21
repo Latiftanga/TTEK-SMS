@@ -1,1 +1,5 @@
-<!-- Redirected to /admin/academic/years by +layout.ts -->
+<script lang="ts">
+  import YearsTab from './YearsTab.svelte';
+</script>
+
+<YearsTab />

@@ -59,7 +59,7 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: 'Administration',
     items: [
       { href: '/admin/setup',            label: 'School Setup',  icon: IC.setup,    roles: ['admin'] },
-      { href: '/admin/academic/classes', label: 'Academic',      icon: IC.academic, roles: ['admin'] },
+      { href: '/admin/academic',         label: 'Academic',      icon: IC.academic, roles: ['admin'] },
       { href: '/admin/staff',            label: 'Staff',         icon: IC.staff,    roles: ['admin'] },
       { href: '/admin/fees-setup',       label: 'Fee Structure', icon: IC.feeSetup, roles: ['admin'] },
     ],

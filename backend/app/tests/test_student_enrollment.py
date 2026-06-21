@@ -11,6 +11,17 @@ from app.models.academic import AcademicTerm, Class
 from app.models.school import School
 
 
+async def _assign_class(client, auth, student_id: str, school_class: Class, academic_term: AcademicTerm):
+    """Create a StudentClassAssignment before enrolling for a term."""
+    resp = await client.post("/students/class-assignments", json={
+        "student_id": student_id,
+        "class_id": str(school_class.id),
+        "academic_year_id": str(academic_term.academic_year_id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 async def _create_student(client, auth, num="ADM001"):
     resp = await client.post("/students", json={
         "admission_number": num, "first_name": "Kwame", "last_name": "Asante",
@@ -47,21 +58,62 @@ async def test_transfer_enrollment_records_source_school(client: AsyncClient, au
 # ── Term enrollment ───────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_create_class_assignment(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+):
+    sid = await _create_student(client, auth)
+    data = await _assign_class(client, auth, sid, school_class, academic_term)
+    assert data["student_id"] == sid
+    assert data["class_id"] == str(school_class.id)
+    assert "class_display_name" in data
+    assert data["class_display_name"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_class_assignment_rejected(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+):
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    resp = await client.post("/students/class-assignments", json={
+        "student_id": sid,
+        "class_id": str(school_class.id),
+        "academic_year_id": str(academic_term.academic_year_id),
+    }, headers=auth)
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_create_term_enrollment(
     client: AsyncClient, auth: dict,
     school_class: Class, academic_term: AcademicTerm,
 ):
     sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
     resp = await client.post("/students/term-enrollments", json={
         "student_id": sid,
-        "class_id": str(school_class.id),
         "academic_term_id": str(academic_term.id),
     }, headers=auth)
     assert resp.status_code == 201
     data = resp.json()
     assert data["student_id"] == sid
     assert "class_display_name" in data
-    assert data["class_display_name"]  # not empty
+    assert data["class_display_name"]  # derived from StudentClassAssignment
+
+
+@pytest.mark.asyncio
+async def test_term_enrollment_requires_class_assignment(
+    client: AsyncClient, auth: dict,
+    academic_term: AcademicTerm,
+):
+    sid = await _create_student(client, auth)
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -70,7 +122,8 @@ async def test_duplicate_term_enrollment_rejected(
     school_class: Class, academic_term: AcademicTerm,
 ):
     sid = await _create_student(client, auth)
-    payload = {"student_id": sid, "class_id": str(school_class.id), "academic_term_id": str(academic_term.id)}
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    payload = {"student_id": sid, "academic_term_id": str(academic_term.id)}
     await client.post("/students/term-enrollments", json=payload, headers=auth)
     resp = await client.post("/students/term-enrollments", json=payload, headers=auth)
     assert resp.status_code == 409
@@ -82,8 +135,9 @@ async def test_list_term_enrollments(
     school_class: Class, academic_term: AcademicTerm,
 ):
     sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
     await client.post("/students/term-enrollments", json={
-        "student_id": sid, "class_id": str(school_class.id),
+        "student_id": sid,
         "academic_term_id": str(academic_term.id),
     }, headers=auth)
     resp = await client.get(f"/students/{sid}/term-enrollments", headers=auth)
@@ -98,13 +152,10 @@ async def test_list_students_by_class(
 ):
     sid1 = await _create_student(client, auth, "ADM001")
     sid2 = await _create_student(client, auth, "ADM002")
-    # Enroll only sid1
-    await client.post("/students/term-enrollments", json={
-        "student_id": sid1, "class_id": str(school_class.id),
-        "academic_term_id": str(academic_term.id),
-    }, headers=auth)
+    # Assign only sid1 to the class
+    await _assign_class(client, auth, sid1, school_class, academic_term)
     resp = await client.get(
-        f"/students?class_id={school_class.id}&term_id={academic_term.id}",
+        f"/students?class_id={school_class.id}",
         headers=auth,
     )
     assert resp.status_code == 200
@@ -127,8 +178,9 @@ async def test_register_subjects(
     await db_session.flush()
 
     sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
     te_id = (await client.post("/students/term-enrollments", json={
-        "student_id": sid, "class_id": str(school_class.id),
+        "student_id": sid,
         "academic_term_id": str(academic_term.id),
     }, headers=auth)).json()["id"]
 
@@ -152,8 +204,9 @@ async def test_duplicate_subject_skipped_silently(
     await db_session.flush()
 
     sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
     te_id = (await client.post("/students/term-enrollments", json={
-        "student_id": sid, "class_id": str(school_class.id),
+        "student_id": sid,
         "academic_term_id": str(academic_term.id),
     }, headers=auth)).json()["id"]
 

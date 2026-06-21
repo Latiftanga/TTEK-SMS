@@ -13,11 +13,11 @@
   import PasswordResetModals  from './PasswordResetModals.svelte';
 
   const qc = useQueryClient();
-  const staffId = $derived(() => $page.params.id);
+  const staffId = $derived($page.params.id);
 
   const query = createQuery({
-    queryKey: ['staff', staffId()],
-    queryFn:  () => getStaff(staffId()),
+    queryKey: ['staff', staffId],
+    queryFn:  () => getStaff(staffId),
     staleTime: 2 * 60_000,
   });
 
@@ -28,19 +28,19 @@
   });
 
   type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave';
-  const TABS = $derived((): { key: Tab; label: string }[] => [
-    { key: 'profile',        label: 'Profile'        },
-    { key: 'qualifications', label: 'Qualifications' },
+  const TABS = $derived([
+    { key: 'profile' as Tab,        label: 'Profile'        },
+    { key: 'qualifications' as Tab, label: 'Qualifications' },
     ...($schoolQuery.data?.ownership !== 'PRIVATE' ? [{ key: 'promotions' as Tab, label: 'Promotions' }] : []),
-    { key: 'leave',          label: 'Leave'          },
+    { key: 'leave' as Tab,          label: 'Leave'          },
   ]);
-  const activeTab = $derived(() => (($page.url.searchParams.get('tab') as Tab) ?? 'profile'));
+  const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
 
   const toggleMut = createMutation({
-    mutationFn: () => updateStaff(staffId(), { is_active: !$query.data!.is_active }),
+    mutationFn: () => updateStaff(staffId, { is_active: !$query.data!.is_active }),
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['staff', staffId()] });
+      qc.invalidateQueries({ queryKey: ['staff', staffId] });
       toast.success(data.is_active ? 'Staff member reactivated.' : 'Staff member deactivated.');
     },
     onError: () => toast.error('Could not update status. Try again.'),
@@ -189,10 +189,10 @@
     <div>
       <!-- Pill tabs -->
       <div class="mb-5 flex flex-wrap gap-1 rounded-xl bg-[var(--hover)] p-1">
-        {#each TABS() as t}
+        {#each TABS as t}
           <button onclick={() => setTab(t.key)}
             class="rounded-lg px-4 py-2 text-sm font-medium transition
-                   {activeTab() === t.key
+                   {activeTab === t.key
                      ? 'bg-[var(--card)] text-[var(--fg)] shadow-sm ring-1 ring-[var(--border)]'
                      : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
             {t.label}
@@ -200,14 +200,14 @@
         {/each}
       </div>
 
-      {#if activeTab() === 'profile'}
-        <ProfileTab staff={s} staffId={staffId()} />
-      {:else if activeTab() === 'qualifications'}
-        <QualificationsTab staff={s} staffId={staffId()} />
-      {:else if activeTab() === 'promotions'}
-        <PromotionsTab staff={s} staffId={staffId()} />
-      {:else if activeTab() === 'leave'}
-        <LeaveTab staffId={staffId()} />
+      {#if activeTab === 'profile'}
+        <ProfileTab staff={s} staffId={staffId} />
+      {:else if activeTab === 'qualifications'}
+        <QualificationsTab staff={s} staffId={staffId} />
+      {:else if activeTab === 'promotions'}
+        <PromotionsTab staff={s} staffId={staffId} />
+      {:else if activeTab === 'leave'}
+        <LeaveTab staffId={staffId} />
       {/if}
     </div>
 

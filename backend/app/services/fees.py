@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.academic import AcademicTerm, Class
 from app.models.fees import FeeStructure, FeeType, StudentFeeRecord, StudentFeeSummary
-from app.models.students import Student, TermEnrollment
+from app.models.students import Student, StudentClassAssignment
 from app.schemas.fees import (
     BulkAssignResult, FeeRecordRead, FeeSummaryRead,
     FeeStructureCreate, FeeStructureRead, FeeStructureUpdate,
@@ -163,13 +163,17 @@ async def bulk_assign_fees(
     if not fs:
         raise HTTPException(404, "Fee structure not found.")
 
+    term = await db.get(AcademicTerm, fs.academic_term_id)
+    if not term:
+        raise HTTPException(404, "Academic term not found.")
+
     q = (
-        select(TermEnrollment)
-        .join(Class, Class.id == TermEnrollment.class_id)
+        select(StudentClassAssignment)
+        .join(Class, Class.id == StudentClassAssignment.class_id)
         .where(
-            TermEnrollment.academic_term_id == fs.academic_term_id,
-            TermEnrollment.school_id == school_id,
-            TermEnrollment.is_active.is_(True),
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.school_id == school_id,
+            StudentClassAssignment.is_active.is_(True),
         )
     )
     if fs.applies_to_level:

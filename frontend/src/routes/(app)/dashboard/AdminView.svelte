@@ -13,8 +13,8 @@
     return `GHS ${Number(n).toLocaleString('en-GH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   }
 
-  const attendancePct = $derived(() => Math.round(data.attendance_pct));
-  const collectionPct = $derived(() => Math.min(100, Math.round(data.term_collection_pct)));
+  const attendancePct = $derived(Math.round(data.attendance_pct));
+  const collectionPct = $derived(Math.min(100, Math.round(data.term_collection_pct)));
 
   const icons = {
     students:   `<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>`,
@@ -67,7 +67,7 @@
   />
   <StatCard
     label="Present Today"
-    value="{attendancePct()}%"
+    value="{attendancePct}%"
     iconPath={icons.attendance}
     color="bg-emerald-50 dark:bg-emerald-950/40"
     iconColor="text-emerald-500 dark:text-emerald-400"
@@ -77,7 +77,7 @@
   />
   <StatCard
     label="Fees Collected"
-    value="{collectionPct()}%"
+    value="{collectionPct}%"
     iconPath={icons.fees}
     color="bg-sky-50 dark:bg-sky-950/40"
     iconColor="text-sky-500 dark:text-sky-400"
@@ -157,12 +157,12 @@
         </a>
       </div>
       <div class="flex items-end gap-2 mb-3">
-        <span class="text-[2rem] font-bold leading-none tracking-tight text-[var(--fg)]">{collectionPct()}%</span>
+        <span class="text-[2rem] font-bold leading-none tracking-tight text-[var(--fg)]">{collectionPct}%</span>
         <span class="mb-0.5 text-xs text-[var(--fg-muted)]">collected</span>
       </div>
       <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
         <div class="h-full rounded-full transition-all duration-700"
-             style="width: {collectionPct()}%; background-color: var(--brand)"></div>
+             style="width: {collectionPct}%; background-color: var(--brand)"></div>
       </div>
     </div>
 

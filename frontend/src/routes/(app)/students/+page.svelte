@@ -8,6 +8,7 @@
   import { listClasses } from '$lib/api/academic';
   import StudentForm          from './StudentForm.svelte';
   import StudentImportDrawer  from './StudentImportDrawer.svelte';
+  import BulkActionModal      from './BulkActionModal.svelte';
   import EmptyState           from '$lib/components/EmptyState.svelte';
 
   // ── Filter state ────────────────────────────────────────────────────────────
@@ -59,6 +60,14 @@
   let formOpen   = $state(false);
   let importOpen = $state(false);
   let exporting  = $state(false);
+
+  // ── Selection ────────────────────────────────────────────────────────────────
+  let selected   = $state(new Set<string>());
+
+  const allSelected = $derived(students.length > 0 && selected.size === students.length);
+  function toggleAll() { selected = allSelected ? new Set() : new Set(students.map(s => s.id)); }
+  function toggle(id: string) { const n = new Set(selected); n.has(id) ? n.delete(id) : n.add(id); selected = n; }
+  $effect(() => { students; selected = new Set(); });
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function initials(s: StudentSummary) {
@@ -202,6 +211,9 @@
     <table class="w-full text-sm">
       <thead>
         <tr class="border-b border-[var(--border)] bg-[var(--hover)]">
+          <th class="w-10 px-4 py-3">
+            <input type="checkbox" checked={allSelected} onchange={toggleAll} class="rounded accent-[var(--brand)]" />
+          </th>
           <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Student</th>
           <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden sm:table-cell">Admission No.</th>
           <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden md:table-cell">Class</th>
@@ -211,7 +223,11 @@
       </thead>
       <tbody class="divide-y divide-[var(--border)]">
         {#each students as s (s.id)}
-          <tr onclick={() => goto(`/students/${s.id}`)} class="cursor-pointer transition hover:bg-[var(--hover)]">
+          <tr onclick={() => goto(`/students/${s.id}`)}
+            class="cursor-pointer transition hover:bg-[var(--hover)] {selected.has(s.id) ? '!bg-[color-mix(in_srgb,var(--brand)_5%,transparent)]' : ''}">
+            <td class="w-10 px-4 py-3" onclick={(e) => { e.stopPropagation(); toggle(s.id); }}>
+              <input type="checkbox" checked={selected.has(s.id)} onchange={() => toggle(s.id)} class="rounded accent-[var(--brand)]" />
+            </td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-3">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
@@ -241,7 +257,7 @@
             <td class="px-4 py-3">
               <div class="flex flex-wrap gap-1">
                 {#if s.is_active}
-                  <span class="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-950/30 dark:text-green-400">Active</span>
+                  <span class="inline-flex items-center gap-1 text-[10px] font-bold text-green-600 dark:text-green-500"><svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Active</span>
                 {:else}
                   <span class="rounded-full bg-[var(--hover)] px-2 py-0.5 text-[10px] font-medium text-[var(--fg-muted)]">Inactive</span>
                 {/if}
@@ -259,6 +275,8 @@
     </div>
   </div>
 {/if}
+
+<BulkActionModal {selected} classes={$classesQ.data ?? []} onClear={() => selected = new Set()} />
 
 <StudentForm open={formOpen} onClose={() => formOpen = false} />
 <StudentImportDrawer open={importOpen} onClose={() => importOpen = false} />

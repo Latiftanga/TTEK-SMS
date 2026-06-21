@@ -12,8 +12,8 @@
     return `GHS ${Number(n).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
-  const pct       = $derived(() => Math.min(100, Math.round(data.collection_pct)));
-  const remaining = $derived(() => Math.max(0, Number(data.term_expected) - Number(data.term_collected)));
+  const pct       = $derived(Math.min(100, Math.round(data.collection_pct)));
+  const remaining = $derived(Math.max(0, Number(data.term_expected) - Number(data.term_collected)));
   const C = 2 * Math.PI * 40;
 
   const actions = [
@@ -51,12 +51,12 @@
             <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="7"/>
             <circle cx="48" cy="48" r="40" fill="none" stroke="white" stroke-width="7"
               stroke-linecap="round"
-              stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - pct() / 100)}"
+              stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - pct / 100)}"
               transform="rotate(-90 48 48)"
               style="transition: stroke-dashoffset 900ms cubic-bezier(0.4,0,0.2,1)"/>
           </svg>
           <div class="absolute inset-0 flex flex-col items-center justify-center">
-            <span class="text-2xl font-bold leading-none xl:text-3xl">{pct()}%</span>
+            <span class="text-2xl font-bold leading-none xl:text-3xl">{pct}%</span>
             <span class="mt-0.5 text-[10px] opacity-70 uppercase tracking-widest">done</span>
           </div>
         </div>
@@ -65,7 +65,7 @@
           <p class="mt-1 text-sm opacity-75">collected this term</p>
           <div class="mt-3 h-px w-full bg-white/20"></div>
           <p class="mt-3 text-sm opacity-80">
-            <span class="font-semibold">{fmtGHS(remaining())}</span> remaining of {fmtGHS(Number(data.term_expected))}
+            <span class="font-semibold">{fmtGHS(remaining)}</span> remaining of {fmtGHS(Number(data.term_expected))}
           </p>
         </div>
       </div>
@@ -84,7 +84,7 @@
         iconPath={icons.clock}
         color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"
         href="/fees?outstanding" alert={data.outstanding_students > 0} trend="students" />
-      <StatCard label="Remaining"       value={fmtGHS(remaining())}
+      <StatCard label="Remaining"       value={fmtGHS(remaining)}
         iconPath={icons.trendDown}
         color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400" />
     </div>

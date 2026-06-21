@@ -32,7 +32,7 @@ async def upload_document(
 @router.get("/{doc_id}/download")
 async def download_document(
     doc_id: uuid.UUID,
-    auth=Depends(require_permission("documents", "view")),
+    auth=Depends(require_permission("reports", "generate")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = auth
@@ -53,7 +53,7 @@ async def download_document(
 async def list_documents(
     entity_type: str,
     entity_id: uuid.UUID,
-    auth=Depends(require_permission("documents", "view")),
+    auth=Depends(require_permission("reports", "generate")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = auth

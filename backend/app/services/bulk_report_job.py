@@ -17,7 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.students import TermEnrollment
+from app.models.academic import AcademicTerm
+from app.models.students import StudentClassAssignment, TermEnrollment
 from app.services.pdf import render_report_card
 from app.services.report_card import assemble
 
@@ -51,9 +52,16 @@ async def _run(
     school_id: uuid.UUID,
     format: str,
 ) -> dict:
+    term = await db.get(AcademicTerm, academic_term_id)
     enrollments = (await db.scalars(
-        select(TermEnrollment).where(
-            TermEnrollment.class_id == class_id,
+        select(TermEnrollment)
+        .join(
+            StudentClassAssignment,
+            (StudentClassAssignment.student_id == TermEnrollment.student_id)
+            & (StudentClassAssignment.academic_year_id == term.academic_year_id)
+            & (StudentClassAssignment.class_id == class_id),
+        )
+        .where(
             TermEnrollment.academic_term_id == academic_term_id,
             TermEnrollment.school_id == school_id,
             TermEnrollment.is_active.is_(True),

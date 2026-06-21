@@ -14,7 +14,7 @@ from app.models.assessments import Assessment, Score
 from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.auth import User
 from app.models.staff import StaffMember
-from app.models.students import Student, TermEnrollment
+from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.schemas.dashboard import (
     AbsentStudent,
     ClassSnapshot,
@@ -73,10 +73,10 @@ async def _teacher_view(
         prog_name = prog.name if prog else None
 
     student_count = await db.scalar(
-        select(func.count(TermEnrollment.id)).where(
-            TermEnrollment.class_id == ct.class_id,
-            TermEnrollment.academic_term_id == term.id,
-            TermEnrollment.is_active.is_(True),
+        select(func.count(StudentClassAssignment.id)).where(
+            StudentClassAssignment.class_id == ct.class_id,
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.is_active.is_(True),
         )
     ) or 0
 
@@ -97,13 +97,16 @@ async def _teacher_view(
                 Student.id, Student.first_name,
                 Student.last_name, Student.admission_number,
             )
-            .join(TermEnrollment, TermEnrollment.student_id == AttendanceRecord.student_id)
             .join(Student, Student.id == AttendanceRecord.student_id)
+            .join(
+                StudentClassAssignment,
+                StudentClassAssignment.student_id == AttendanceRecord.student_id,
+            )
             .where(
                 AttendanceRecord.school_calendar_id == today_cal.id,
                 AttendanceRecord.period_id.is_(None),
-                TermEnrollment.class_id == ct.class_id,
-                TermEnrollment.academic_term_id == term.id,
+                StudentClassAssignment.class_id == ct.class_id,
+                StudentClassAssignment.academic_year_id == term.academic_year_id,
             )
         )
         for row in rows:

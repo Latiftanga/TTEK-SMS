@@ -10,11 +10,11 @@
   import MedicalTab    from './MedicalTab.svelte';
 
   const qc = useQueryClient();
-  const studentId = $derived(() => $page.params.id);
+  const studentId = $derived($page.params.id);
 
   const query = createQuery({
-    queryKey: ['student', studentId()],
-    queryFn:  () => getStudent(studentId()),
+    queryKey: ['student', studentId],
+    queryFn:  () => getStudent(studentId),
     staleTime: 2 * 60_000,
   });
 
@@ -25,13 +25,13 @@
     { key: 'enrollment', label: 'Enrollment' },
     { key: 'medical',    label: 'Medical'    },
   ];
-  const activeTab = $derived(() => (($page.url.searchParams.get('tab') as Tab) ?? 'profile'));
+  const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
 
   const toggleMut = createMutation({
-    mutationFn: () => updateStudent(studentId(), { is_active: !$query.data!.is_active }),
+    mutationFn: () => updateStudent(studentId, { is_active: !$query.data!.is_active }),
     onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ['student', studentId()] });
+      qc.invalidateQueries({ queryKey: ['student', studentId] });
       qc.invalidateQueries({ queryKey: ['students'] });
       toast.success(d.is_active ? 'Student reactivated.' : 'Student deactivated.');
     },
@@ -82,7 +82,7 @@
           <p class="mt-0.5 font-mono text-sm text-[var(--fg-muted)]">{s.admission_number}</p>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             {#if s.is_active}
-              <span class="rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-950/30 dark:text-green-400">Active</span>
+              <span class="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-500"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Active</span>
             {:else}
               <span class="rounded-full bg-[var(--hover)] px-2.5 py-0.5 text-xs font-semibold text-[var(--fg-muted)]">Inactive</span>
             {/if}
@@ -131,22 +131,22 @@
       {#each TABS as tab}
         <button onclick={() => setTab(tab.key)}
           class="relative px-4 pb-3 pt-1 text-sm font-medium transition-colors
-                 {activeTab() === tab.key ? 'text-[var(--brand)]' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
+                 {activeTab === tab.key ? 'text-[var(--brand)]' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
           {tab.label}
           <span class="pointer-events-none absolute bottom-0 left-0 right-0 h-0.5 rounded-t-sm
-                       {activeTab() === tab.key ? 'bg-[var(--brand)]' : 'bg-transparent'}"></span>
+                       {activeTab === tab.key ? 'bg-[var(--brand)]' : 'bg-transparent'}"></span>
         </button>
       {/each}
     </nav>
   </div>
 
-  {#if activeTab() === 'profile'}
-    <ProfileTab student={s} studentId={studentId()} />
-  {:else if activeTab() === 'guardians'}
-    <GuardiansTab student={s} studentId={studentId()} />
-  {:else if activeTab() === 'enrollment'}
-    <EnrollmentTab studentId={studentId()} />
-  {:else if activeTab() === 'medical'}
-    <MedicalTab studentId={studentId()} medical={s.medical_record} />
+  {#if activeTab === 'profile'}
+    <ProfileTab student={s} studentId={studentId} />
+  {:else if activeTab === 'guardians'}
+    <GuardiansTab student={s} studentId={studentId} />
+  {:else if activeTab === 'enrollment'}
+    <EnrollmentTab studentId={studentId} />
+  {:else if activeTab === 'medical'}
+    <MedicalTab studentId={studentId} medical={s.medical_record} />
   {/if}
 {/if}

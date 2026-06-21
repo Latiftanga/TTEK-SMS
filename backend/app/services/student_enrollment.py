@@ -1,20 +1,19 @@
 """
-Student enrollment, term enrollment, subject registration, and transfer requests.
+Initial enrollment, term enrollment, and subject registration.
 
-TERM ENROLLMENT INVARIANT
---------------------------
-A TermEnrollment is created only when the class teacher confirms the student
-has physically arrived for the term.  enrolled_by_id is always the authenticated
-user who calls POST /students/term-enrollments.
+FLOW
+----
+1. Admin creates Student record.
+2. Admin creates StudentClassAssignment (student → class → academic year).
+   See student_class_assignment.py.
+3. Teacher creates TermEnrollment when the student physically reports for a term.
+   Requires a StudentClassAssignment for the same academic year to exist first.
+4. Teacher registers subjects (SubjectRegistration) against the TermEnrollment.
 
-TRANSFER INVARIANT
-------------------
-Approving a transfer deactivates the student (is_active=False) so they no longer
-appear in class lists while remaining in historical data.
+Transfer requests live in student_transfer.py.
 """
 from __future__ import annotations
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -24,11 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.academic import AcademicTerm, Class, SHSProgramme
 from app.models.students import (
     Student,
+    StudentClassAssignment,
     StudentEnrollment,
     SubjectRegistration,
     TermEnrollment,
-    TransferRequest,
-    TransferStatus,
 )
 from app.schemas.students import (
     EnrollmentCreate,
@@ -37,14 +35,7 @@ from app.schemas.students import (
     SubjectRegistrationRead,
     TermEnrollmentCreate,
     TermEnrollmentRead,
-    TransferRequestCreate,
-    TransferRequestRead,
-    TransferRequestReview,
 )
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _display_name(level: str, year_group: int, programme_name: str | None, stream: str | None) -> str:
@@ -60,9 +51,26 @@ def _display_name(level: str, year_group: int, programme_name: str | None, strea
 
 
 def _te_query(*where_clauses):
+    """
+    Joins TermEnrollment → AcademicTerm → StudentClassAssignment → Class → SHSProgramme
+    to include class context in the response.
+    """
     return (
-        select(TermEnrollment, Class.level, Class.year_group, Class.stream, SHSProgramme.name)
-        .join(Class, Class.id == TermEnrollment.class_id)
+        select(
+            TermEnrollment,
+            StudentClassAssignment.class_id,
+            Class.level,
+            Class.year_group,
+            Class.stream,
+            SHSProgramme.name,
+        )
+        .join(AcademicTerm, AcademicTerm.id == TermEnrollment.academic_term_id)
+        .outerjoin(
+            StudentClassAssignment,
+            (StudentClassAssignment.student_id == TermEnrollment.student_id)
+            & (StudentClassAssignment.academic_year_id == AcademicTerm.academic_year_id),
+        )
+        .outerjoin(Class, Class.id == StudentClassAssignment.class_id)
         .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
         .where(*where_clauses)
         .order_by(TermEnrollment.created_at.desc())
@@ -70,13 +78,14 @@ def _te_query(*where_clauses):
 
 
 def _to_te_read(row) -> TermEnrollmentRead:
-    te, level, year_group, stream, prog_name = row
+    te, class_id, level, year_group, stream, prog_name = row
+    display = _display_name(level, year_group, prog_name, stream) if level else None
     return TermEnrollmentRead(
         id=te.id,
         student_id=te.student_id,
-        class_id=te.class_id,
         academic_term_id=te.academic_term_id,
-        class_display_name=_display_name(level, year_group, prog_name, stream),
+        class_id=class_id,
+        class_display_name=display,
         is_active=te.is_active,
         created_at=te.created_at,
     )
@@ -113,23 +122,31 @@ async def create_term_enrollment(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> TermEnrollmentRead:
-    # Verify student, class, and term all belong to this school
     student = await db.get(Student, req.student_id)
     if not student or student.school_id != school_id:
         raise HTTPException(status_code=404, detail="Student not found.")
-
-    cls = await db.get(Class, req.class_id)
-    if not cls or cls.school_id != school_id:
-        raise HTTPException(status_code=404, detail="Class not found.")
 
     term = await db.get(AcademicTerm, req.academic_term_id)
     if not term or term.school_id != school_id:
         raise HTTPException(status_code=404, detail="Academic term not found.")
 
+    sca = await db.scalar(
+        select(StudentClassAssignment).where(
+            StudentClassAssignment.student_id == req.student_id,
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.school_id == school_id,
+        )
+    )
+    if not sca:
+        raise HTTPException(
+            status_code=422,
+            detail="Student has no class assignment for this academic year. "
+                   "Assign the student to a class before creating a term enrollment.",
+        )
+
     te = TermEnrollment(
         school_id=school_id,
         student_id=req.student_id,
-        class_id=req.class_id,
         academic_term_id=req.academic_term_id,
         enrolled_by_id=user_id,
         is_active=True,
@@ -140,7 +157,7 @@ async def create_term_enrollment(
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Student is already enrolled in a class for this term.",
+            detail="Student is already enrolled for this term.",
         )
 
     rows = await db.execute(_te_query(TermEnrollment.id == te.id))
@@ -159,6 +176,24 @@ async def list_term_enrollments(
         )
     )
     return [_to_te_read(row) for row in rows]
+
+
+async def bulk_term_enrollment(
+    items: list[TermEnrollmentCreate],
+    school_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> dict:
+    enrolled = skipped = 0
+    for item in items:
+        try:
+            await create_term_enrollment(item, school_id, user_id, db)
+            enrolled += 1
+        except HTTPException as e:
+            if e.status_code != 409:
+                raise
+            skipped += 1
+    return {"enrolled": enrolled, "skipped": skipped}
 
 
 # ── Subject registration ──────────────────────────────────────────────────────
@@ -211,89 +246,3 @@ async def list_subject_registrations(
         )
     )
     return [SubjectRegistrationRead.model_validate(r) for r in rows]
-
-
-async def create_transfer_request(
-    student_id: uuid.UUID,
-    req: TransferRequestCreate,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> TransferRequestRead:
-    student = await db.get(Student, student_id)
-    if not student or student.school_id != school_id:
-        raise HTTPException(status_code=404, detail="Student not found.")
-
-    tr = TransferRequest(
-        school_id=school_id,
-        student_id=student_id,
-        requesting_school_id=req.requesting_school_id,
-        status=TransferStatus.PENDING,
-        reason=req.reason,
-    )
-    db.add(tr)
-    await db.flush()
-    return TransferRequestRead.model_validate(tr)
-
-
-async def list_pending_transfers(
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> list[TransferRequestRead]:
-    rows = await db.scalars(
-        select(TransferRequest).where(
-            TransferRequest.school_id == school_id,
-            TransferRequest.status == TransferStatus.PENDING,
-        ).order_by(TransferRequest.created_at)
-    )
-    return [TransferRequestRead.model_validate(r) for r in rows]
-
-
-async def bulk_term_enrollment(
-    items: list[TermEnrollmentCreate],
-    school_id: uuid.UUID,
-    user_id: uuid.UUID,
-    db: AsyncSession,
-) -> dict:
-    enrolled = skipped = 0
-    for item in items:
-        try:
-            await create_term_enrollment(item, school_id, user_id, db)
-            enrolled += 1
-        except HTTPException as e:
-            if e.status_code != 409:
-                raise
-            skipped += 1
-    return {"enrolled": enrolled, "skipped": skipped}
-
-
-async def review_transfer(
-    tr_id: uuid.UUID,
-    req: TransferRequestReview,
-    school_id: uuid.UUID,
-    user_id: uuid.UUID,
-    db: AsyncSession,
-) -> TransferRequestRead:
-    tr = await db.scalar(
-        select(TransferRequest).where(
-            TransferRequest.id == tr_id, TransferRequest.school_id == school_id
-        )
-    )
-    if not tr:
-        raise HTTPException(status_code=404, detail="Transfer request not found.")
-    if tr.status != TransferStatus.PENDING:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Transfer has already been {tr.status.value.lower()}.",
-        )
-
-    tr.status = req.status
-    tr.reviewed_by_id = user_id
-    tr.reviewed_at = _utcnow()
-
-    if req.status == TransferStatus.APPROVED:
-        student = await db.get(Student, tr.student_id)
-        if student:
-            student.is_active = False
-
-    await db.flush()
-    return TransferRequestRead.model_validate(tr)

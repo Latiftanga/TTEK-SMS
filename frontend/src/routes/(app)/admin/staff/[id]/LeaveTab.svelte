@@ -30,7 +30,7 @@
   let formError = $state('');
 
   // Auto-calculate days from date range
-  const calcDays = $derived(() => {
+  const calcDays = $derived.by(() => {
     if (!form.start_date || !form.end_date) return 0;
     const diff = new Date(form.end_date).getTime() - new Date(form.start_date).getTime();
     return Math.max(0, Math.round(diff / 86_400_000) + 1);
@@ -41,7 +41,7 @@
       leave_type:  form.leave_type,
       start_date:  form.start_date,
       end_date:    form.end_date,
-      days_count:  calcDays(),
+      days_count:  calcDays,
       reason:      form.reason || undefined,
     }),
     onSuccess: () => {
@@ -93,10 +93,10 @@
           <input type="date" bind:value={form.end_date}
             class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
         </div>
-        {#if calcDays() > 0}
+        {#if calcDays > 0}
           <div class="sm:col-span-2">
             <p class="text-xs text-[var(--fg-muted)]">
-              Duration: <span class="font-semibold text-[var(--fg)]">{calcDays()} day{calcDays() !== 1 ? 's' : ''}</span>
+              Duration: <span class="font-semibold text-[var(--fg)]">{calcDays} day{calcDays !== 1 ? 's' : ''}</span>
             </p>
           </div>
         {/if}

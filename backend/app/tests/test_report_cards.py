@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, Class
 from app.models.school import School
-from app.models.students import Student, TermEnrollment
+from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.models.auth import User
 
 
@@ -24,10 +24,20 @@ async def _make_enrollment(
     db: AsyncSession, school: School, student: Student,
     school_class: Class, academic_term: AcademicTerm, school_admin: User
 ) -> TermEnrollment:
-    te = TermEnrollment(
+    sca = StudentClassAssignment(
         school_id=school.id,
         student_id=student.id,
         class_id=school_class.id,
+        academic_year_id=academic_term.academic_year_id,
+        assigned_by_id=school_admin.id,
+        is_active=True,
+    )
+    db.add(sca)
+    await db.flush()
+
+    te = TermEnrollment(
+        school_id=school.id,
+        student_id=student.id,
         academic_term_id=academic_term.id,
         enrolled_by_id=school_admin.id,
         is_active=True,

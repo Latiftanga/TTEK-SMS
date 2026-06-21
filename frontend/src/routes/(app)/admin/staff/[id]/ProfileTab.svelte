@@ -89,7 +89,7 @@
   const EMPLOYMENT_LABEL: Record<string, string> = { PERMANENT: 'Permanent', CONTRACT: 'Contract', NATIONAL_SERVICE: 'National Service', INTERN: 'Intern' };
   const MARITAL_LABEL: Record<string, string> = { SINGLE: 'Single', MARRIED: 'Married', DIVORCED: 'Divorced', WIDOWED: 'Widowed', SEPARATED: 'Separated' };
 
-  const DETAILS = $derived(() => [
+  const DETAILS = $derived([
     ['Full name',       staff.display_name],
     ['Staff number',    staff.staff_number],
     ['Category',        staff.category_name ?? '—'],
@@ -206,7 +206,7 @@
       </div>
     {:else}
       <dl class="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-        {#each DETAILS() as [label, value]}
+        {#each DETAILS as [label, value]}
           <div>
             <dt class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">{label}</dt>
             <dd class="mt-0.5 text-sm text-[var(--fg)]">{value}</dd>

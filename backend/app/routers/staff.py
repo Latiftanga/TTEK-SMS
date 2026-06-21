@@ -172,7 +172,7 @@ async def reset_staff_password(
 
 @router.get("/leave/pending", response_model=list[LeaveRead])
 async def list_pending_leave(
-    ids=Depends(require_permission("staff", "approve_leave")),
+    ids=Depends(require_permission("staff", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -184,7 +184,7 @@ async def list_pending_leave(
 async def review_leave(
     leave_id: uuid.UUID,
     req: LeaveReview,
-    ids=Depends(require_permission("staff", "approve_leave")),
+    ids=Depends(require_permission("staff", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids

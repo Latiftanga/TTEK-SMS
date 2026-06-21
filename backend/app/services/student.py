@@ -16,6 +16,7 @@ from app.models.academic import Class, SHSProgramme
 from app.models.students import (
     Guardian,
     Student,
+    StudentClassAssignment,
     StudentGuardian,
     StudentMedicalRecord,
     TermEnrollment,
@@ -151,18 +152,18 @@ async def _get_class_map(
         return {}
     rows = await db.execute(
         select(
-            TermEnrollment.student_id,
+            StudentClassAssignment.student_id,
             Class.level,
             Class.year_group,
             Class.stream,
             SHSProgramme.name.label("programme_name"),
             Class.id.label("class_id"),
         )
-        .join(Class, Class.id == TermEnrollment.class_id)
+        .join(Class, Class.id == StudentClassAssignment.class_id)
         .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
         .where(
-            TermEnrollment.student_id.in_(student_ids),
-            TermEnrollment.is_active == True,  # noqa: E712
+            StudentClassAssignment.student_id.in_(student_ids),
+            StudentClassAssignment.is_active == True,  # noqa: E712
         )
     )
     result: dict[uuid.UUID, tuple] = {}
@@ -190,16 +191,19 @@ async def list_students(
         q = q.where(Student.is_active == True)  # noqa: E712
     if gender:
         q = q.where(Student.gender == gender)
-    if class_id or term_id or level:
-        q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
-            TermEnrollment.is_active == True,  # noqa: E712
+    if class_id or level:
+        q = q.join(StudentClassAssignment, StudentClassAssignment.student_id == Student.id).where(
+            StudentClassAssignment.is_active == True,  # noqa: E712
         )
         if class_id:
-            q = q.where(TermEnrollment.class_id == class_id)
-        if term_id:
-            q = q.where(TermEnrollment.academic_term_id == term_id)
+            q = q.where(StudentClassAssignment.class_id == class_id)
         if level:
-            q = q.join(Class, Class.id == TermEnrollment.class_id).where(Class.level == level)
+            q = q.join(Class, Class.id == StudentClassAssignment.class_id).where(Class.level == level)
+    if term_id:
+        q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
+            TermEnrollment.is_active == True,  # noqa: E712
+            TermEnrollment.academic_term_id == term_id,
+        )
     if search:
         s = f"%{search}%"
         q = q.where(or_(

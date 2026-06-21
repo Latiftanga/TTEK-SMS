@@ -11,7 +11,7 @@ from app.models.assessments import Score
 from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.fees import FeePayment, StudentFeeSummary
 from app.models.school import School
-from app.models.students import TermEnrollment
+from app.models.students import StudentClassAssignment, TermEnrollment
 from app.schemas.dashboard import (
     AdminDashboard,
     ClassAttendanceLine,
@@ -113,11 +113,13 @@ async def admin_view(
     )
 
     class_rows = await db.execute(
-        select(Class, func.count(TermEnrollment.id).label("total"))
-        .join(TermEnrollment, (TermEnrollment.class_id == Class.id)
-              & (TermEnrollment.academic_term_id == term.id)
-              & TermEnrollment.is_active.is_(True))
-        .where(Class.school_id == school_id)
+        select(Class, func.count(StudentClassAssignment.id).label("total"))
+        .join(StudentClassAssignment, StudentClassAssignment.class_id == Class.id)
+        .where(
+            Class.school_id == school_id,
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.is_active.is_(True),
+        )
         .group_by(Class.id)
         .order_by(Class.level, Class.year_group)
         .limit(12)
@@ -126,13 +128,16 @@ async def admin_view(
     present_map: dict[uuid.UUID, int] = {}
     if today_cal:
         att = await db.execute(
-            select(TermEnrollment.class_id, func.count(AttendanceRecord.id).label("n"))
-            .join(AttendanceRecord, (AttendanceRecord.student_id == TermEnrollment.student_id)
-                  & (AttendanceRecord.school_calendar_id == today_cal.id)
-                  & (AttendanceRecord.status == AttendanceStatus.PRESENT)
-                  & AttendanceRecord.period_id.is_(None))
-            .where(TermEnrollment.academic_term_id == term.id, TermEnrollment.school_id == school_id)
-            .group_by(TermEnrollment.class_id)
+            select(StudentClassAssignment.class_id, func.count(AttendanceRecord.id).label("n"))
+            .join(AttendanceRecord, AttendanceRecord.student_id == StudentClassAssignment.student_id)
+            .where(
+                AttendanceRecord.school_calendar_id == today_cal.id,
+                AttendanceRecord.status == AttendanceStatus.PRESENT,
+                AttendanceRecord.period_id.is_(None),
+                StudentClassAssignment.academic_year_id == term.academic_year_id,
+                StudentClassAssignment.school_id == school_id,
+            )
+            .group_by(StudentClassAssignment.class_id)
         )
         present_map = {r.class_id: r.n for r in att}
 

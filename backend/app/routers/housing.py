@@ -189,7 +189,7 @@ async def get_student_assignment(
 @router.post("/roll-calls", response_model=RollCallRead, status_code=201)
 async def record_roll_call(
     req: RollCallCreate,
-    ids=Depends(require_permission("housing", "roll_call")),
+    ids=Depends(require_permission("housing", "assign")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -213,7 +213,7 @@ async def list_roll_calls(
 @router.post("/exeats", response_model=ExeatRead, status_code=201)
 async def create_exeat(
     req: ExeatCreate,
-    ids=Depends(require_permission("housing", "manage_exeats")),
+    ids=Depends(require_permission("housing", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -222,7 +222,7 @@ async def create_exeat(
 
 @router.get("/exeats/pending", response_model=list[ExeatRead])
 async def list_pending_exeats(
-    ids=Depends(require_permission("housing", "manage_exeats")),
+    ids=Depends(require_permission("housing", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -233,7 +233,7 @@ async def list_pending_exeats(
 async def review_exeat(
     exeat_id: uuid.UUID,
     req: ExeatApprove,
-    ids=Depends(require_permission("housing", "manage_exeats")),
+    ids=Depends(require_permission("housing", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -244,7 +244,7 @@ async def review_exeat(
 async def record_return(
     exeat_id: uuid.UUID,
     req: ExeatReturn,
-    ids=Depends(require_permission("housing", "manage_exeats")),
+    ids=Depends(require_permission("housing", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids

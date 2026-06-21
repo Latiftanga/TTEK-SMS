@@ -18,7 +18,7 @@ from app.models.assessments import Assessment, AssessmentType, Score, StudentBeh
 from app.models.attendance import AttendanceRecord, SchoolCalendar
 from app.models.school import School
 from app.models.staff import StaffMember
-from app.models.students import Student, TermEnrollment
+from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.services.qr import generate_token
 
 
@@ -87,28 +87,32 @@ async def _load_attendance(
 
 async def _compute_rank(
     student_id: uuid.UUID, class_id: uuid.UUID, term_id: uuid.UUID,
-    school_id: uuid.UUID, db: AsyncSession
+    academic_year_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> tuple[int, int]:
     """Returns (rank, class_size). Rank 1 = highest total approved score."""
     q = text("""
-        SELECT te.student_id,
+        SELECT sca.student_id,
                COALESCE(SUM(sc.raw_score), 0) AS total
-        FROM term_enrollment te
-        LEFT JOIN score sc ON sc.student_id = te.student_id
+        FROM student_class_assignment sca
+        JOIN term_enrollment te
+            ON te.student_id = sca.student_id
+           AND te.academic_term_id = :term_id
+        LEFT JOIN score sc ON sc.student_id = sca.student_id
             AND sc.school_id = :school_id
             AND sc.is_approved = true
         LEFT JOIN assessment a ON a.id = sc.assessment_id
             AND a.academic_term_id = :term_id
             AND a.is_published = true
-        WHERE te.class_id = :class_id
-          AND te.academic_term_id = :term_id
-        GROUP BY te.student_id
+        WHERE sca.class_id = :class_id
+          AND sca.academic_year_id = :academic_year_id
+        GROUP BY sca.student_id
         ORDER BY total DESC
     """)
     rows = (await db.execute(q, {
         "school_id": str(school_id),
         "term_id": str(term_id),
         "class_id": str(class_id),
+        "academic_year_id": str(academic_year_id),
     })).all()
     class_size = len(rows)
     rank = next(
@@ -135,8 +139,19 @@ async def assemble(
         .where(AcademicTerm.id == te.academic_term_id)
         .options(selectinload(AcademicTerm.academic_year))
     )
-    cls = await db.get(Class, te.class_id)
     school = await db.get(School, school_id)
+
+    # Resolve class from StudentClassAssignment (the authoritative class membership)
+    sca = await db.scalar(
+        select(StudentClassAssignment).where(
+            StudentClassAssignment.student_id == te.student_id,
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.school_id == school_id,
+        )
+    )
+    cls = await db.get(Class, sca.class_id) if sca else None
+    if not cls:
+        raise HTTPException(404, "Student has no class assignment for this academic year.")
 
     # Programme name for class label
     programme_name: str | None = None
@@ -149,7 +164,7 @@ async def assemble(
     ct = await db.scalar(
         select(ClassTeacher)
         .where(
-            ClassTeacher.class_id == te.class_id,
+            ClassTeacher.class_id == cls.id,
             ClassTeacher.academic_term_id == te.academic_term_id,
             ClassTeacher.is_active.is_(True),
         )
@@ -164,7 +179,7 @@ async def assemble(
         te.student_id, te.academic_term_id, school_id, db
     )
     rank, class_size = await _compute_rank(
-        te.student_id, te.class_id, te.academic_term_id, school_id, db
+        te.student_id, cls.id, te.academic_term_id, term.academic_year_id, school_id, db
     )
 
     behaviour = (await db.scalars(

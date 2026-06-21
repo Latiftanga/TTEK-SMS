@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
-  import { createStudent, enrollStudent, type StudentCreate, type Gender, type OrphanStatus } from '$lib/api/students';
+  import { createStudent, assignStudentToClass, type StudentCreate, type Gender, type OrphanStatus } from '$lib/api/students';
   import { listClasses, listYears } from '$lib/api/academic';
   import { listHouses } from '$lib/api/housing';
   import { portal } from '$lib/actions/portal';
@@ -16,11 +16,10 @@
   const yearsQ   = createQuery({ queryKey: ['years'],   queryFn: listYears,   staleTime: 5 * 60_000 });
   const housesQ  = createQuery({ queryKey: ['houses'],  queryFn: listHouses,  staleTime: 5 * 60_000 });
 
-  // Latest term — used silently when a class is chosen
-  const latestTermId = $derived(
-    ($yearsQ.data ?? [])
-      .flatMap(y => y.terms ?? [])
-      .sort((a, b) => b.start_date.localeCompare(a.start_date))[0]?.id
+  // Current academic year — used silently when a class is chosen
+  const currentYearId = $derived(
+    ($yearsQ.data ?? []).find(y => y.is_current)?.id
+    ?? ($yearsQ.data ?? []).sort((a, b) => b.start_date.localeCompare(a.start_date))[0]?.id
   );
 
   // ── Form state ────────────────────────────────────────────────────────────────
@@ -53,12 +52,12 @@
   const mut = createMutation({
     mutationFn: createStudent,
     onSuccess: async (s) => {
-      // Silently assign to class using the latest active term — no term picker shown to user.
-      // Formal per-term "Class Registration" is done as a bulk action from the class page.
-      if (classId && latestTermId) {
+      // Silently create class enrollment for the current academic year.
+      // Term registration is the class teacher's job at the start of each term.
+      if (classId && currentYearId) {
         try {
-          await enrollStudent({ student_id: s.id, class_id: classId, academic_term_id: String(latestTermId) });
-        } catch { /* non-fatal — staff can register from class page */ }
+          await assignStudentToClass({ student_id: s.id, class_id: classId, academic_year_id: currentYearId });
+        } catch { /* non-fatal — can be done from the enrollment tab */ }
       }
       qc.invalidateQueries({ queryKey: ['students'] });
       onClose();
@@ -219,7 +218,7 @@
             </select>
             {#if classId}
               <p class="mt-1 text-[10px] text-[var(--fg-subtle)]">
-                Student will be registered in the current term. Class Registration for future terms is done from the class page.
+                Student will be enrolled in this class for the current academic year. The class teacher registers them for each term.
               </p>
             {/if}
           </div>

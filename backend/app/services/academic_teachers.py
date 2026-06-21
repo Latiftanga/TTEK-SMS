@@ -17,7 +17,7 @@ async def assign_class_teacher(
     existing = await db.scalar(
         select(ClassTeacher).where(
             ClassTeacher.class_id == class_id,
-            ClassTeacher.academic_term_id == req.academic_term_id,
+            ClassTeacher.academic_year_id == req.academic_year_id,
         )
     )
     if existing:
@@ -30,7 +30,7 @@ async def assign_class_teacher(
         school_id=school_id,
         class_id=class_id,
         staff_member_id=req.staff_member_id,
-        academic_term_id=req.academic_term_id,
+        academic_year_id=req.academic_year_id,
         is_active=True,
     )
     db.add(ct)
@@ -48,7 +48,7 @@ async def assign_subject_teacher(
         select(SubjectTeacher).where(
             SubjectTeacher.class_id == class_id,
             SubjectTeacher.subject_id == req.subject_id,
-            SubjectTeacher.academic_term_id == req.academic_term_id,
+            SubjectTeacher.academic_year_id == req.academic_year_id,
         )
     )
     if existing:
@@ -62,7 +62,7 @@ async def assign_subject_teacher(
         class_id=class_id,
         subject_id=req.subject_id,
         staff_member_id=req.staff_member_id,
-        academic_term_id=req.academic_term_id,
+        academic_year_id=req.academic_year_id,
         is_active=True,
     )
     db.add(st)
@@ -72,14 +72,14 @@ async def assign_subject_teacher(
 
 async def get_class_teacher(
     class_id: uuid.UUID,
-    term_id: uuid.UUID,
+    year_id: uuid.UUID,
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> ClassTeacher | None:
     return await db.scalar(
         select(ClassTeacher).where(
             ClassTeacher.class_id == class_id,
-            ClassTeacher.academic_term_id == term_id,
+            ClassTeacher.academic_year_id == year_id,
             ClassTeacher.school_id == school_id,
         )
     )
@@ -94,7 +94,7 @@ async def list_subject_teachers(
     rows = await db.scalars(
         select(SubjectTeacher).where(
             SubjectTeacher.class_id == class_id,
-            SubjectTeacher.academic_term_id == term_id,
+            SubjectTeacher.academic_year_id == term_id,
             SubjectTeacher.school_id == school_id,
         )
     )

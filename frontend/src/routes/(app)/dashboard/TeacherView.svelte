@@ -90,7 +90,7 @@
             <p class="text-sm text-[var(--fg-muted)]">{cls.student_count} students enrolled</p>
             <div class="mt-2.5 flex flex-wrap gap-2">
               {#if cls.attendance_marked_today}
-                <span class="inline-flex items-center gap-1 rounded-full bg-green-50 dark:bg-green-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-green-700 dark:text-green-400">
+                <span class="inline-flex items-center gap-1 rounded-full bg-green-600 px-2.5 py-0.5 text-[11px] font-semibold text-white dark:bg-green-700">
                   <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                   {cls.present_today} present
                 </span>

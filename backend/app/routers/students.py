@@ -2,22 +2,26 @@
 
 ACCESS CONTROL
 --------------
-GET  /students, /students/{id}               students.view
-POST /students                               students.create
-PATCH /students/{id}                         students.edit
-PUT  /students/{id}/medical                  students.edit
-POST/DELETE /students/{id}/guardians         students.edit
-POST /students/{id}/enroll                   students.enroll
-POST /students/term-enrollments              students.enroll
-POST /students/term-enrollments/{id}/subjects students.enroll
-POST /students/{id}/transfers                students.edit
-GET  /students/transfers/pending             students.manage_transfers
-PATCH /students/transfers/{id}/review        students.manage_transfers
+GET  /students, /students/{id}                    students.view
+POST /students                                    students.create
+PATCH /students/{id}                              students.edit
+PUT  /students/{id}/medical                       students.edit
+POST/DELETE /students/{id}/guardians              students.edit
+POST /students/{id}/enroll                        students.edit
+POST /students/class-assignments                  students.edit
+POST /students/class-assignments/bulk             students.edit
+GET  /students/{id}/class-assignments             students.view
+POST /students/term-enrollments                   students.edit
+POST /students/term-enrollments/{id}/subjects     students.edit
+POST /students/{id}/transfers                     students.edit
+GET  /students/transfers/pending                  students.delete
+PATCH /students/transfers/{id}/review             students.delete
 
 ROUTE ORDER NOTE
 ----------------
-Literal paths (/transfers/pending, /term-enrollments) are declared before
-the parametric /{student_id} to prevent path-capture by the UUID parameter.
+Literal paths (/transfers/pending, /class-assignments, /term-enrollments) are
+declared before the parametric /{student_id} to prevent path-capture by the UUID
+parameter.
 """
 from __future__ import annotations
 import uuid
@@ -31,18 +35,21 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas.documents import ImportBatchResult
 from app.schemas.students import (
-    BulkEnrollResult, BulkTermEnrollmentCreate,
+    BulkEnrollResult, BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
     EnrollmentCreate, EnrollmentRead,
     GuardianCreate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
+    StudentClassAssignmentCreate, StudentClassAssignmentRead,
     StudentCreate, StudentDetail, StudentSummary, StudentUpdate,
     SubjectRegistrationItem, SubjectRegistrationRead,
     TermEnrollmentCreate, TermEnrollmentRead,
     TransferRequestCreate, TransferRequestRead, TransferRequestReview,
 )
 from app.services import student as svc
+from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
 from app.services import student_import as import_svc
+from app.services import student_transfer as transfer_svc
 from app.services.student_import_template import build_template
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -152,12 +159,34 @@ async def bulk_import_students(
     return await import_svc.process_import(file_bytes, school_id, school_code, user_id, db)
 
 
+# ── Class assignment (declared before /{student_id} to avoid path capture) ───
+
+@router.post("/class-assignments", response_model=StudentClassAssignmentRead, status_code=201)
+async def create_class_assignment(
+    req: StudentClassAssignmentCreate,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    return await class_svc.create_class_assignment(req, school_id, user_id, db)
+
+
+@router.post("/class-assignments/bulk", response_model=BulkEnrollResult)
+async def bulk_class_assignment(
+    req: BulkStudentClassAssignmentCreate,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    return await class_svc.bulk_class_assignment(req.items, school_id, user_id, db)
+
+
 # ── Term enrollment (declared before /{student_id} to avoid path capture) ────
 
 @router.post("/bulk-term-enrollments", response_model=BulkEnrollResult)
 async def bulk_term_enrollment(
     req: BulkTermEnrollmentCreate,
-    ids=Depends(require_permission("students", "enroll")),
+    ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -168,7 +197,7 @@ async def bulk_term_enrollment(
 @router.post("/term-enrollments", response_model=TermEnrollmentRead, status_code=201)
 async def create_term_enrollment(
     req: TermEnrollmentCreate,
-    ids=Depends(require_permission("students", "enroll")),
+    ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -179,7 +208,7 @@ async def create_term_enrollment(
 async def register_subjects(
     te_id: uuid.UUID,
     items: list[SubjectRegistrationItem],
-    ids=Depends(require_permission("students", "enroll")),
+    ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -200,22 +229,22 @@ async def list_subjects(
 
 @router.get("/transfers/pending", response_model=list[TransferRequestRead])
 async def list_pending_transfers(
-    ids=Depends(require_permission("students", "manage_transfers")),
+    ids=Depends(require_permission("students", "delete")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await enroll_svc.list_pending_transfers(school_id, db)
+    return await transfer_svc.list_pending_transfers(school_id, db)
 
 
 @router.patch("/transfers/{tr_id}/review", response_model=TransferRequestRead)
 async def review_transfer(
     tr_id: uuid.UUID,
     req: TransferRequestReview,
-    ids=Depends(require_permission("students", "manage_transfers")),
+    ids=Depends(require_permission("students", "delete")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
-    return await enroll_svc.review_transfer(tr_id, req, school_id, user_id, db)
+    return await transfer_svc.review_transfer(tr_id, req, school_id, user_id, db)
 
 
 # ── Single-student endpoints ──────────────────────────────────────────────────
@@ -278,11 +307,21 @@ async def remove_guardian(
 async def create_enrollment(
     student_id: uuid.UUID,
     req: EnrollmentCreate,
-    ids=Depends(require_permission("students", "enroll")),
+    ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
     return await enroll_svc.create_enrollment(student_id, req, school_id, db)
+
+
+@router.get("/{student_id}/class-assignments", response_model=list[StudentClassAssignmentRead])
+async def list_class_assignments(
+    student_id: uuid.UUID,
+    ids=Depends(require_permission("students", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await class_svc.list_class_assignments(student_id, school_id, db)
 
 
 @router.get("/{student_id}/term-enrollments", response_model=list[TermEnrollmentRead])
@@ -303,4 +342,4 @@ async def create_transfer_request(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await enroll_svc.create_transfer_request(student_id, req, school_id, db)
+    return await transfer_svc.create_transfer_request(student_id, req, school_id, db)

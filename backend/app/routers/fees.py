@@ -123,7 +123,7 @@ async def get_fee_summary(
 @router.post("/payments", response_model=FeePaymentRead, status_code=201)
 async def record_payment(
     req: FeePaymentCreate,
-    auth=Depends(require_permission("fees", "record_payment")),
+    auth=Depends(require_permission("fees", "collect")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = auth

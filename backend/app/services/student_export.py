@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class, SHSProgramme
-from app.models.students import Guardian, Student, StudentGuardian, TermEnrollment
+from app.models.students import Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment
 from app.services.student import _class_display, _display_name
 
 
@@ -35,16 +35,19 @@ async def export_students_csv(
         q = q.where(Student.is_active == True)  # noqa: E712
     if gender:
         q = q.where(Student.gender == gender)
-    if class_id or term_id or level:
-        q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
-            TermEnrollment.is_active == True,  # noqa: E712
+    if class_id or level:
+        q = q.join(StudentClassAssignment, StudentClassAssignment.student_id == Student.id).where(
+            StudentClassAssignment.is_active == True,  # noqa: E712
         )
         if class_id:
-            q = q.where(TermEnrollment.class_id == class_id)
-        if term_id:
-            q = q.where(TermEnrollment.academic_term_id == term_id)
+            q = q.where(StudentClassAssignment.class_id == class_id)
         if level:
-            q = q.join(Class, Class.id == TermEnrollment.class_id).where(Class.level == level)
+            q = q.join(Class, Class.id == StudentClassAssignment.class_id).where(Class.level == level)
+    if term_id:
+        q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
+            TermEnrollment.is_active == True,  # noqa: E712
+            TermEnrollment.academic_term_id == term_id,
+        )
     q = q.distinct().order_by(Student.last_name, Student.first_name)
     students = list(await db.scalars(q))
 
@@ -54,13 +57,13 @@ async def export_students_csv(
     if sids:
         rows = await db.execute(
             select(
-                TermEnrollment.student_id,
+                StudentClassAssignment.student_id,
                 Class.level, Class.year_group, Class.stream,
                 SHSProgramme.name.label("programme_name"),
             )
-            .join(Class, Class.id == TermEnrollment.class_id)
+            .join(Class, Class.id == StudentClassAssignment.class_id)
             .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
-            .where(TermEnrollment.student_id.in_(sids), TermEnrollment.is_active == True)  # noqa: E712
+            .where(StudentClassAssignment.student_id.in_(sids), StudentClassAssignment.is_active == True)  # noqa: E712
         )
         for r in rows:
             if r.student_id not in class_map:

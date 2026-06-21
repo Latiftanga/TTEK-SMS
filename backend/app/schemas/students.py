@@ -137,18 +137,33 @@ class EnrollmentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TermEnrollmentCreate(BaseModel):
+class StudentClassAssignmentCreate(BaseModel):
     student_id: uuid.UUID
     class_id: uuid.UUID
+    academic_year_id: uuid.UUID
+
+
+class StudentClassAssignmentRead(BaseModel):
+    id: uuid.UUID
+    student_id: uuid.UUID
+    class_id: uuid.UUID
+    academic_year_id: uuid.UUID
+    class_display_name: str
+    is_active: bool
+    created_at: datetime
+
+
+class TermEnrollmentCreate(BaseModel):
+    student_id: uuid.UUID
     academic_term_id: uuid.UUID
 
 
 class TermEnrollmentRead(BaseModel):
     id: uuid.UUID
     student_id: uuid.UUID
-    class_id: uuid.UUID
     academic_term_id: uuid.UUID
-    class_display_name: str
+    class_id: uuid.UUID | None = None
+    class_display_name: str | None = None
     is_active: bool
     created_at: datetime
 
@@ -176,6 +191,10 @@ class SubjectRegistrationRead(BaseModel):
 class TransferRequestCreate(BaseModel):
     reason: str | None = None
     requesting_school_id: uuid.UUID | None = None
+
+
+class BulkStudentClassAssignmentCreate(BaseModel):
+    items: list[StudentClassAssignmentCreate]
 
 
 class BulkTermEnrollmentCreate(BaseModel):

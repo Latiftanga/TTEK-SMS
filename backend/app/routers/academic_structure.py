@@ -192,12 +192,12 @@ async def assign_subjects(
 @router.get("/classes/{class_id}/class-teacher", response_model=ClassTeacherRead | None)
 async def get_class_teacher(
     class_id: uuid.UUID,
-    term_id: uuid.UUID = Query(...),
+    year_id: uuid.UUID = Query(...),
     ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    ct = await teacher_svc.get_class_teacher(class_id, term_id, school_id, db)
+    ct = await teacher_svc.get_class_teacher(class_id, year_id, school_id, db)
     return ClassTeacherRead.model_validate(ct) if ct else None
 
 

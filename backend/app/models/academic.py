@@ -149,7 +149,7 @@ class ClassSubject(Base, UUIDPrimaryKey, SchoolScopedMixin):
 class ClassTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
     __tablename__ = "class_teacher"
     __table_args__ = (
-        UniqueConstraint("class_id", "academic_term_id", name="uq_class_teacher_term"),
+        UniqueConstraint("class_id", "academic_year_id", name="uq_class_teacher_year"),
     )
 
     class_id: Mapped[uuid.UUID] = mapped_column(
@@ -158,8 +158,8 @@ class ClassTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
     staff_member_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("staff_member.id", ondelete="CASCADE"), nullable=False
     )
-    academic_term_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_term.id", ondelete="CASCADE"), nullable=False
+    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("academic_year.id", ondelete="CASCADE"), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -8,10 +8,10 @@
   const hour = new Date().getHours();
   const salutation = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  const approved   = $derived(() => Math.max(0, data.assessments_this_term - data.pending_approvals));
-  const approvalPct = $derived(() => data.assessments_this_term > 0
-    ? Math.round((approved() / data.assessments_this_term) * 100) : 0);
-  const allClear = $derived(() => data.pending_approvals === 0);
+  const approved   = $derived(Math.max(0, data.assessments_this_term - data.pending_approvals));
+  const approvalPct = $derived(data.assessments_this_term > 0
+    ? Math.round((approved / data.assessments_this_term) * 100) : 0);
+  const allClear = $derived(data.pending_approvals === 0);
 
   const C = 2 * Math.PI * 30;
 </script>
@@ -20,7 +20,7 @@
 <div class="mb-6">
   <h1 class="text-2xl font-bold text-[var(--fg)]">{salutation}, {data.greeting_name.split(' ')[0]}.</h1>
   <p class="mt-0.5 text-sm text-[var(--fg-muted)]">
-    {#if allClear()}
+    {#if allClear}
       All score submissions are approved. You're up to date.
     {:else}
       {data.pending_approvals} score submission{data.pending_approvals === 1 ? '' : 's'} waiting for your review.
@@ -43,7 +43,7 @@
       <StatCard
         label="This Term" value={data.assessments_this_term}
         icon="📝" color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
-        href="/scores" trend={`${approved()} approved`}
+        href="/scores" trend={`${approved} approved`}
       />
     </div>
 
@@ -55,20 +55,20 @@
             <svg class="w-20 h-20" viewBox="0 0 80 80">
               <circle cx="40" cy="40" r="30" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="6"/>
               <circle cx="40" cy="40" r="30" fill="none"
-                stroke={allClear() ? '#22c55e' : approvalPct() < 50 ? '#f59e0b' : 'var(--brand)'}
+                stroke={allClear ? '#22c55e' : approvalPct < 50 ? '#f59e0b' : 'var(--brand)'}
                 stroke-width="6" stroke-linecap="round"
-                stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - approvalPct() / 100)}"
+                stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - approvalPct / 100)}"
                 transform="rotate(-90 40 40)"
                 style="transition: stroke-dashoffset 800ms cubic-bezier(0.4,0,0.2,1)"/>
             </svg>
             <div class="absolute inset-0 flex flex-col items-center justify-center">
-              <span class="text-lg font-bold text-[var(--fg)]">{approvalPct()}%</span>
+              <span class="text-lg font-bold text-[var(--fg)]">{approvalPct}%</span>
             </div>
           </div>
           <div class="flex-1 min-w-0 space-y-2">
             <div class="flex items-center justify-between text-sm">
               <span class="text-[var(--fg-muted)]">Approved</span>
-              <span class="font-semibold text-green-600 dark:text-green-400">{approved()}</span>
+              <span class="font-semibold text-green-600 dark:text-green-400">{approved}</span>
             </div>
             <div class="flex items-center justify-between text-sm">
               <span class="text-[var(--fg-muted)]">Pending</span>

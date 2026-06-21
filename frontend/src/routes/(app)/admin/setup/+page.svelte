@@ -1,28 +1,17 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { school as schoolStore } from '$lib/stores/school';
-  import ProfileTab    from './ProfileTab.svelte';
-  import YearsTab      from '../academic/YearsTab.svelte';
-  import SubjectsTab   from '../academic/SubjectsTab.svelte';
-  import ProgrammesTab from '../academic/ProgrammesTab.svelte';
-  import SmsTab        from './SmsTab.svelte';
-  import EmailTab      from './EmailTab.svelte';
-  import AiTab         from './AiTab.svelte';
+  import ProfileTab       from './ProfileTab.svelte';
+  import CommunicationTab from './CommunicationTab.svelte';
+  import AiTab            from './AiTab.svelte';
 
-  type Tab = 'profile' | 'calendar' | 'subjects' | 'programmes' | 'sms' | 'email' | 'ai';
+  type Tab = 'profile' | 'communication' | 'ai';
 
-  const isSHS = $derived($schoolStore?.schoolType === 'SHS');
-
-  const tabs = $derived([
-    { id: 'profile'    as Tab, label: 'Profile'           },
-    { id: 'calendar'   as Tab, label: 'Academic Calendar' },
-    { id: 'subjects'   as Tab, label: 'Subjects'          },
-    ...(isSHS ? [{ id: 'programmes' as Tab, label: 'Programmes' }] : []),
-    { id: 'sms'        as Tab, label: 'SMS'               },
-    { id: 'email'      as Tab, label: 'Email'             },
-    { id: 'ai'         as Tab, label: 'AI Assistant'      },
-  ]);
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'profile',       label: 'Profile'        },
+    { id: 'communication', label: 'Communication'  },
+    { id: 'ai',            label: 'AI Assistant'   },
+  ];
 
   const activeTab = $derived<Tab>(
     ($page.url.searchParams.get('tab') as Tab | null) ?? 'profile'
@@ -35,10 +24,9 @@
 
 <div class="mb-6">
   <h1 class="text-2xl font-bold tracking-tight text-[var(--fg)]">School Setup</h1>
-  <p class="mt-1 text-sm text-[var(--fg-muted)]">Manage your school's profile, curriculum, and communication channels.</p>
+  <p class="mt-1 text-sm text-[var(--fg-muted)]">Manage your school's profile and communication channels.</p>
 </div>
 
-<!-- Tab nav -->
 <div class="mb-6 border-b border-[var(--border)]">
   <nav class="-mb-px flex gap-1" aria-label="Setup sections">
     {#each tabs as tab}
@@ -57,16 +45,8 @@
 
 {#if activeTab === 'profile'}
   <ProfileTab />
-{:else if activeTab === 'calendar'}
-  <YearsTab />
-{:else if activeTab === 'subjects'}
-  <SubjectsTab />
-{:else if activeTab === 'programmes'}
-  <ProgrammesTab />
-{:else if activeTab === 'sms'}
-  <SmsTab />
-{:else if activeTab === 'email'}
-  <EmailTab />
+{:else if activeTab === 'communication'}
+  <CommunicationTab />
 {:else if activeTab === 'ai'}
   <AiTab />
 {/if}

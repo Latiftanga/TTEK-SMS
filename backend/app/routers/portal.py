@@ -16,9 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_auth
+from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment
 from app.models.auth import User
-from app.models.students import TermEnrollment
+from app.models.students import StudentClassAssignment, TermEnrollment
 from app.services import report_card as rc_svc
 from app.services.pdf import render_report_card
 
@@ -64,11 +65,21 @@ async def portal_get_report_card(
     if not te or te.student_id != student_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report card not found.")
 
+    # Resolve the student's class for this academic year
+    term = await db.get(AcademicTerm, te.academic_term_id)
+    sca = await db.scalar(
+        select(StudentClassAssignment).where(
+            StudentClassAssignment.student_id == te.student_id,
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.school_id == school_id,
+        )
+    ) if term else None
+
     published_count = await db.scalar(
         select(func.count())
         .select_from(Assessment)
         .where(
-            Assessment.class_id == te.class_id,
+            Assessment.class_id == (sca.class_id if sca else None),
             Assessment.academic_term_id == te.academic_term_id,
             Assessment.school_id == school_id,
             Assessment.is_published.is_(True),

@@ -53,12 +53,22 @@ export interface StudentDetail extends StudentSummary {
   guardians: Guardian[];
 }
 
-export interface TermEnrollmentRead {
+export interface StudentClassAssignmentRead {
   id: string;
   student_id: string;
   class_id: string;
-  academic_term_id: string;
+  academic_year_id: string;
   class_display_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface TermEnrollmentRead {
+  id: string;
+  student_id: string;
+  academic_term_id: string;
+  class_id: string | null;
+  class_display_name: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -140,13 +150,34 @@ export const removeGuardian = (studentId: string, guardianId: string): Promise<v
 export const upsertMedical = (studentId: string, data: MedicalRecordUpsert): Promise<MedicalRecord> =>
   api.put(`/students/${studentId}/medical`, data).then(r => r.data);
 
+export interface SubjectRegistrationRead {
+  id: string;
+  subject_id: string;
+  registration_type: 'CORE' | 'ELECTIVE';
+}
+
+export const listClassAssignments = (studentId: string): Promise<StudentClassAssignmentRead[]> =>
+  api.get(`/students/${studentId}/class-assignments`).then(r => r.data);
+
+export const assignStudentToClass = (req: { student_id: string; class_id: string; academic_year_id: string }): Promise<StudentClassAssignmentRead> =>
+  api.post('/students/class-assignments', req).then(r => r.data);
+
+export const bulkAssignStudentsToClass = (items: { student_id: string; class_id: string; academic_year_id: string }[]) =>
+  api.post('/students/class-assignments/bulk', { items }).then(r => r.data);
+
 export const listTermEnrollments = (studentId: string): Promise<TermEnrollmentRead[]> =>
   api.get(`/students/${studentId}/term-enrollments`).then(r => r.data);
 
-export const enrollStudent = (req: { student_id: string; class_id: string; academic_term_id: string }): Promise<TermEnrollmentRead> =>
+export const enrollStudent = (req: { student_id: string; academic_term_id: string }): Promise<TermEnrollmentRead> =>
   api.post('/students/term-enrollments', req).then(r => r.data);
 
-export const bulkEnrollStudents = (items: { student_id: string; class_id: string; academic_term_id: string }[]) =>
+export const listSubjectRegistrations = (teId: string): Promise<SubjectRegistrationRead[]> =>
+  api.get(`/students/term-enrollments/${teId}/subjects`).then(r => r.data);
+
+export const registerSubjects = (teId: string, items: { subject_id: string; registration_type: string }[]): Promise<SubjectRegistrationRead[]> =>
+  api.post(`/students/term-enrollments/${teId}/subjects`, items).then(r => r.data);
+
+export const bulkEnrollStudents = (items: { student_id: string; academic_term_id: string }[]) =>
   api.post('/students/bulk-term-enrollments', { items }).then(r => r.data);
 
 export const downloadImportTemplate = () =>
