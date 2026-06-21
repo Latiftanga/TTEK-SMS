@@ -220,9 +220,9 @@
                 {#if addRoomFor === house.id}
                   <div class="rounded-xl border border-[var(--border)] p-3 space-y-2">
                     <p class="text-xs font-medium text-[var(--fg-muted)]">Add room</p>
-                    <div class="flex gap-2">
-                      <input bind:value={rNum} placeholder="Room number" class="inp flex-1" />
-                      <input bind:value={rCap} type="number" min="1" placeholder="Beds" class="inp w-20" />
+                    <div class="grid grid-cols-[1fr_5rem] gap-2">
+                      <input bind:value={rNum} placeholder="Room number e.g. 101, 2A" class="inp" />
+                      <input bind:value={rCap} type="number" min="1" placeholder="Beds" class="inp" />
                     </div>
                     {#if rError}<p class="text-xs text-red-500">{rError}</p>{/if}
                     <div class="flex gap-2">
