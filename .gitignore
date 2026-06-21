@@ -151,6 +151,13 @@ activemq-data/
 
 # Environments
 .env
+
+# SvelteKit build artifacts
+frontend/.svelte-kit/
+frontend/build/
+
+# Node
+frontend/node_modules/
 .envrc
 .venv
 env/
