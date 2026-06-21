@@ -3,23 +3,32 @@
   import { portal } from '$lib/actions/portal';
   import { toast } from '$lib/stores/toast';
   import { createFeeStructure, updateFeeStructure, ghs, type FeeType, type FeeStructure } from '$lib/api/fees';
+  import type { SchoolClass } from '$lib/api/academic';
 
   interface Props {
     editing: FeeStructure | null;
     termId: string;
     termName: string;
     feeTypes: FeeType[];
-    levels: string[];
+    classes: SchoolClass[];
     onClose: () => void;
   }
-  const { editing, termId, termName, feeTypes, levels, onClose }: Props = $props();
+  const { editing, termId, termName, feeTypes, classes, onClose }: Props = $props();
 
   const qc = useQueryClient();
+
+  // Unique year groups from the school's classes, sorted ascending
+  const yearGroups = $derived([...new Set(classes.map(c => c.year_group))].sort((a, b) => a - b));
+  // Map year_group → representative class name prefix for display (e.g. "SHS 1", "JHS 3")
+  function yearGroupLabel(yg: number) {
+    const cls = classes.find(c => c.year_group === yg);
+    return cls ? `${cls.level} ${yg}` : `Year ${yg}`;
+  }
 
   let feeTypeId    = $state(editing?.fee_type_id ?? '');
   let amount       = $state(editing?.amount ?? '');
   let isMandatory  = $state(editing?.is_mandatory ?? true);
-  let appliesLevel = $state(editing?.applies_to_level ?? '');
+  let yearGroup    = $state<string>(editing?.applies_to_year_group?.toString() ?? '');
   let error        = $state('');
 
   const activeFeeTypes = $derived(feeTypes.filter(t => t.is_active));
@@ -32,7 +41,7 @@
           fee_type_id: feeTypeId,
           amount: parseFloat(amount),
           is_mandatory: isMandatory,
-          applies_to_level: appliesLevel || undefined,
+          applies_to_year_group: yearGroup ? parseInt(yearGroup) : undefined,
         }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fee-structures', termId] });
@@ -85,10 +94,12 @@
 
       {#if !editing}
         <label class="block">
-          <span class="label-xs">Applies to level <span class="font-normal text-[var(--fg-subtle)]">(leave blank for all)</span></span>
-          <select bind:value={appliesLevel} class="sel mt-1">
-            <option value="">All levels</option>
-            {#each levels as l}<option value={l}>{l}</option>{/each}
+          <span class="label-xs">Applies to year group <span class="font-normal text-[var(--fg-subtle)]">(leave blank for all)</span></span>
+          <select bind:value={yearGroup} class="sel mt-1">
+            <option value="">All year groups</option>
+            {#each yearGroups as yg}
+              <option value={yg.toString()}>{yearGroupLabel(yg)}</option>
+            {/each}
           </select>
         </label>
       {/if}

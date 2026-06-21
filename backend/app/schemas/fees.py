@@ -44,7 +44,7 @@ class FeeStructureCreate(BaseModel):
     fee_type_id: uuid.UUID
     amount: Decimal
     is_mandatory: bool = True
-    applies_to_level: str | None = None
+    applies_to_year_group: int | None = None
     applies_to_programme_id: uuid.UUID | None = None
 
     @field_validator("amount")
@@ -75,7 +75,7 @@ class FeeStructureRead(BaseModel):
     fee_type_name: str
     amount: Decimal
     is_mandatory: bool
-    applies_to_level: str | None
+    applies_to_year_group: int | None
     applies_to_programme_id: uuid.UUID | None
 
 

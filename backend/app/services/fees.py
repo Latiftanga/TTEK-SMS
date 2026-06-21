@@ -29,7 +29,7 @@ def _to_structure_read(fs: FeeStructure) -> FeeStructureRead:
         fee_type_name=fs.fee_type.name,
         amount=fs.amount,
         is_mandatory=fs.is_mandatory,
-        applies_to_level=fs.applies_to_level,
+        applies_to_year_group=fs.applies_to_year_group,
         applies_to_programme_id=fs.applies_to_programme_id,
     )
 
@@ -113,7 +113,7 @@ async def create_fee_structure(
         fee_type_id=req.fee_type_id,
         amount=req.amount,
         is_mandatory=req.is_mandatory,
-        applies_to_level=req.applies_to_level,
+        applies_to_year_group=req.applies_to_year_group,
         applies_to_programme_id=req.applies_to_programme_id,
     )
     db.add(fs)
@@ -176,8 +176,8 @@ async def bulk_assign_fees(
             StudentClassAssignment.is_active.is_(True),
         )
     )
-    if fs.applies_to_level:
-        q = q.where(Class.level == fs.applies_to_level)
+    if fs.applies_to_year_group:
+        q = q.where(Class.year_group == fs.applies_to_year_group)
     if fs.applies_to_programme_id:
         q = q.where(Class.programme_id == fs.applies_to_programme_id)
 

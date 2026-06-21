@@ -41,6 +41,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     Text,
@@ -97,8 +98,8 @@ class FeeStructure(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     is_mandatory: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # NULL means "applies to all levels / all programmes" for that dimension.
-    applies_to_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # NULL means "applies to all year groups / all programmes" for that dimension.
+    applies_to_year_group: Mapped[int | None] = mapped_column(Integer, nullable=True)
     applies_to_programme_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("shs_programme.id"), nullable=True
     )

@@ -23,9 +23,9 @@
     if (!termId && terms.length) termId = terms.find(t => t.is_current)?.id ?? terms[0]?.id ?? '';
   });
 
-  // Class levels (derived from school's actual classes)
-  const classesQ  = createQuery({ queryKey: ['classes'], queryFn: listClasses, staleTime: 10 * 60_000 });
-  const classLevels = $derived([...new Set(($classesQ.data ?? []).map(c => c.level))].sort());
+  // Classes (for year group picker in FeeStructureModal)
+  const classesQ = createQuery({ queryKey: ['classes'], queryFn: listClasses, staleTime: 10 * 60_000 });
+  const classes   = $derived($classesQ.data ?? []);
 
   // Fee types
   const typesQ  = createQuery({ queryKey: ['fee-types'], queryFn: listFeeTypes, staleTime: 5 * 60_000 });
@@ -118,7 +118,12 @@
               {/if}
             </div>
             <span class="tabular-nums text-sm text-[var(--fg)]">{ghs(s.amount)}</span>
-            <span class="hidden text-xs text-[var(--fg-muted)] sm:block">{s.applies_to_level ?? 'All levels'}</span>
+            <span class="hidden text-xs text-[var(--fg-muted)] sm:block">
+              {#if s.applies_to_year_group}
+                {@const rep = classes.find(c => c.year_group === s.applies_to_year_group)}
+                {rep ? `${rep.level} ${s.applies_to_year_group}` : `Year ${s.applies_to_year_group}`}
+              {:else}All year groups{/if}
+            </span>
             <span class="hidden text-xs sm:block {s.is_mandatory ? 'text-green-600 dark:text-green-400' : 'text-[var(--fg-subtle)]'}">{s.is_mandatory ? '✓' : '—'}</span>
             <div class="flex items-center gap-2">
               <button onclick={() => structModal = { editing: s }}
@@ -180,7 +185,7 @@
     {termId}
     termName={currentTermName()}
     {feeTypes}
-    levels={classLevels}
+    {classes}
     onClose={() => structModal = null}
   />
 {/if}

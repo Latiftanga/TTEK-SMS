@@ -21,7 +21,7 @@ export interface FeeStructure {
   fee_type_name: string;
   amount: string;
   is_mandatory: boolean;
-  applies_to_level: string | null;
+  applies_to_year_group: number | null;
   applies_to_programme_id: string | null;
 }
 
@@ -114,7 +114,7 @@ export const updateFeeType = (id: string, data: { name?: string; description?: s
 export const listFeeStructures = (termId: string) =>
   api.get<FeeStructure[]>('/fees/structures', { params: { term_id: termId } }).then(r => r.data);
 
-export const createFeeStructure = (data: { academic_term_id: string; fee_type_id: string; amount: number; is_mandatory?: boolean; applies_to_level?: string }) =>
+export const createFeeStructure = (data: { academic_term_id: string; fee_type_id: string; amount: number; is_mandatory?: boolean; applies_to_year_group?: number }) =>
   api.post<FeeStructure>('/fees/structures', data).then(r => r.data);
 
 export const updateFeeStructure = (id: string, data: { amount?: number; is_mandatory?: boolean }) =>
