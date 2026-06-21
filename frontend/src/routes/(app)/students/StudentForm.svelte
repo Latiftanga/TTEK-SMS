@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { createStudent, assignStudentToClass, type StudentCreate, type Gender, type OrphanStatus } from '$lib/api/students';
   import { listClasses, listYears } from '$lib/api/academic';
-  import { listHouses } from '$lib/api/housing';
+  import { listHouses, createAssignment } from '$lib/api/housing';
   import { portal } from '$lib/actions/portal';
 
   interface Props { open: boolean; onClose: () => void; }
@@ -34,7 +34,13 @@
   let form    = $state(blankStudent());
   let classId = $state('');
   let houseId = $state('');
+  let roomId  = $state('');
   let error   = $state('');
+
+  const pickedHouseRooms = $derived(
+    houseId ? (($housesQ.data ?? []).find(h => h.id === houseId)?.rooms ?? []) : []
+  );
+  $effect(() => { if (houseId) roomId = ''; });
 
   const GENDERS: { value: Gender; label: string }[] = [
     { value: 'MALE', label: 'Male' }, { value: 'FEMALE', label: 'Female' },
@@ -52,12 +58,18 @@
   const mut = createMutation({
     mutationFn: createStudent,
     onSuccess: async (s) => {
-      // Silently create class enrollment for the current academic year.
-      // Term registration is the class teacher's job at the start of each term.
       if (classId && currentYearId) {
         try {
           await assignStudentToClass({ student_id: s.id, class_id: classId, academic_year_id: currentYearId });
-        } catch { /* non-fatal — can be done from the enrollment tab */ }
+        } catch { /* non-fatal */ }
+      }
+      if (form.is_boarding && houseId && currentYearId) {
+        try {
+          await createAssignment({
+            student_id: s.id, house_id: houseId, room_id: roomId || null,
+            academic_year_id: currentYearId, assigned_at: new Date().toISOString().slice(0, 10),
+          });
+        } catch { /* non-fatal */ }
       }
       qc.invalidateQueries({ queryKey: ['students'] });
       onClose();
@@ -70,7 +82,7 @@
   });
 
   function reset() {
-    form = blankStudent(); classId = ''; houseId = ''; error = '';
+    form = blankStudent(); classId = ''; houseId = ''; roomId = ''; error = '';
   }
   function close() { onClose(); reset(); }
   function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
@@ -246,6 +258,15 @@
                 </select>
               {/if}
             </div>
+            {#if houseId && pickedHouseRooms.length > 0}
+              <div>
+                <label for="sf-room" class={LABEL}>Room <span class="font-normal text-[var(--fg-subtle)]">(optional)</span></label>
+                <select id="sf-room" bind:value={roomId} class={INPUT}>
+                  <option value="">No room</option>
+                  {#each pickedHouseRooms as r}<option value={r.id}>Room {r.room_number}</option>{/each}
+                </select>
+              </div>
+            {/if}
           {/if}
         </div>
       </section>
