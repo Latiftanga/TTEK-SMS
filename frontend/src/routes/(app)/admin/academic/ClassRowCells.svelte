@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
+  import { writable } from 'svelte/store';
   import { listClassSubjects, getClassTeacher } from '$lib/api/academic';
   import { listStaff } from '$lib/api/staff';
 
@@ -12,7 +13,12 @@
   const { classId, currentYearId, onSubjects, onTeacher }: Props = $props();
 
   const subjQ  = createQuery({ queryKey: ['class-subjects', classId],               queryFn: () => listClassSubjects(classId),              staleTime: 2 * 60_000 });
-  const tchrQ  = createQuery({ queryKey: () => ['class-teacher', classId, currentYearId], queryFn: () => getClassTeacher(classId, currentYearId), enabled: () => !!currentYearId, staleTime: 60_000 });
+  const tchrOpts = writable({ queryKey: ['class-teacher', classId, currentYearId] as const, queryFn: () => getClassTeacher(classId, currentYearId), enabled: !!currentYearId, staleTime: 60_000 });
+  $effect(() => {
+    const yid = currentYearId;
+    tchrOpts.set({ queryKey: ['class-teacher', classId, yid] as const, queryFn: () => getClassTeacher(classId, yid), enabled: !!yid, staleTime: 60_000 });
+  });
+  const tchrQ = createQuery(tchrOpts);
   const staffQ = createQuery({ queryKey: ['staff'],                                  queryFn: () => listStaff({ limit: 200 }),                staleTime: 5 * 60_000 });
 
   const count       = $derived($subjQ.data?.length ?? 0);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
+  import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
   import {
     listStudents, exportStudentsCsv,
@@ -29,13 +30,13 @@
     level: level || undefined,
   });
 
-  const queryKey = $derived(['students', params]);
-
-  const query = createQuery({
-    queryKey: () => queryKey,
-    queryFn:  () => listStudents(params),
-    staleTime: 60_000,
+  // @tanstack/svelte-query v5 requires a Svelte store for reactive query options
+  const queryOpts = writable({ queryKey: ['students', params] as const, queryFn: () => listStudents(params), staleTime: 60_000 });
+  $effect(() => {
+    const p = params;
+    queryOpts.set({ queryKey: ['students', p] as const, queryFn: () => listStudents(p), staleTime: 60_000 });
   });
+  const query = createQuery(queryOpts);
 
   const classesQ = createQuery({
     queryKey: ['classes'],
@@ -44,13 +45,13 @@
   });
 
   // ── Derived stats ────────────────────────────────────────────────────────────
-  const students = $derived($query.data ?? []);
-  const stats = $derived({
+  const students = $derived.by(() => ($query.data ?? []) as StudentSummary[]);
+  const stats = $derived.by(() => ({
     total:    students.length,
     male:     students.filter(s => s.gender === 'MALE').length,
     female:   students.filter(s => s.gender === 'FEMALE').length,
     boarding: students.filter(s => s.is_boarding).length,
-  });
+  }));
 
   // Unique levels from classes list
   const levels = $derived(

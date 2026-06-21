@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { writable } from 'svelte/store';
   import { listYears, getClassTeacher, assignClassTeacher, type AcademicYear } from '$lib/api/academic';
   import { listStaff, type StaffSummary } from '$lib/api/staff';
   import { portal } from '$lib/actions/portal';
@@ -22,12 +23,12 @@
       selectedYearId = years.find(y => y.is_current)?.id ?? years[0]?.id ?? '';
   });
 
-  const classTchrQ = createQuery({
-    queryKey: () => ['class-teacher', classId, selectedYearId],
-    queryFn:  () => getClassTeacher(classId, selectedYearId),
-    enabled:  () => !!selectedYearId,
-    staleTime: 60_000,
+  const classTchrOpts = writable({ queryKey: ['class-teacher', classId, selectedYearId] as const, queryFn: () => getClassTeacher(classId, selectedYearId), enabled: !!selectedYearId, staleTime: 60_000 });
+  $effect(() => {
+    const yid = selectedYearId;
+    classTchrOpts.set({ queryKey: ['class-teacher', classId, yid] as const, queryFn: () => getClassTeacher(classId, yid), enabled: !!yid, staleTime: 60_000 });
   });
+  const classTchrQ = createQuery(classTchrOpts);
 
   const classTeacher   = $derived($classTchrQ.data ?? null);
   const staffMap       = $derived(new Map(staff.map(s => [s.id, s])));
