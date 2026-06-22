@@ -186,6 +186,8 @@ async def update_staff(
                 [{"staff_member_id": staff_id, "position_id": pid} for pid in new_position_ids],
             )
         await db.refresh(member, attribute_names=["positions"])
+        from app.core.permissions import invalidate_permissions
+        await invalidate_permissions(staff_id)
 
     if "category_id" in update_data:
         await db.refresh(member, attribute_names=["category"])
