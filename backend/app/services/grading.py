@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessments import Grade, GradingScale, Score
-from app.schemas.assessments import GradeCreate, GradingScaleCreate, GradingScaleRead
+from app.schemas.assessments import GradeCreate, GradingScaleCreate, GradingScaleRead, GradingScaleUpdate
 
 
 async def create_grading_scale(
@@ -62,6 +62,27 @@ async def get_grading_scale(
     )
     if not scale:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Grading scale not found.")
+    await db.refresh(scale, ["grades"])
+    return scale
+
+
+async def update_grading_scale(
+    scale_id: uuid.UUID, req: GradingScaleUpdate, school_id: uuid.UUID, db: AsyncSession
+) -> GradingScale:
+    scale = await get_grading_scale(scale_id, school_id, db)
+    if req.is_default is True and not scale.is_default:
+        await db.execute(
+            update(GradingScale)
+            .where(GradingScale.school_id == school_id, GradingScale.is_default.is_(True))
+            .values(is_default=False)
+        )
+    if req.name is not None:
+        scale.name = req.name
+    if req.description is not None:
+        scale.description = req.description
+    if req.is_default is not None:
+        scale.is_default = req.is_default
+    await db.flush()
     await db.refresh(scale, ["grades"])
     return scale
 

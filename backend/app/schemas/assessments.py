@@ -41,6 +41,12 @@ class GradingScaleCreate(BaseModel):
     is_default: bool = False
 
 
+class GradingScaleUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    is_default: bool | None = None
+
+
 class GradingScaleRead(BaseModel):
     id: uuid.UUID
     school_id: uuid.UUID | None

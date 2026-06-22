@@ -19,7 +19,7 @@ from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead,
     AssessmentTypeCreate, AssessmentTypeRead,
     BulkScoreSubmit, GradeCreate, GradeRead,
-    GradingScaleCreate, GradingScaleRead,
+    GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
     ScoreApproveRequest, ScoreRead,
 )
 from app.services import assessment as assess_svc
@@ -64,6 +64,19 @@ async def get_grading_scale(
     _, school_id = ids
     return GradingScaleRead.model_validate(
         await grade_svc.get_grading_scale(scale_id, school_id, db)
+    )
+
+
+@router.patch("/grading-scales/{scale_id}", response_model=GradingScaleRead)
+async def update_grading_scale(
+    scale_id: uuid.UUID,
+    req: GradingScaleUpdate,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return GradingScaleRead.model_validate(
+        await grade_svc.update_grading_scale(scale_id, req, school_id, db)
     )
 
 

@@ -64,6 +64,11 @@ export const createGradingScale = (data: {
 }): Promise<GradingScale> =>
   api.post('/assessments/grading-scales', data).then(r => r.data);
 
+export const updateGradingScale = (scaleId: string, data: {
+  name?: string; description?: string; is_default?: boolean;
+}): Promise<GradingScale> =>
+  api.patch(`/assessments/grading-scales/${scaleId}`, data).then(r => r.data);
+
 export const addGrade = (scaleId: string, data: Omit<Grade, 'id'>): Promise<Grade> =>
   api.post(`/assessments/grading-scales/${scaleId}/grades`, data).then(r => r.data);
 
