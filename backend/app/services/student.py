@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.academic import Class, SHSProgramme
+from app.models.auth import User
 from app.models.students import (
     Guardian,
     Student,
@@ -90,7 +91,7 @@ def _to_guardian_read(sg: StudentGuardian) -> StudentGuardianRead:
     )
 
 
-def _to_detail(s: Student) -> StudentDetail:
+def _to_detail(s: Student, has_portal_access: bool = False) -> StudentDetail:
     return StudentDetail(
         **_to_summary(s).model_dump(),
         date_of_birth=s.date_of_birth,
@@ -103,9 +104,16 @@ def _to_detail(s: Student) -> StudentDetail:
         orphan_status=s.orphan_status,
         disability=s.disability,
         photo_path=s.photo_path,
+        has_portal_access=has_portal_access,
         medical_record=MedicalRecordRead.model_validate(s.medical_record) if s.medical_record else None,
         guardians=[_to_guardian_read(sg) for sg in s.guardians],
     )
+
+
+async def _portal_access(student_id: uuid.UUID, db: AsyncSession) -> bool:
+    return await db.scalar(
+        select(User.id).where(User.student_id == student_id, User.is_active.is_(True))
+    ) is not None
 
 
 async def create_student(
@@ -232,7 +240,8 @@ async def get_student(
     )
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-    return _to_detail(student)
+    portal = await _portal_access(student_id, db)
+    return _to_detail(student, has_portal_access=portal)
 
 
 async def update_student(

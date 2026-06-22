@@ -39,6 +39,7 @@ from app.schemas.students import (
     EnrollmentCreate, EnrollmentRead,
     GuardianCreate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
+    PortalAccessResult,
     StudentClassAssignmentCreate, StudentClassAssignmentRead,
     StudentCreate, StudentDetail, StudentSummary, StudentUpdate,
     SubjectRegistrationItem, SubjectRegistrationRead,
@@ -49,6 +50,7 @@ from app.services import student as svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
 from app.services import student_import as import_svc
+from app.services import student_portal as portal_svc
 from app.services import student_transfer as transfer_svc
 from app.services.student_import_template import build_template
 
@@ -343,3 +345,23 @@ async def create_transfer_request(
 ):
     _, school_id = ids
     return await transfer_svc.create_transfer_request(student_id, req, school_id, db)
+
+
+@router.post("/{student_id}/grant-portal-access", response_model=PortalAccessResult, status_code=201)
+async def grant_portal_access(
+    student_id: uuid.UUID,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await portal_svc.grant_portal_access(student_id, school_id, db)
+
+
+@router.delete("/{student_id}/revoke-portal-access", status_code=204)
+async def revoke_portal_access(
+    student_id: uuid.UUID,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await portal_svc.revoke_portal_access(student_id, school_id, db)

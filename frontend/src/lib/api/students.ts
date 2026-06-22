@@ -49,8 +49,15 @@ export interface StudentDetail extends StudentSummary {
   orphan_status: OrphanStatus;
   disability: string | null;
   photo_path: string | null;
+  has_portal_access: boolean;
   medical_record: MedicalRecord | null;
   guardians: Guardian[];
+}
+
+export interface PortalAccessResult {
+  has_portal_access: boolean;
+  admission_number: string;
+  sms_sent: boolean;
 }
 
 export interface StudentClassAssignmentRead {
@@ -191,3 +198,9 @@ export const importStudents = (file: File): Promise<ImportBatchResult> => {
 
 export const exportStudentsCsv = (params: StudentListParams = {}): Promise<Blob> =>
   api.get('/students/export', { params, responseType: 'blob' }).then(r => r.data);
+
+export const grantPortalAccess = (studentId: string): Promise<PortalAccessResult> =>
+  api.post<PortalAccessResult>(`/students/${studentId}/grant-portal-access`).then(r => r.data);
+
+export const revokePortalAccess = (studentId: string): Promise<void> =>
+  api.delete(`/students/${studentId}/revoke-portal-access`).then(() => undefined);

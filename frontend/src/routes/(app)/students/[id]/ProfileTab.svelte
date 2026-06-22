@@ -7,6 +7,7 @@
     listHouses, getStudentAssignment, createAssignment, vacateAssignment,
   } from '$lib/api/housing';
   import { toast } from '$lib/stores/toast';
+  import PortalAccessCard from './PortalAccessCard.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
   const { student, studentId }: Props = $props();
@@ -290,6 +291,8 @@
       </dl>
     </div>
   {/if}
+
+  <PortalAccessCard {student} {studentId} />
 </div>
 
 <style>

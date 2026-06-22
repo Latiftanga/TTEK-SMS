@@ -118,8 +118,15 @@ class StudentDetail(StudentSummary):
     orphan_status: str
     disability: str | None
     photo_path: str | None
+    has_portal_access: bool = False
     medical_record: MedicalRecordRead | None = None
     guardians: list[StudentGuardianRead] = []
+
+
+class PortalAccessResult(BaseModel):
+    has_portal_access: bool
+    admission_number: str
+    sms_sent: bool
 
 
 class EnrollmentCreate(BaseModel):
