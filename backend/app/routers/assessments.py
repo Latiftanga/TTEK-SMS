@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
 from app.schemas.assessments import (
-    AssessmentCreate, AssessmentRead,
+    AssessmentCreate, AssessmentRead, AssessmentUpdate,
     AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
     BulkScoreSubmit, GradeCreate, GradeRead,
     GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
@@ -167,6 +167,27 @@ async def get_assessment(
 ):
     _, school_id = ids
     return await assess_svc.get_assessment(assessment_id, school_id, db)
+
+
+@router.patch("/{assessment_id}", response_model=AssessmentRead)
+async def update_assessment(
+    assessment_id: uuid.UUID,
+    req: AssessmentUpdate,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await assess_svc.update_assessment(assessment_id, req, school_id, db)
+
+
+@router.delete("/{assessment_id}", status_code=204)
+async def delete_assessment(
+    assessment_id: uuid.UUID,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await assess_svc.delete_assessment(assessment_id, school_id, db)
 
 
 @router.post("/{assessment_id}/publish", response_model=AssessmentRead)

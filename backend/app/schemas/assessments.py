@@ -95,6 +95,12 @@ class AssessmentTypeRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AssessmentUpdate(BaseModel):
+    name: str | None = None
+    max_score: Decimal | None = None
+    due_date: date | None = None
+
+
 # ── Assessment ────────────────────────────────────────────────────────────────
 
 class AssessmentCreate(BaseModel):

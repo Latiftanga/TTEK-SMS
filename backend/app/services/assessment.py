@@ -8,15 +8,15 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm
-from app.models.assessments import Assessment, AssessmentType
+from app.models.assessments import Assessment, AssessmentType, Score
 from app.models.school import School
 from app.models.students import StudentClassAssignment
 from app.schemas.assessments import (
-    AssessmentCreate, AssessmentRead,
+    AssessmentCreate, AssessmentRead, AssessmentUpdate,
     AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
 )
 from app.services import sms_notifications as sms_svc
@@ -157,6 +157,53 @@ async def get_assessment(
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
     return _assessment_read(a)
+
+
+async def update_assessment(
+    assessment_id: uuid.UUID, req: AssessmentUpdate, school_id: uuid.UUID, db: AsyncSession
+) -> AssessmentRead:
+    a = await db.scalar(
+        select(Assessment).where(
+            Assessment.id == assessment_id, Assessment.school_id == school_id
+        )
+    )
+    if not a:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    if a.is_published:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot edit a published assessment.")
+    if req.max_score is not None:
+        max_entered = await db.scalar(
+            select(func.max(Score.raw_score)).where(Score.assessment_id == assessment_id)
+        )
+        if max_entered is not None and max_entered > req.max_score:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Cannot reduce max score: existing score of {max_entered} would exceed it.",
+            )
+    if req.name is not None:
+        a.name = req.name
+    if req.max_score is not None:
+        a.max_score = req.max_score
+    if req.due_date is not None:
+        a.due_date = req.due_date
+    await db.flush()
+    return _assessment_read(a)
+
+
+async def delete_assessment(
+    assessment_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> None:
+    a = await db.scalar(
+        select(Assessment).where(
+            Assessment.id == assessment_id, Assessment.school_id == school_id
+        )
+    )
+    if not a:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    if a.is_published:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot delete a published assessment.")
+    await db.delete(a)
+    await db.flush()
 
 
 async def publish_assessment(

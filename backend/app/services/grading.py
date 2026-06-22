@@ -115,6 +115,19 @@ async def add_grade(
     scale_id: uuid.UUID, req: GradeCreate, school_id: uuid.UUID, db: AsyncSession
 ) -> Grade:
     scale = await get_grading_scale(scale_id, school_id, db)
+    overlap = await db.scalar(
+        select(Grade).where(
+            Grade.grading_scale_id == scale.id,
+            Grade.min_score <= req.max_score,
+            Grade.max_score >= req.min_score,
+        )
+    )
+    if overlap:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Range {req.min_score}–{req.max_score} overlaps with existing band "
+            f"{overlap.min_score}–{overlap.max_score} ({overlap.letter_grade}).",
+        )
     grade = Grade(
         grading_scale_id=scale.id,
         min_score=req.min_score,

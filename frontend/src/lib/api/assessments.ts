@@ -104,6 +104,14 @@ export const createAssessment = (data: {
 }): Promise<Assessment> =>
   api.post('/assessments', data).then(r => r.data);
 
+export const updateAssessment = (id: string, data: {
+  name?: string; max_score?: number; due_date?: string | null;
+}): Promise<Assessment> =>
+  api.patch(`/assessments/${id}`, data).then(r => r.data);
+
+export const deleteAssessment = (id: string): Promise<void> =>
+  api.delete(`/assessments/${id}`).then(() => undefined);
+
 export const publishAssessment = (id: string): Promise<Assessment> =>
   api.post(`/assessments/${id}/publish`).then(r => r.data);
 

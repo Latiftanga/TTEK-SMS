@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessments import Assessment, Score, ScoreAuditLog
+from app.models.students import Student
 from app.schemas.assessments import BulkScoreSubmit, ScoreApproveRequest, ScoreRead
 from app.services.grading import resolve_grade
 
@@ -41,32 +42,42 @@ async def submit_scores(
     )
     if not assessment:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    if assessment.is_published:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot modify scores on a published assessment.",
+        )
 
-    now = datetime.now(timezone.utc)
-    saved: list[Score] = []
-
+    # Validate all scores before touching the DB
     for entry in req.scores:
         if entry.raw_score < 0 or entry.raw_score > assessment.max_score:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"Score {entry.raw_score} out of range 0–{assessment.max_score}.",
             )
-        existing = await db.scalar(
+
+    # Batch-load existing scores to avoid N+1
+    student_ids = [entry.student_id for entry in req.scores]
+    existing_map: dict[str, Score] = {
+        str(s.student_id): s
+        for s in await db.scalars(
             select(Score).where(
                 Score.assessment_id == assessment_id,
-                Score.student_id == entry.student_id,
+                Score.student_id.in_(student_ids),
             )
         )
+    }
+
+    now = datetime.now(timezone.utc)
+    saved: list[Score] = []
+
+    for entry in req.scores:
+        existing = existing_map.get(str(entry.student_id))
         if existing:
-            log = ScoreAuditLog(
-                school_id=school_id,
-                score_id=existing.id,
-                changed_by_id=user_id,
-                old_score=existing.raw_score,
-                new_score=entry.raw_score,
-                changed_at=now,
-            )
-            db.add(log)
+            db.add(ScoreAuditLog(
+                school_id=school_id, score_id=existing.id, changed_by_id=user_id,
+                old_score=existing.raw_score, new_score=entry.raw_score, changed_at=now,
+            ))
             existing.raw_score = entry.raw_score
             existing.is_approved = False
             existing.cached_grade_label = None
@@ -75,24 +86,16 @@ async def submit_scores(
             saved.append(existing)
         else:
             score = Score(
-                school_id=school_id,
-                assessment_id=assessment_id,
-                student_id=entry.student_id,
-                raw_score=entry.raw_score,
-                entered_by_id=user_id,
-                submitted_at=now,
+                school_id=school_id, assessment_id=assessment_id,
+                student_id=entry.student_id, raw_score=entry.raw_score,
+                entered_by_id=user_id, submitted_at=now,
             )
             db.add(score)
             await db.flush()
-            log = ScoreAuditLog(
-                school_id=school_id,
-                score_id=score.id,
-                changed_by_id=user_id,
-                old_score=None,
-                new_score=entry.raw_score,
-                changed_at=now,
-            )
-            db.add(log)
+            db.add(ScoreAuditLog(
+                school_id=school_id, score_id=score.id, changed_by_id=user_id,
+                old_score=None, new_score=entry.raw_score, changed_at=now,
+            ))
             saved.append(score)
 
     await db.flush()
@@ -106,30 +109,40 @@ async def approve_scores(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[ScoreRead]:
-    now = datetime.now(timezone.utc)
-    approved: list[Score] = []
-
-    for score_id in req.score_ids:
-        score = await db.scalar(
-            select(Score).where(
-                Score.id == score_id,
-                Score.assessment_id == assessment_id,
-                Score.school_id == school_id,
-            )
+    assessment = await db.scalar(
+        select(Assessment).where(
+            Assessment.id == assessment_id, Assessment.school_id == school_id
         )
-        if not score:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Score {score_id} not found."
-            )
+    )
+    if not assessment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    if assessment.is_published:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot approve scores on a published assessment.",
+        )
+
+    # Batch-load all requested scores at once
+    scores = list(await db.scalars(
+        select(Score).where(
+            Score.id.in_(req.score_ids),
+            Score.assessment_id == assessment_id,
+            Score.school_id == school_id,
+        )
+    ))
+    if len(scores) != len(req.score_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "One or more scores not found.")
+
+    now = datetime.now(timezone.utc)
+    for score in scores:
         grade_label = await resolve_grade(score.raw_score, school_id, db)
         score.is_approved = True
         score.cached_grade_label = grade_label
         score.approved_by_id = user_id
         score.approved_at = now
-        approved.append(score)
 
     await db.flush()
-    return [_to_read(s) for s in approved]
+    return [_to_read(s) for s in scores]
 
 
 async def list_scores(
@@ -144,7 +157,8 @@ async def list_scores(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
     rows = await db.scalars(
         select(Score)
+        .join(Student, Student.id == Score.student_id)
         .where(Score.assessment_id == assessment_id, Score.school_id == school_id)
-        .order_by(Score.submitted_at)
+        .order_by(Student.last_name, Student.first_name)
     )
     return [_to_read(s) for s in rows]
