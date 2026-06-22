@@ -85,6 +85,11 @@ export const createAssessmentType = (data: {
 }): Promise<AssessmentType> =>
   api.post('/assessments/types', data).then(r => r.data);
 
+export const updateAssessmentType = (typeId: string, data: {
+  name?: string; code?: string; weight?: number;
+}): Promise<AssessmentType> =>
+  api.patch(`/assessments/types/${typeId}`, data).then(r => r.data);
+
 // ── Assessments ───────────────────────────────────────────────────────────────
 
 export const listAssessments = (classId: string, termId: string): Promise<Assessment[]> =>

@@ -17,7 +17,7 @@ from app.models.school import School
 from app.models.students import StudentClassAssignment
 from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead,
-    AssessmentTypeCreate, AssessmentTypeRead,
+    AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
 )
 from app.services import sms_notifications as sms_svc
 
@@ -51,6 +51,41 @@ async def create_assessment_type(
         weight=req.weight,
     )
     db.add(t)
+    await db.flush()
+    return _type_read(t)
+
+
+async def update_assessment_type(
+    type_id: uuid.UUID, req: AssessmentTypeUpdate, school_id: uuid.UUID, db: AsyncSession
+) -> AssessmentTypeRead:
+    t = await db.scalar(
+        select(AssessmentType).where(
+            AssessmentType.id == type_id, AssessmentType.school_id == school_id
+        )
+    )
+    if not t:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment type not found.")
+    if req.name is not None or req.code is not None:
+        conflict = await db.scalar(
+            select(AssessmentType).where(
+                AssessmentType.school_id == school_id,
+                AssessmentType.id != type_id,
+                (AssessmentType.name == req.name) | (AssessmentType.code == req.code),
+            )
+        )
+        if conflict:
+            field = "name" if conflict.name == req.name else "code"
+            value = req.name if field == "name" else req.code
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Assessment type with {field} '{value}' already exists.",
+            )
+    if req.name is not None:
+        t.name = req.name
+    if req.code is not None:
+        t.code = req.code
+    if req.weight is not None:
+        t.weight = req.weight
     await db.flush()
     return _type_read(t)
 

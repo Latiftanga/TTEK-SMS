@@ -17,7 +17,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
 from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead,
-    AssessmentTypeCreate, AssessmentTypeRead,
+    AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
     BulkScoreSubmit, GradeCreate, GradeRead,
     GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
     ScoreApproveRequest, ScoreRead,
@@ -123,6 +123,17 @@ async def list_assessment_types(
 ):
     _, school_id = ids
     return await assess_svc.list_assessment_types(school_id, db)
+
+
+@router.patch("/types/{type_id}", response_model=AssessmentTypeRead)
+async def update_assessment_type(
+    type_id: uuid.UUID,
+    req: AssessmentTypeUpdate,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await assess_svc.update_assessment_type(type_id, req, school_id, db)
 
 
 # ── Assessments ───────────────────────────────────────────────────────────────

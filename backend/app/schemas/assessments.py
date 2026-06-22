@@ -65,6 +65,26 @@ class AssessmentTypeCreate(BaseModel):
     code: str
     weight: Decimal
 
+    @field_validator("weight")
+    @classmethod
+    def weight_range(cls, v: Decimal) -> Decimal:
+        if v <= 0 or v > 100:
+            raise ValueError("weight must be between 0.01 and 100")
+        return v
+
+
+class AssessmentTypeUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+    weight: Decimal | None = None
+
+    @field_validator("weight")
+    @classmethod
+    def weight_range(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and (v <= 0 or v > 100):
+            raise ValueError("weight must be between 0.01 and 100")
+        return v
+
 
 class AssessmentTypeRead(BaseModel):
     id: uuid.UUID
