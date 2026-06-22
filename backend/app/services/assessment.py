@@ -33,14 +33,16 @@ async def create_assessment_type(
 ) -> AssessmentTypeRead:
     existing = await db.scalar(
         select(AssessmentType).where(
-            AssessmentType.code == req.code,
             AssessmentType.school_id == school_id,
+            (AssessmentType.code == req.code) | (AssessmentType.name == req.name),
         )
     )
     if existing:
+        field = "code" if existing.code == req.code else "name"
+        value = req.code if field == "code" else req.name
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"Assessment type with code '{req.code}' already exists.",
+            f"Assessment type with {field} '{value}' already exists.",
         )
     t = AssessmentType(
         school_id=school_id,
