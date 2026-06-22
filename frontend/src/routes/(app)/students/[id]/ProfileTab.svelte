@@ -8,6 +8,7 @@
   } from '$lib/api/housing';
   import { toast } from '$lib/stores/toast';
   import PortalAccessCard from './PortalAccessCard.svelte';
+  import ProfileView      from './ProfileView.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
   const { student, studentId }: Props = $props();
@@ -19,7 +20,7 @@
   let editRoomId   = $state('');
   let error        = $state('');
 
-  // ── Housing queries (enabled for boarding students / edit mode) ───────────────
+  // ── Housing queries ───────────────────────────────────────────────────────────
   const yearsQ = createQuery({
     queryKey: ['academic-years'],
     queryFn: listYears,
@@ -86,7 +87,8 @@
       });
     } catch { return; }
 
-    // Housing assignment — update if house changed
+    // Housing assignment — update if changed
+    let housingFailed = false;
     if (form.is_boarding && editHouseId && currentYearId) {
       const current = $assignmentQ.data;
       const changed = !current || current.vacated_at
@@ -102,25 +104,28 @@
             academic_year_id: currentYearId,
             assigned_at: new Date().toISOString().slice(0, 10),
           });
-        } catch { /* non-fatal */ }
+        } catch { housingFailed = true; }
         qc.invalidateQueries({ queryKey: ['student-assignment', studentId] });
       }
     }
 
     qc.invalidateQueries({ queryKey: ['student', studentId] });
     editing = false;
-    toast.success('Profile updated.');
+    if (housingFailed) {
+      toast.success('Profile saved — house assignment failed, please try again.');
+    } else {
+      toast.success('Profile updated.');
+    }
   }
 
-  const GENDERS: { value: Gender; label: string }[] = [{ value: 'MALE', label: 'Male' }, { value: 'FEMALE', label: 'Female' }];
-  const ORPHAN_STATUSES: { value: OrphanStatus; label: string }[] = [
-    { value: 'NONE', label: 'None' }, { value: 'HALF_ORPHAN', label: 'Half orphan' }, { value: 'FULL_ORPHAN', label: 'Full orphan' },
+  const GENDERS: { value: Gender; label: string }[] = [
+    { value: 'MALE', label: 'Male' }, { value: 'FEMALE', label: 'Female' },
   ];
-  function orphanLabel(v: string | null | undefined) {
-    if (v === 'HALF_ORPHAN') return 'Half orphan';
-    if (v === 'FULL_ORPHAN') return 'Full orphan';
-    return 'None';
-  }
+  const ORPHAN_STATUSES: { value: OrphanStatus; label: string }[] = [
+    { value: 'NONE', label: 'None' },
+    { value: 'HALF_ORPHAN', label: 'Half orphan' },
+    { value: 'FULL_ORPHAN', label: 'Full orphan' },
+  ];
 </script>
 
 <div class="space-y-4">
@@ -215,81 +220,12 @@
     </div>
 
   {:else}
-    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-      <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Personal details</p>
-      <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-        {#each [
-          { label: 'First name',    val: student.first_name    },
-          { label: 'Last name',     val: student.last_name     },
-          { label: 'Middle name',   val: student.middle_name   },
-          { label: 'Date of birth', val: student.date_of_birth },
-          { label: 'Gender',        val: student.gender        },
-          { label: 'Nationality',   val: student.nationality   },
-          { label: 'Religion',      val: student.religion      },
-          { label: 'Hometown',      val: student.hometown      },
-        ] as f}
-          <div>
-            <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">{f.label}</dt>
-            <dd class="mt-0.5 text-sm text-[var(--fg)]">{f.val ?? '—'}</dd>
-          </div>
-        {/each}
-        <div class="sm:col-span-2">
-          <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Address</dt>
-          <dd class="mt-0.5 text-sm text-[var(--fg)]">{student.residential_address ?? '—'}</dd>
-        </div>
-      </dl>
-    </div>
-
-    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-      <p class="mb-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Health & welfare</p>
-      <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-        <div>
-          <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">NHIS number</dt>
-          <dd class="mt-0.5 text-sm font-mono text-[var(--fg)]">{student.nhis_number ?? '—'}</dd>
-        </div>
-        <div>
-          <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Ghana Card</dt>
-          <dd class="mt-0.5 text-sm font-mono text-[var(--fg)]">{student.ghana_card_number ?? '—'}</dd>
-        </div>
-        <div>
-          <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Orphan status</dt>
-          <dd class="mt-0.5 text-sm text-[var(--fg)]">{orphanLabel(student.orphan_status)}</dd>
-        </div>
-        <div>
-          <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Boarding</dt>
-          <dd class="mt-0.5">
-            <span class="rounded-full px-2 py-0.5 text-[10px] font-bold
-                         {student.is_boarding
-                           ? 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'
-                           : 'bg-[var(--hover)] text-[var(--fg-muted)]'}">
-              {student.is_boarding ? 'Yes — boarding' : 'Day student'}
-            </span>
-          </dd>
-        </div>
-        {#if student.is_boarding}
-          <div class="sm:col-span-2">
-            <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">House assignment</dt>
-            <dd class="mt-0.5 text-sm text-[var(--fg)]">
-              {#if $assignmentQ.isPending}
-                <span class="text-[var(--fg-muted)]">Loading…</span>
-              {:else if $assignmentQ.data && !$assignmentQ.data.vacated_at}
-                {@const h = houseMap.get($assignmentQ.data.house_id)}
-                {@const r = h?.rooms.find(rm => rm.id === $assignmentQ.data!.room_id)}
-                {h?.name ?? '—'}{r ? ` · Room ${r.room_number}` : ''}
-              {:else}
-                <span class="text-[var(--fg-muted)]">Not assigned</span>
-              {/if}
-            </dd>
-          </div>
-        {/if}
-        {#if student.disability}
-          <div class="sm:col-span-2">
-            <dt class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Disability / special needs</dt>
-            <dd class="mt-0.5 text-sm text-[var(--fg)]">{student.disability}</dd>
-          </div>
-        {/if}
-      </dl>
-    </div>
+    <ProfileView
+      {student}
+      assignment={$assignmentQ.data}
+      assignmentPending={$assignmentQ.isPending}
+      {houseMap}
+    />
   {/if}
 
   <PortalAccessCard {student} {studentId} />

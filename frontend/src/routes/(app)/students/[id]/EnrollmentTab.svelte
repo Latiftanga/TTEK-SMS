@@ -103,8 +103,9 @@
     mutationFn: () => assignStudentToClass({
       student_id: studentId, class_id: caClassId, academic_year_id: caYearId,
     }),
-    onSuccess: () => {
+    onSuccess: (newAssignment) => {
       qc.invalidateQueries({ queryKey: ['student-class-assignments', studentId] });
+      expandedIds = new Set([newAssignment.id]);
       showClassForm = false; caYearId = ''; caClassId = ''; caError = '';
       toast.success('Class assigned.');
     },

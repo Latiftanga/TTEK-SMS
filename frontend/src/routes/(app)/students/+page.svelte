@@ -20,11 +20,19 @@
   let classId    = $state('');
   let level      = $state('');
 
+  // Debounce search so each keystroke doesn't fire a new API request
+  let searchDebounced = $state('');
+  $effect(() => {
+    const val = search;
+    const t = setTimeout(() => { searchDebounced = val; }, 300);
+    return () => clearTimeout(t);
+  });
+
   // Derive query params reactively
   const params = $derived<StudentListParams>({
     active_only: activeOnly,
     limit: 200,
-    search: search.trim() || undefined,
+    search: searchDebounced.trim() || undefined,
     gender: gender || undefined,
     class_id: classId || undefined,
     level: level || undefined,
@@ -69,7 +77,7 @@
   const allSelected = $derived(students.length > 0 && selected.size === students.length);
   function toggleAll() { selected = allSelected ? new Set() : new Set(students.map(s => s.id)); }
   function toggle(id: string) { const n = new Set(selected); n.has(id) ? n.delete(id) : n.add(id); selected = n; }
-  $effect(() => { students; selected = new Set(); });
+  $effect(() => { params; selected = new Set(); });
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function initials(s: StudentSummary) {
@@ -83,7 +91,7 @@
   }
 
   function clearFilters() {
-    search = ''; gender = ''; classId = ''; level = '';
+    search = ''; searchDebounced = ''; gender = ''; classId = ''; level = '';
   }
 
   const hasFilters = $derived(!!(search || gender || classId || level));

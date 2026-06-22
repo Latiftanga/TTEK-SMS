@@ -17,7 +17,8 @@
 
   function close() {
     onClose();
-    if (stage === 'done') { stage = 'idle'; result = null; }
+    stage = 'idle'; result = null; errMsg = '';
+    if (fileInput) fileInput.value = '';
   }
 
   function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') close(); }

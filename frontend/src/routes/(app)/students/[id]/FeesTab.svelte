@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { writable } from 'svelte/store';
   import { portal } from '$lib/actions/portal';
   import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
   import {
     listStudentFeeRecords, getFeeSummary, listPayments, applyDiscount, recordPayment,
     ghs, PAYMENT_METHOD_LABELS, DISCOUNT_TYPE_LABELS,
-    type FeeRecord, type FeePayment, type FeeSummary, type PaymentMethod, type DiscountType,
+    type FeeRecord, type PaymentMethod, type DiscountType,
   } from '$lib/api/fees';
   import { toast } from '$lib/stores/toast';
 
@@ -21,33 +22,33 @@
     if (!termId && terms.length) termId = terms.find(t => t.is_current)?.id ?? terms[0]?.id ?? '';
   });
 
-  let records  = $state<FeeRecord[]>([]);
-  let payments = $state<FeePayment[]>([]);
-  let summary  = $state<FeeSummary | null>(null);
-  let loading  = $state(false);
-
-  async function load(sid: string, tid: string) {
-    loading = true;
-    try {
-      const [r, p, s] = await Promise.allSettled([
-        listStudentFeeRecords(sid, tid),
-        listPayments(sid, tid),
-        getFeeSummary(sid, tid),
-      ]);
-      records  = r.status === 'fulfilled' ? r.value : [];
-      payments = p.status === 'fulfilled' ? p.value : [];
-      summary  = s.status === 'fulfilled' ? s.value : null;
-    } finally { loading = false; }
-  }
-  $effect(() => { if (studentId && termId) load(studentId, termId); });
+  // Three reactive queries — swap queryKey when termId changes; TanStack Query handles caching & dedup
+  const recordsOpts  = writable({ queryKey: ['student-fee-records',  studentId, termId] as const, queryFn: () => listStudentFeeRecords(studentId, termId), enabled: !!termId, staleTime: 60_000 });
+  const paymentsOpts = writable({ queryKey: ['student-payments',      studentId, termId] as const, queryFn: () => listPayments(studentId, termId),          enabled: !!termId, staleTime: 60_000 });
+  const summaryOpts  = writable({ queryKey: ['student-fee-summary',   studentId, termId] as const, queryFn: () => getFeeSummary(studentId, termId),         enabled: !!termId, staleTime: 60_000 });
+  $effect(() => {
+    const sid = studentId, tid = termId;
+    recordsOpts.set({  queryKey: ['student-fee-records',  sid, tid] as const, queryFn: () => listStudentFeeRecords(sid, tid), enabled: !!tid, staleTime: 60_000 });
+    paymentsOpts.set({ queryKey: ['student-payments',      sid, tid] as const, queryFn: () => listPayments(sid, tid),          enabled: !!tid, staleTime: 60_000 });
+    summaryOpts.set({  queryKey: ['student-fee-summary',   sid, tid] as const, queryFn: () => getFeeSummary(sid, tid),         enabled: !!tid, staleTime: 60_000 });
+  });
+  const recordsQ  = createQuery(recordsOpts);
+  const paymentsQ = createQuery(paymentsOpts);
+  const summaryQ  = createQuery(summaryOpts);
 
   const paidByRecord = $derived.by(() => {
     const m = new Map<string, number>();
-    for (const p of payments) m.set(p.fee_record_id, (m.get(p.fee_record_id) ?? 0) + parseFloat(p.amount_paid));
+    for (const p of $paymentsQ.data ?? []) m.set(p.fee_record_id, (m.get(p.fee_record_id) ?? 0) + parseFloat(p.amount_paid));
     return m;
   });
 
-  // Payment modal
+  function invalidateFees() {
+    qc.invalidateQueries({ queryKey: ['student-fee-records',  studentId, termId] });
+    qc.invalidateQueries({ queryKey: ['student-payments',      studentId, termId] });
+    qc.invalidateQueries({ queryKey: ['student-fee-summary',   studentId, termId] });
+  }
+
+  // ── Payment modal ─────────────────────────────────────────────────────────────
   let payRecord = $state<FeeRecord | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   let payAmount = $state('');
@@ -68,7 +69,7 @@
       payment_date: payDate,
       notes: payNotes.trim() || undefined,
     }),
-    onSuccess: () => { toast.success('Payment recorded.'); payRecord = null; load(studentId, termId); },
+    onSuccess: () => { toast.success('Payment recorded.'); payRecord = null; invalidateFees(); },
     onError: (e: unknown) => { payError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.'; },
   });
 
@@ -85,14 +86,14 @@
     $payMut.mutate();
   }
 
-  // Discount modal
-  let discRecord     = $state<FeeRecord | null>(null);
-  let discType       = $state<DiscountType>('SCHOLARSHIP');
-  let discMode       = $state<'amount' | 'percentage'>('percentage');
-  let discValue      = $state('');
-  let discReason     = $state('');
-  let discError      = $state('');
-  const discTypes    = Object.entries(DISCOUNT_TYPE_LABELS) as [DiscountType, string][];
+  // ── Discount modal ────────────────────────────────────────────────────────────
+  let discRecord  = $state<FeeRecord | null>(null);
+  let discType    = $state<DiscountType>('SCHOLARSHIP');
+  let discMode    = $state<'amount' | 'percentage'>('percentage');
+  let discValue   = $state('');
+  let discReason  = $state('');
+  let discError   = $state('');
+  const discTypes = Object.entries(DISCOUNT_TYPE_LABELS) as [DiscountType, string][];
 
   const discMut = createMutation({
     mutationFn: () => applyDiscount({
@@ -103,7 +104,7 @@
       percentage: discMode === 'percentage'  ? parseFloat(discValue) : undefined,
       reason: discReason.trim() || undefined,
     }),
-    onSuccess: () => { toast.success('Discount applied.'); discRecord = null; load(studentId, termId); },
+    onSuccess: () => { toast.success('Discount applied.'); discRecord = null; invalidateFees(); },
     onError: (e: unknown) => { discError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.'; },
   });
 
@@ -124,36 +125,36 @@
   </select>
 </div>
 
-{#if loading}
+{#if $recordsQ.isPending || $paymentsQ.isPending || $summaryQ.isPending}
   <div class="space-y-3">
     {#each [0,1,2] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--hover)]"></div>{/each}
   </div>
 {:else}
   <!-- Summary -->
-  {#if summary}
-    {@const bal = parseFloat(summary.balance)}
+  {#if $summaryQ.data}
+    {@const bal = parseFloat($summaryQ.data.balance)}
     <div class="mb-4 grid grid-cols-3 gap-3">
       <div class="rounded-xl bg-[var(--hover)] px-4 py-3 text-center">
         <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Total Due</p>
-        <p class="mt-1 text-sm font-bold text-[var(--fg)]">{ghs(summary.total_due)}</p>
+        <p class="mt-1 text-sm font-bold text-[var(--fg)]">{ghs($summaryQ.data.total_due)}</p>
       </div>
       <div class="rounded-xl bg-[var(--hover)] px-4 py-3 text-center">
         <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Paid</p>
-        <p class="mt-1 text-sm font-bold text-green-600 dark:text-green-400">{ghs(summary.total_paid)}</p>
+        <p class="mt-1 text-sm font-bold text-green-600 dark:text-green-400">{ghs($summaryQ.data.total_paid)}</p>
       </div>
       <div class="rounded-xl px-4 py-3 text-center {bal > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-[var(--hover)]'}">
         <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Balance</p>
-        <p class="mt-1 text-sm font-bold {bal > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600'}">{ghs(summary.balance)}</p>
+        <p class="mt-1 text-sm font-bold {bal > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600'}">{ghs($summaryQ.data.balance)}</p>
       </div>
     </div>
   {/if}
 
-  <!-- Records -->
-  {#if records.length > 0}
+  <!-- Fee records -->
+  {#if ($recordsQ.data ?? []).length > 0}
     <div class="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--card)]">
       <div class="border-b border-[var(--border)] px-5 py-3 text-sm font-semibold text-[var(--fg)]">Fee Records</div>
       <div class="divide-y divide-[var(--border)]">
-        {#each records as r}
+        {#each $recordsQ.data ?? [] as r}
           {@const paid = paidByRecord.get(r.id) ?? 0}
           {@const remaining = Math.max(0, parseFloat(r.amount_due) - paid)}
           <div class="flex items-center gap-3 px-5 py-3">
@@ -178,12 +179,12 @@
     </div>
 
     <!-- Payment history -->
-    {#if payments.length > 0}
+    {#if ($paymentsQ.data ?? []).length > 0}
       <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)]">
         <div class="border-b border-[var(--border)] px-5 py-3 text-sm font-semibold text-[var(--fg)]">Payment History</div>
         <div class="divide-y divide-[var(--border)]">
-          {#each [...payments].sort((a,b) => b.payment_date.localeCompare(a.payment_date)) as p}
-            {@const rName = records.find(r => r.id === p.fee_record_id)?.fee_type_name ?? ''}
+          {#each [...($paymentsQ.data ?? [])].sort((a, b) => b.payment_date.localeCompare(a.payment_date)) as p}
+            {@const rName = ($recordsQ.data ?? []).find(r => r.id === p.fee_record_id)?.fee_type_name ?? ''}
             <div class="flex items-center gap-4 px-5 py-3">
               <div class="flex-1">
                 <p class="text-sm text-[var(--fg)]">{rName || 'Fee payment'}</p>
