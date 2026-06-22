@@ -17,7 +17,7 @@
   const byDate = $derived(new Map(days.map(d => [d.date, d])));
 
   // Build 6-row × 7-col grid (Mon-first)
-  const cells = $derived(() => {
+  const cells = $derived.by(() => {
     const first = new Date(year, month, 1);
     const totalDays = new Date(year, month + 1, 0).getDate();
     // Monday-first offset: JS getDay() is 0=Sun; we want 0=Mon
@@ -26,7 +26,7 @@
     for (let d = 1; d <= totalDays; d++) grid.push(d);
     while (grid.length % 7 !== 0) grid.push(null);
     return grid;
-  })();
+  });
 
   function dateStr(d: number) {
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;

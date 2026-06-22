@@ -32,7 +32,7 @@
   const calendarQ = createQuery(calOpts);
 
   // Group days by YYYY-MM
-  const byMonth = $derived(() => {
+  const byMonth = $derived.by(() => {
     const map = new Map<string, CalendarDay[]>();
     for (const d of $calendarQ.data ?? []) {
       const key = d.date.slice(0, 7);
@@ -42,7 +42,7 @@
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, days]) => ({
       year: parseInt(k.slice(0, 4)), month: parseInt(k.slice(5, 7)) - 1, days,
     }));
-  })();
+  });
 
   // ── Generate ───────────────────────────────────────────────────────────────────
   const genMut = createMutation({
