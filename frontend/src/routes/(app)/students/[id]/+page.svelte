@@ -30,14 +30,17 @@
   const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
 
+  let confirmDeactivate = $state(false);
+
   const toggleMut = createMutation({
     mutationFn: () => updateStudent(studentId, { is_active: !$query.data!.is_active }),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ['student', studentId] });
       qc.invalidateQueries({ queryKey: ['students'] });
+      confirmDeactivate = false;
       toast.success(d.is_active ? 'Student reactivated.' : 'Student deactivated.');
     },
-    onError: () => toast.error('Could not update status.'),
+    onError: () => { confirmDeactivate = false; toast.error('Could not update status.'); },
   });
 
   function initials(first: string, last: string) {
@@ -98,11 +101,30 @@
         </div>
       </div>
 
-      <div class="flex flex-wrap gap-2 sm:justify-end">
-        <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
-          {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
-        </button>
+      <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+        {#if s.is_active}
+          {#if confirmDeactivate}
+            <span class="text-xs text-[var(--fg-muted)]">Deactivate this student?</span>
+            <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+              class="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-600/20 transition hover:bg-red-100 disabled:opacity-50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50">
+              {$toggleMut.isPending ? 'Deactivating…' : 'Yes, deactivate'}
+            </button>
+            <button onclick={() => confirmDeactivate = false}
+              class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
+              Cancel
+            </button>
+          {:else}
+            <button onclick={() => confirmDeactivate = true}
+              class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+              Deactivate
+            </button>
+          {/if}
+        {:else}
+          <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+            {$toggleMut.isPending ? '…' : 'Reactivate'}
+          </button>
+        {/if}
       </div>
     </div>
 

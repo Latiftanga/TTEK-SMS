@@ -33,6 +33,7 @@ export interface Guardian {
   last_name: string;
   phone: string;
   email: string | null;
+  address: string | null;
   occupation: string | null;
   relation_type: string;
   is_primary: boolean;
@@ -109,6 +110,17 @@ export interface GuardianCreate {
   is_primary?: boolean;
 }
 
+export interface GuardianUpdate {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  email?: string | null;
+  occupation?: string | null;
+  address?: string | null;
+  relation_type?: string;
+  is_primary?: boolean;
+}
+
 export interface MedicalRecordUpsert {
   blood_group?: string;
   allergies?: string;
@@ -151,8 +163,14 @@ export const updateStudent = (id: string, data: Partial<StudentCreate & { is_act
 export const addGuardian = (studentId: string, data: GuardianCreate): Promise<Guardian> =>
   api.post(`/students/${studentId}/guardians`, data).then(r => r.data);
 
+export const updateGuardian = (studentId: string, guardianId: string, data: GuardianUpdate): Promise<Guardian> =>
+  api.patch(`/students/${studentId}/guardians/${guardianId}`, data).then(r => r.data);
+
 export const removeGuardian = (studentId: string, guardianId: string): Promise<void> =>
   api.delete(`/students/${studentId}/guardians/${guardianId}`).then(r => r.data);
+
+export const removeSubjectRegistration = (teId: string, regId: string): Promise<void> =>
+  api.delete(`/students/term-enrollments/${teId}/subjects/${regId}`).then(() => undefined);
 
 export const upsertMedical = (studentId: string, data: MedicalRecordUpsert): Promise<MedicalRecord> =>
   api.put(`/students/${studentId}/medical`, data).then(r => r.data);

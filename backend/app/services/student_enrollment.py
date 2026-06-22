@@ -246,3 +246,22 @@ async def list_subject_registrations(
         )
     )
     return [SubjectRegistrationRead.model_validate(r) for r in rows]
+
+
+async def delete_subject_registration(
+    te_id: uuid.UUID,
+    reg_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    reg = await db.scalar(
+        select(SubjectRegistration).where(
+            SubjectRegistration.id == reg_id,
+            SubjectRegistration.term_enrollment_id == te_id,
+            SubjectRegistration.school_id == school_id,
+        )
+    )
+    if not reg:
+        raise HTTPException(status_code=404, detail="Subject registration not found.")
+    await db.delete(reg)
+    await db.flush()

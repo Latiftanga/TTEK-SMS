@@ -37,7 +37,7 @@ from app.schemas.documents import ImportBatchResult
 from app.schemas.students import (
     BulkEnrollResult, BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
     EnrollmentCreate, EnrollmentRead,
-    GuardianCreate, StudentGuardianRead,
+    GuardianCreate, GuardianUpdate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
     PortalAccessResult,
     StudentClassAssignmentCreate, StudentClassAssignmentRead,
@@ -49,6 +49,7 @@ from app.schemas.students import (
 from app.services import student as svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
+from app.services import student_guardian as guardian_svc
 from app.services import student_import as import_svc
 from app.services import student_portal as portal_svc
 from app.services import student_transfer as transfer_svc
@@ -227,6 +228,17 @@ async def list_subjects(
     return await enroll_svc.list_subject_registrations(te_id, school_id, db)
 
 
+@router.delete("/term-enrollments/{te_id}/subjects/{reg_id}", status_code=204)
+async def delete_subject(
+    te_id: uuid.UUID,
+    reg_id: uuid.UUID,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await enroll_svc.delete_subject_registration(te_id, reg_id, school_id, db)
+
+
 # ── Transfer management (declared before /{student_id}) ──────────────────────
 
 @router.get("/transfers/pending", response_model=list[TransferRequestRead])
@@ -291,7 +303,19 @@ async def add_guardian(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.add_guardian(student_id, req, school_id, db)
+    return await guardian_svc.add_guardian(student_id, req, school_id, db)
+
+
+@router.patch("/{student_id}/guardians/{guardian_id}", response_model=StudentGuardianRead)
+async def update_guardian(
+    student_id: uuid.UUID,
+    guardian_id: uuid.UUID,
+    req: GuardianUpdate,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await guardian_svc.update_guardian(student_id, guardian_id, req, school_id, db)
 
 
 @router.delete("/{student_id}/guardians/{guardian_id}", status_code=204)
@@ -302,7 +326,7 @@ async def remove_guardian(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    await svc.remove_guardian(student_id, guardian_id, school_id, db)
+    await guardian_svc.remove_guardian(student_id, guardian_id, school_id, db)
 
 
 @router.post("/{student_id}/enroll", response_model=EnrollmentRead, status_code=201)

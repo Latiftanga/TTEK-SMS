@@ -76,6 +76,7 @@ class StudentGuardianRead(BaseModel):
     last_name: str
     phone: str
     email: str | None
+    address: str | None
     occupation: str | None
     relation_type: str
     is_primary: bool
@@ -90,6 +91,17 @@ class GuardianCreate(BaseModel):
     address: str | None = None
     relation_type: str
     is_primary: bool = False
+
+
+class GuardianUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    occupation: str | None = None
+    address: str | None = None
+    relation_type: str | None = None
+    is_primary: bool | None = None
 
 
 class StudentSummary(BaseModel):

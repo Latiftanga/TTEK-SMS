@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import {
-    listSubjectRegistrations, registerSubjects,
+    listSubjectRegistrations, registerSubjects, removeSubjectRegistration,
     type TermEnrollmentRead,
   } from '$lib/api/students';
   import { listClassSubjects, listSubjects, type Subject } from '$lib/api/academic';
@@ -78,6 +78,19 @@
     $addMut.mutate();
   }
 
+  const removeMut = createMutation({
+    mutationFn: (regId: string) => removeSubjectRegistration(enrollment.id, regId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['term-subject-regs', enrollment.id] });
+      toast.success('Subject removed.');
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Could not remove subject.';
+      toast.error(msg);
+    },
+  });
+
   function toggle() {
     expanded = !expanded;
     if (!expanded) { showAddForm = false; subjectId = ''; addError = ''; }
@@ -136,13 +149,25 @@
     <p class="text-xs text-[var(--fg-muted)]">No subjects registered yet.</p>
   {:else}
     {#each $subjectRegsQ.data ?? [] as reg (reg.id)}
-      <div class="flex items-center justify-between py-1">
+      <div class="flex items-center justify-between py-1 group">
         <span class="text-sm text-[var(--fg)]">{subjectName(reg.subject_id)}</span>
-        <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide {
-          reg.registration_type === 'CORE'
-            ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-950/30 dark:text-blue-400'
-            : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'
-        }">{reg.registration_type === 'CORE' ? 'Core' : 'Elective'}</span>
+        <div class="flex items-center gap-2">
+          <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide {
+            reg.registration_type === 'CORE'
+              ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-950/30 dark:text-blue-400'
+              : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'
+          }">{reg.registration_type === 'CORE' ? 'Core' : 'Elective'}</span>
+          <button
+            onclick={() => $removeMut.mutate(reg.id)}
+            disabled={$removeMut.isPending && $removeMut.variables === reg.id}
+            class="rounded p-0.5 text-[var(--fg-subtle)] opacity-0 group-hover:opacity-100 transition
+                   hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30"
+            title="Remove subject">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
       </div>
     {/each}
   {/if}

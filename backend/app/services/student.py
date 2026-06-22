@@ -1,6 +1,7 @@
 """
-Student CRUD, guardian management, and medical record upsert.
+Student CRUD and medical record upsert.
 
+Guardian add/update/remove live in student_guardian.py.
 Enrollment (initial + term) and transfer logic live in student_enrollment.py.
 """
 from __future__ import annotations
@@ -23,7 +24,6 @@ from app.models.students import (
     TermEnrollment,
 )
 from app.schemas.students import (
-    GuardianCreate,
     MedicalRecordRead,
     MedicalRecordUpsert,
     StudentCreate,
@@ -85,6 +85,7 @@ def _to_guardian_read(sg: StudentGuardian) -> StudentGuardianRead:
         last_name=g.last_name,
         phone=g.phone,
         email=g.email,
+        address=g.address,
         occupation=g.occupation,
         relation_type=sg.relation_type,
         is_primary=sg.is_primary,
@@ -293,68 +294,3 @@ async def upsert_medical_record(
     return MedicalRecordRead.model_validate(rec)
 
 
-async def add_guardian(
-    student_id: uuid.UUID,
-    req: GuardianCreate,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> StudentGuardianRead:
-    student = await db.get(Student, student_id)
-    if not student or student.school_id != school_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-
-    if req.is_primary:
-        # Demote any existing primary guardian for this student
-        await db.execute(
-            select(StudentGuardian)
-            .where(StudentGuardian.student_id == student_id, StudentGuardian.is_primary == True)  # noqa: E712
-        )
-        existing_primary = await db.scalars(
-            select(StudentGuardian)
-            .where(StudentGuardian.student_id == student_id, StudentGuardian.is_primary == True)  # noqa: E712
-        )
-        for sg in existing_primary:
-            sg.is_primary = False
-
-    guardian = Guardian(
-        school_id=school_id,
-        first_name=req.first_name.strip(),
-        last_name=req.last_name.strip(),
-        phone=req.phone.strip(),
-        email=req.email.lower().strip() if req.email else None,
-        occupation=req.occupation,
-        address=req.address,
-    )
-    db.add(guardian)
-    await db.flush()
-
-    link = StudentGuardian(
-        school_id=school_id,
-        student_id=student_id,
-        guardian_id=guardian.id,
-        relation_type=req.relation_type.strip(),
-        is_primary=req.is_primary,
-    )
-    db.add(link)
-    await db.flush()
-    link.guardian = guardian
-    return _to_guardian_read(link)
-
-
-async def remove_guardian(
-    student_id: uuid.UUID,
-    guardian_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    link = await db.scalar(
-        select(StudentGuardian).where(
-            StudentGuardian.student_id == student_id,
-            StudentGuardian.guardian_id == guardian_id,
-            StudentGuardian.school_id == school_id,
-        )
-    )
-    if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardian link not found.")
-    await db.delete(link)
-    await db.flush()
