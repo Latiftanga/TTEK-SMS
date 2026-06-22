@@ -22,6 +22,17 @@ from app.schemas.assessments import GradeCreate, GradingScaleCreate, GradingScal
 async def create_grading_scale(
     req: GradingScaleCreate, school_id: uuid.UUID, db: AsyncSession
 ) -> GradingScale:
+    existing = await db.scalar(
+        select(GradingScale).where(
+            GradingScale.school_id == school_id,
+            GradingScale.name == req.name,
+        )
+    )
+    if existing:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Grading scale with name '{req.name}' already exists.",
+        )
     if req.is_default:
         await db.execute(
             update(GradingScale)
@@ -70,6 +81,19 @@ async def update_grading_scale(
     scale_id: uuid.UUID, req: GradingScaleUpdate, school_id: uuid.UUID, db: AsyncSession
 ) -> GradingScale:
     scale = await get_grading_scale(scale_id, school_id, db)
+    if req.name is not None and req.name != scale.name:
+        conflict = await db.scalar(
+            select(GradingScale).where(
+                GradingScale.school_id == school_id,
+                GradingScale.name == req.name,
+                GradingScale.id != scale_id,
+            )
+        )
+        if conflict:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Grading scale with name '{req.name}' already exists.",
+            )
     if req.is_default is True and not scale.is_default:
         await db.execute(
             update(GradingScale)
