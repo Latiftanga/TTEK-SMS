@@ -21,6 +21,8 @@
   let editForm = $state({
     first_name: '', last_name: '', middle_name: '', phone: '', email: '',
     category_id: '' as string,
+    date_of_birth: '',
+    joined_date: '',
     gender: '' as '' | 'MALE' | 'FEMALE',
     employment_type: '' as '' | 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN',
     marital_status: '' as '' | 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED' | 'SEPARATED',
@@ -37,6 +39,8 @@
       phone:           staff.phone           ?? '',
       email:           staff.email           ?? '',
       category_id:     staff.category_id     ?? '',
+      date_of_birth:   staff.date_of_birth   ?? '',
+      joined_date:     staff.joined_date     ?? '',
       gender:          staff.gender          ?? '',
       employment_type: staff.employment_type ?? '',
       marital_status:  staff.marital_status  ?? '',
@@ -54,6 +58,8 @@
       phone:           editForm.phone           || undefined,
       email:           editForm.email           || undefined,
       category_id:     editForm.category_id     || undefined,
+      date_of_birth:   editForm.date_of_birth   || undefined,
+      joined_date:     editForm.joined_date     || undefined,
       gender:          (editForm.gender         || undefined) as 'MALE' | 'FEMALE' | undefined,
       employment_type: (editForm.employment_type || undefined) as 'PERMANENT' | 'CONTRACT' | 'NATIONAL_SERVICE' | 'INTERN' | undefined,
       marital_status:  (editForm.marital_status || undefined) as 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED' | 'SEPARATED' | undefined,
@@ -190,6 +196,16 @@
             <option value="MALE">Male</option>
             <option value="FEMALE">Female</option>
           </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date of birth</label>
+          <input type="date" bind:value={editForm.date_of_birth}
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
+          <input type="date" bind:value={editForm.joined_date}
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
         </div>
       </div>
       {#if editError}<p class="mt-2 text-xs text-red-500">{editError}</p>{/if}

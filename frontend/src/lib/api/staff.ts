@@ -149,6 +149,8 @@ export async function updateStaff(
     middle_name: string;
     last_name: string;
     category_id: string;
+    date_of_birth: string;
+    joined_date: string;
     gender: Gender;
     employment_type: EmploymentType;
     marital_status: MaritalStatus;
