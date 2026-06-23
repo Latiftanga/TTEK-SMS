@@ -207,6 +207,16 @@ class SubjectRegistrationRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EnrollmentForReport(BaseModel):
+    enrollment_id: uuid.UUID
+    student_id: uuid.UUID
+    admission_number: str
+    display_name: str
+    gender: str | None
+    class_id: uuid.UUID | None
+    class_display_name: str | None
+
+
 class TransferRequestCreate(BaseModel):
     reason: str | None = None
     requesting_school_id: uuid.UUID | None = None
