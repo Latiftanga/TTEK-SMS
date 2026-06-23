@@ -221,6 +221,9 @@ async def invite_staff_to_platform(
 ):
     """Send a platform invitation to an existing staff member using their profile email/phone."""
     from app.models.staff import StaffMember
+    from app.models.school import School
+    from app.services.sms_notifications import notify_staff_invite
+    from app.core.config import settings
     from sqlalchemy import select
 
     user_id, school_id = ids
@@ -240,7 +243,24 @@ async def invite_staff_to_platform(
         staff_member_id=staff_id,
     )
     token = await invite_svc.create_invitation(invite_req, school_id=school_id, invited_by_id=user_id, db=db)
-    return {"invitation_token": token}
+
+    invite_link = f"{settings.frontend_base_url}/accept-invite?token={token}"
+    sms_sent = False
+    if member.phone:
+        school = await db.get(School, school_id)
+        staff_name = member.first_name
+        school_name = school.name if school else "your school"
+        sms_sent = await notify_staff_invite(
+            phone=member.phone,
+            staff_name=staff_name,
+            school_name=school_name,
+            school_id=school_id,
+            invite_link=invite_link,
+            invitation_id=invite_req.staff_member_id or staff_id,
+            db=db,
+        )
+
+    return {"invitation_token": token, "invite_link": invite_link, "sms_sent": sms_sent}
 
 
 @router.post("/{staff_id}/emergency-contacts", response_model=EmergencyContactRead, status_code=201)

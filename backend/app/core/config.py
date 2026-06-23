@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Used to build absolute URLs (e.g. logo_url in branding response).
     # Override in production: APP_BASE_URL=https://api.ttek-sms.com
     app_base_url: str = "http://localhost:8000"
+    # Base URL of the frontend app — used in invitation SMS links.
+    # Override in production: FRONTEND_BASE_URL=https://app.ttek-sms.com
+    frontend_base_url: str = "http://localhost:5173"
 
     # ── Database ─────────────────────────────────────────────────────────────
     postgres_host: str = "db"

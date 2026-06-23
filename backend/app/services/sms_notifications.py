@@ -187,6 +187,37 @@ async def notify_report_published(
         pass
 
 
+async def notify_staff_invite(
+    phone: str,
+    staff_name: str,
+    school_name: str,
+    school_id: uuid.UUID,
+    invite_link: str,
+    invitation_id: uuid.UUID,
+    db: AsyncSession,
+) -> bool:
+    """
+    SMS to a staff member with their invitation link.
+    Returns True if the SMS was sent successfully, False otherwise.
+    Fire-and-forget: never raises.
+    """
+    try:
+        driver = await _get_active_driver(school_id, db)
+        if not driver:
+            return False
+        from app.services.sms_driver import _normalize_phone
+        normalized = _normalize_phone(phone)
+        msg = (
+            f"Hi {staff_name}, you've been invited to join {school_name} "
+            f"on TTEK-SMS. Set your password here: {invite_link}"
+        )
+        result = await driver.send(normalized, msg)
+        await _log_result(result, normalized, msg, school_id, "STAFF_INVITE", invitation_id, db)
+        return result.success
+    except Exception:
+        return False
+
+
 async def send_manual(
     phones: list[str],
     message: str,

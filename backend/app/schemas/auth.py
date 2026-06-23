@@ -86,8 +86,6 @@ class ChangePasswordRequest(BaseModel):
 class AcceptInvitationRequest(BaseModel):
     token: str
     password: str
-    first_name: str
-    last_name: str
 
     @field_validator("password")
     @classmethod

@@ -78,3 +78,21 @@ export async function updateProfile(req: {
 }): Promise<void> {
   await client.patch('/auth/me/profile', req);
 }
+
+export interface InvitationInfo {
+  school_name: string;
+  position_name: string | null;
+  email: string | null;
+  phone: string | null;
+  is_expired: boolean;
+  is_accepted: boolean;
+}
+
+export async function getInviteInfo(token: string): Promise<InvitationInfo> {
+  const { data } = await client.get<InvitationInfo>(`/auth/invite-info/${token}`);
+  return data;
+}
+
+export async function acceptInvite(req: { token: string; password: string }): Promise<void> {
+  await client.post('/auth/accept-invite', req);
+}

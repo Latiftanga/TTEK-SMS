@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { getStaff, updateStaff, resetStaffPassword, inviteStaff, type TempPasswordResult } from '$lib/api/staff';
+  import { getStaff, updateStaff, resetStaffPassword, inviteStaff, type TempPasswordResult, type InviteResult } from '$lib/api/staff';
   import { getMySchool } from '$lib/api/schools';
   import { toast } from '$lib/stores/toast';
   import { apiError } from '$lib/utils';
@@ -48,11 +48,22 @@
     onError: () => toast.error('Could not update status. Try again.'),
   });
 
+  let inviteResult = $state<InviteResult | null>(null);
+  let inviteLinkCopied = $state(false);
+
   const inviteMut = createMutation({
     mutationFn: () => inviteStaff(staffId),
-    onSuccess: () => toast.success('Invitation sent successfully.'),
+    onSuccess: (r) => { inviteResult = r; },
     onError: (e) => toast.error(apiError(e, 'Could not send invitation.')),
   });
+
+  function copyInviteLink() {
+    if (!inviteResult) return;
+    navigator.clipboard.writeText(inviteResult.invite_link).then(() => {
+      inviteLinkCopied = true;
+      setTimeout(() => inviteLinkCopied = false, 2000);
+    });
+  }
 
   let resetResult   = $state<TempPasswordResult | null>(null);
   let confirmReset  = $state(false);
@@ -280,3 +291,51 @@
   result={resetResult}
   onDismiss={() => resetResult = null}
 />
+
+{#if inviteResult}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
+      <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
+        <svg class="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+      </div>
+
+      <h2 class="text-base font-semibold text-[var(--fg)]">Invitation created</h2>
+
+      {#if inviteResult.sms_sent}
+        <p class="mt-1 text-sm text-[var(--fg-muted)]">
+          An SMS with the link was sent to <span class="font-medium text-[var(--fg)]">{$query.data?.phone}</span>.
+          You can also share this link directly:
+        </p>
+      {:else}
+        <p class="mt-1 text-sm text-[var(--fg-muted)]">
+          Share this link with <span class="font-medium text-[var(--fg)]">{$query.data?.display_name}</span>.
+          They'll use it to set their password and activate their account.
+          {#if $query.data?.phone}
+            <span class="text-amber-600 dark:text-amber-400"> (No SMS provider configured — share manually.)</span>
+          {/if}
+        </p>
+      {/if}
+
+      <div class="mt-4 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5">
+        <p class="flex-1 truncate font-mono text-xs text-[var(--fg)]">{inviteResult.invite_link}</p>
+        <button onclick={copyInviteLink}
+          class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-medium
+                 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+          {inviteLinkCopied ? '✓ Copied' : 'Copy'}
+        </button>
+      </div>
+
+      <p class="mt-3 text-xs text-[var(--fg-subtle)]">Link expires in 72 hours.</p>
+
+      <div class="mt-5 flex justify-end">
+        <button onclick={() => inviteResult = null}
+          class="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          style="background-color: var(--brand)">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
