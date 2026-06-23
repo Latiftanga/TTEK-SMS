@@ -216,8 +216,8 @@ async def create_exeat(
     ids=Depends(require_permission("housing", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await event_svc.create_exeat(req, school_id, db)
+    user_id, school_id = ids
+    return await event_svc.create_exeat(req, school_id, user_id, db)
 
 
 @router.get("/exeats/pending", response_model=list[ExeatRead])

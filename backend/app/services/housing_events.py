@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attendance import SchoolCalendar
-from app.models.housing import Exeat, ExeatStatus, House, NightRollCall
+from app.models.auth import User
+from app.models.housing import Exeat, ExeatStatus, House, HouseMaster, NightRollCall, StudentHouseAssignment
 from app.models.students import Student
 from app.schemas.housing import (
     ExeatApprove, ExeatCreate, ExeatRead, ExeatReturn,
@@ -71,12 +72,41 @@ async def list_roll_calls(
     return [_to_rollcall(r) for r in rows]
 
 
-async def create_exeat(req: ExeatCreate, school_id: uuid.UUID, db: AsyncSession) -> ExeatRead:
+async def create_exeat(
+    req: ExeatCreate, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
+) -> ExeatRead:
     student = await db.scalar(
         select(Student).where(Student.id == req.student_id, Student.school_id == school_id)
     )
     if not student:
         raise HTTPException(404, "Student not found.")
+
+    # Housemaster scoping: if requester manages a house, student must be in that house.
+    # HEAD / admin / deputy have no HouseMaster record, so they bypass this check.
+    user = await db.get(User, user_id)
+    if user and user.staff_member_id:
+        managed_house_ids = list(await db.scalars(
+            select(HouseMaster.house_id).where(
+                HouseMaster.staff_member_id == user.staff_member_id,
+                HouseMaster.school_id == school_id,
+                HouseMaster.is_active.is_(True),
+            )
+        ))
+        if managed_house_ids:
+            assignment = await db.scalar(
+                select(StudentHouseAssignment).where(
+                    StudentHouseAssignment.student_id == req.student_id,
+                    StudentHouseAssignment.house_id.in_(managed_house_ids),
+                    StudentHouseAssignment.school_id == school_id,
+                    StudentHouseAssignment.vacated_at.is_(None),
+                )
+            )
+            if not assignment:
+                raise HTTPException(
+                    403,
+                    "You can only issue exeats for students assigned to your house.",
+                )
+
     exeat = Exeat(
         school_id=school_id,
         student_id=req.student_id,
