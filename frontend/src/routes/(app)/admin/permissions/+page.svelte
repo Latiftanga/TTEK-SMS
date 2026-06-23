@@ -103,24 +103,25 @@
   {:else if selected}
     <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
 
-      <!-- ── Position list ───────────────────────────────────────────────────── -->
+      <!-- ── Position selector ─────────────────────────────────────────────── -->
       <div class="lg:w-56 lg:shrink-0">
-        <!-- Mobile: horizontal scroll tabs -->
-        <div class="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-          {#each positions as pos}
-            <button
-              onclick={() => selectedId = pos.id}
-              class="flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium
-                     transition whitespace-nowrap
-                     {selectedId === pos.id
-                       ? 'border-[var(--brand)] bg-[color-mix(in_oklab,var(--brand)_8%,transparent)] text-[var(--brand)]'
-                       : 'border-[var(--border)] bg-[var(--card)] text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
-              {pos.name}
-              {#if hasChanges(pos)}
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
-              {/if}
-            </button>
-          {/each}
+
+        <!-- Mobile / tablet: native select -->
+        <div class="lg:hidden">
+          <select
+            bind:value={selectedId}
+            class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5
+                   text-sm font-medium text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none
+                   transition">
+            {#each positions as pos}
+              <option value={pos.id}>
+                {pos.name}{hasChanges(pos) ? ' ●' : ''}{pos.is_template ? ' (Platform)' : ''}
+              </option>
+            {/each}
+          </select>
+          {#if selected && hasChanges(selected)}
+            <p class="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Unsaved changes.</p>
+          {/if}
         </div>
 
         <!-- Desktop: vertical list -->
@@ -182,7 +183,7 @@
                 <p class="mb-3 text-[11px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
                   {MODULE_LABELS[module]}
                 </p>
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                   {#each actions as action}
                     {@const granted = isGranted(selected.id, module, action)}
                     <label class="flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5
