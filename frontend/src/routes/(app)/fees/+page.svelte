@@ -32,16 +32,15 @@
   });
 
   // ── Setup data (only fetched when admin) ──────────────────────────────────────
-  const classesQ   = createQuery({ queryKey: ['classes'],    queryFn: listClasses,    staleTime: 10 * 60_000, enabled: isAdmin });
-  const typesQ     = createQuery({ queryKey: ['fee-types'],  queryFn: listFeeTypes,   staleTime: 5 * 60_000,  enabled: isAdmin });
+  const classesQ   = createQuery({ queryKey: ['classes'],   queryFn: listClasses,  staleTime: 10 * 60_000 });
+  const typesQ     = createQuery({ queryKey: ['fee-types'], queryFn: listFeeTypes, staleTime: 5 * 60_000  });
   const classes    = $derived($classesQ.data ?? []);
   const feeTypes   = $derived<FeeType[]>($typesQ.data ?? []);
 
   const structOpts = writable({ queryKey: ['fee-structures', ''] as const, queryFn: () => listFeeStructures(''), enabled: false, staleTime: 60_000 });
   $effect(() => {
     const tid = termId;
-    const admin = isAdmin;
-    structOpts.set({ queryKey: ['fee-structures', tid] as const, queryFn: () => listFeeStructures(tid), enabled: admin && !!tid, staleTime: 60_000 });
+    structOpts.set({ queryKey: ['fee-structures', tid] as const, queryFn: () => listFeeStructures(tid), enabled: !!tid, staleTime: 60_000 });
   });
   const structQ    = createQuery(structOpts);
   const structures = $derived<FeeStructure[]>($structQ.data ?? []);
