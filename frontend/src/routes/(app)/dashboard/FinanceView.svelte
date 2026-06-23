@@ -16,12 +16,12 @@
   const remaining = $derived(Math.max(0, Number(data.term_expected) - Number(data.term_collected)));
   const C = 2 * Math.PI * 40;
 
-  const actions = [
+  const actions = $derived.by(() => [
     { href: '/fees/pay',         label: 'Record Payment',   sub: 'Accept a new payment',   primary: true  },
     { href: '/fees?outstanding', label: 'View Outstanding', sub: `${data.outstanding_students} students`, primary: false },
     { href: '/fees/discounts',   label: 'Manage Discounts', sub: 'Apply or review',         primary: false },
     { href: '/fees/report',      label: 'Fee Report',       sub: 'Export & analyse',        primary: false },
-  ];
+  ]);
 
   const icons = {
     creditCard: `<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>`,

@@ -50,7 +50,7 @@
   let resetResult   = $state<TempPasswordResult | null>(null);
   let confirmReset  = $state(false);
   const resetMut = createMutation({
-    mutationFn: () => resetStaffPassword(staffId()),
+    mutationFn: () => resetStaffPassword(staffId),
     onSuccess: (r) => { confirmReset = false; resetResult = r; },
     onError: (e: unknown) => {
       confirmReset = false;

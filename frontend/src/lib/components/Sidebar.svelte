@@ -33,7 +33,7 @@
   const role         = $derived($userRole as NavRole | null);
   const isAdmin      = $derived(isSuperadmin || role === 'admin');
 
-  function canSee(roles?: NavRole[]): boolean {
+  function canSee(roles: NavRole[] | undefined): boolean {
     if (isSuperadmin || !roles) return true;
     if (!role) return false;
     return roles.includes(role);
@@ -48,7 +48,7 @@
       })
   );
 
-  function isActive(href: string, exact?: boolean) {
+  function isActive(href: string, exact: boolean | undefined) {
     const p = $page.url.pathname;
     return exact ? p === href : p.startsWith(href);
   }

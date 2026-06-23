@@ -19,7 +19,7 @@
     { href: '/fees',      label: 'Fees',       icon: ic.fees                    },
   ];
 
-  function isActive(href: string, exact?: boolean) {
+  function isActive(href: string, exact: boolean | undefined) {
     const p = $page.url.pathname;
     return exact ? p === href : p.startsWith(href);
   }

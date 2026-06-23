@@ -12,7 +12,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from app.core.database import AsyncSessionLocal
 # Import all models so SQLAlchemy resolves FK references
 from app.models import school, auth, staff, academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
@@ -460,41 +460,49 @@ GES_RANKS = [
 
 async def seed():
     async with AsyncSessionLocal() as db:
-        # Regions
+        # Regions — batch load existing
         region_map: dict[str, "GhanaRegion"] = {}
+        region_codes = [code for _, code in REGIONS]
+        existing_regions = await db.execute(
+            select(GhanaRegion).where(GhanaRegion.code.in_(region_codes))
+        )
+        for r in existing_regions.scalars():
+            region_map[r.code] = r
+
         for name, code in REGIONS:
-            existing = await db.scalar(select(GhanaRegion).where(GhanaRegion.code == code))
-            if not existing:
+            if code not in region_map:
                 r = GhanaRegion(name=name, code=code)
                 db.add(r)
                 await db.flush()
                 region_map[code] = r
                 print(f"  Region: {name}")
-            else:
-                region_map[code] = existing
 
-        # Districts
+        # Districts — batch load existing
+        district_codes = [code for _, code, _ in DISTRICTS]
+        existing_districts = await db.execute(
+            select(GhanaDistrict.code).where(GhanaDistrict.code.in_(district_codes))
+        )
+        existing_district_codes = {row.code for row in existing_districts}
+        added_districts = 0
         for name, code, region_code in DISTRICTS:
-            existing = await db.scalar(select(GhanaDistrict).where(GhanaDistrict.code == code))
-            if not existing:
-                region = region_map[region_code]
-                d = GhanaDistrict(name=name, code=code, region_id=region.id)
-                db.add(d)
-                print(f"  District: {name}")
+            if code not in existing_district_codes:
+                db.add(GhanaDistrict(name=name, code=code, region_id=region_map[region_code].id))
+                added_districts += 1
         await db.flush()
+        print(f"  Districts: {added_districts} new (of {len(DISTRICTS)} total)")
 
-        # Public holidays
+        # Public holidays — batch load existing
+        existing_holidays = await db.execute(
+            select(GhanaPublicHoliday.date, GhanaPublicHoliday.name)
+        )
+        existing_holiday_keys = {(row.date, row.name) for row in existing_holidays}
+        added_holidays = 0
         for holiday_date, name, recurring in PUBLIC_HOLIDAYS:
-            existing = await db.scalar(
-                select(GhanaPublicHoliday).where(
-                    GhanaPublicHoliday.date == holiday_date,
-                    GhanaPublicHoliday.name == name,
-                )
-            )
-            if not existing:
+            if (holiday_date, name) not in existing_holiday_keys:
                 db.add(GhanaPublicHoliday(name=name, date=holiday_date, is_recurring=recurring))
-                print(f"  Holiday: {name} ({holiday_date})")
+                added_holidays += 1
         await db.flush()
+        print(f"  Holidays: {added_holidays} new (of {len(PUBLIC_HOLIDAYS)} total)")
 
         # Staff position templates (authority roles with permissions)
         for code, name, perms in STAFF_POSITIONS:
@@ -512,41 +520,46 @@ async def seed():
 
         # GES staff category templates (HR classification — no permissions)
         category_map: dict[str, StaffCategory] = {}
-        for code, name, stype in GES_STAFF_CATEGORIES:
-            existing = await db.scalar(
-                select(StaffCategory).where(
-                    StaffCategory.code == code, StaffCategory.school_id.is_(None)
-                )
+        cat_codes = [code for code, _, _ in GES_STAFF_CATEGORIES]
+        existing_cats = await db.execute(
+            select(StaffCategory).where(
+                StaffCategory.code.in_(cat_codes), StaffCategory.school_id.is_(None)
             )
-            if not existing:
+        )
+        for cat in existing_cats.scalars():
+            category_map[cat.code] = cat
+
+        added_cats = 0
+        for code, name, stype in GES_STAFF_CATEGORIES:
+            if code not in category_map:
                 cat = StaffCategory(
-                    school_id=None,
-                    name=name,
-                    code=code,
-                    staff_type=StaffType(stype),
-                    is_template=True,
-                    is_active=True,
+                    school_id=None, name=name, code=code,
+                    staff_type=StaffType(stype), is_template=True, is_active=True,
                 )
                 db.add(cat)
                 await db.flush()
                 category_map[code] = cat
-                print(f"  Category: {name}")
-            else:
-                category_map[code] = existing
+                added_cats += 1
+        print(f"  Categories: {added_cats} new (of {len(GES_STAFF_CATEGORIES)} total)")
 
-        # GES rank templates
+        # GES rank templates — batch existence check (one query for all 210 ranks)
+        cat_ids = [c.id for c in category_map.values()]
+        existing_ranks: set[tuple] = set()
+        if cat_ids:
+            rows = await db.execute(
+                select(StaffRank.category_id, StaffRank.title).where(
+                    StaffRank.category_id.in_(cat_ids),
+                    StaffRank.school_id.is_(None),
+                )
+            )
+            existing_ranks = {(r.category_id, r.title) for r in rows}
+
+        added = 0
         for cat_code, title in GES_RANKS:
             cat = category_map.get(cat_code)
             if not cat:
                 continue
-            existing = await db.scalar(
-                select(StaffRank).where(
-                    StaffRank.category_id == cat.id,
-                    StaffRank.title == title,
-                    StaffRank.school_id.is_(None),
-                )
-            )
-            if not existing:
+            if (cat.id, title) not in existing_ranks:
                 db.add(StaffRank(
                     school_id=None,
                     category_id=cat.id,
@@ -554,8 +567,9 @@ async def seed():
                     is_template=True,
                     is_active=True,
                 ))
+                added += 1
         await db.flush()
-        print(f"  Ranks seeded: {len(GES_RANKS)}")
+        print(f"  Ranks seeded: {added} new (of {len(GES_RANKS)} total)")
 
         await db.commit()
         print("Seed complete.")

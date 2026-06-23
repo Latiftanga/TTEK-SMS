@@ -33,7 +33,7 @@
   const filterLevel     = $derived($page.url.searchParams.get('level')  ?? '');
   const currentPage     = $derived(Number($page.url.searchParams.get('p') ?? '1'));
 
-  function setParam(key: string, value: string, extra?: Record<string, string>) {
+  function setParam(key: string, value: string, extra: Record<string, string> | undefined) {
     const url = new URL($page.url);
     if (value) url.searchParams.set(key, value); else url.searchParams.delete(key);
     if (extra) { for (const [k, v] of Object.entries(extra)) { if (v) url.searchParams.set(k, v); else url.searchParams.delete(k); } }

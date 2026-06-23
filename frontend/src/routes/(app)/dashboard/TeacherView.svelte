@@ -8,11 +8,11 @@
   const hour = new Date().getHours();
   const salutation = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  const todayLabel = new Date(data.today_iso).toLocaleDateString('en-GH', {
+  const todayLabel = $derived(new Date(data.today_iso).toLocaleDateString('en-GH', {
     weekday: 'long', day: 'numeric', month: 'long',
-  });
+  }));
 
-  const tasks = [
+  const tasks = $derived.by(() => [
     {
       href: '/attendance',
       label: 'Mark Attendance',
@@ -27,7 +27,7 @@
     },
     { href: '/students', label: 'My Students', badge: `${data.my_class?.student_count ?? 0} enrolled`, urgent: false },
     { href: '/reports',  label: 'Report Cards', badge: 'View & download', urgent: false },
-  ];
+  ]);
 
   const icons = {
     pencil: `<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>`,

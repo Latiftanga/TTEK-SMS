@@ -163,7 +163,7 @@
   {/if}
 </div>
 
-{#snippet promotionForm(isEdit: boolean, promotionId?: string)}
+{#snippet promotionForm(isEdit: boolean, promotionId: string | undefined = undefined)}
   <div class="grid gap-4 sm:grid-cols-2">
     <div>
       <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
