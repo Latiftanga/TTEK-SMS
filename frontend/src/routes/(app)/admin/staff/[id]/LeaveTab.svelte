@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listLeave, submitLeave } from '$lib/api/staff';
+  import { apiError } from '$lib/utils';
   import Badge from '$lib/components/Badge.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
 
@@ -50,9 +51,7 @@
       form = { leave_type: '', start_date: '', end_date: '', reason: '' };
       formError = '';
     },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to submit leave.';
-    },
+    onError: (e) => { formError = apiError(e, 'Failed to submit leave request.'); },
   });
 
   function fmtDate(d: string) {

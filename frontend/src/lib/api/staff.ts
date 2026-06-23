@@ -354,3 +354,8 @@ export async function resetStaffPassword(staffId: string): Promise<TempPasswordR
   const { data } = await client.post<TempPasswordResult>(`/staff/${staffId}/reset-password`);
   return data;
 }
+
+export async function inviteStaff(staffId: string): Promise<{ invitation_token: string }> {
+  const { data } = await client.post<{ invitation_token: string }>(`/staff/${staffId}/invite`);
+  return data;
+}

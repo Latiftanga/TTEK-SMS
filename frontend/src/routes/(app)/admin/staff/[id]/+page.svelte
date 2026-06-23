@@ -2,9 +2,10 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { getStaff, updateStaff, resetStaffPassword, type TempPasswordResult } from '$lib/api/staff';
+  import { getStaff, updateStaff, resetStaffPassword, inviteStaff, type TempPasswordResult } from '$lib/api/staff';
   import { getMySchool } from '$lib/api/schools';
   import { toast } from '$lib/stores/toast';
+  import { apiError } from '$lib/utils';
   import Badge                from '$lib/components/Badge.svelte';
   import TabBar               from '$lib/components/TabBar.svelte';
   import ProfileTab           from './ProfileTab.svelte';
@@ -14,7 +15,7 @@
   import PasswordResetModals  from './PasswordResetModals.svelte';
 
   const qc = useQueryClient();
-  const staffId = $derived($page.params.id);
+  const staffId = $page.params.id;
 
   const query = createQuery({
     queryKey: ['staff', staffId],
@@ -39,7 +40,7 @@
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
 
   const toggleMut = createMutation({
-    mutationFn: () => updateStaff(staffId, { is_active: !$query.data!.is_active }),
+    mutationFn: () => updateStaff(staffId, { is_active: !($query.data?.is_active ?? true) }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['staff', staffId] });
       toast.success(data.is_active ? 'Staff member reactivated.' : 'Staff member deactivated.');
@@ -47,17 +48,18 @@
     onError: () => toast.error('Could not update status. Try again.'),
   });
 
+  const inviteMut = createMutation({
+    mutationFn: () => inviteStaff(staffId),
+    onSuccess: () => toast.success('Invitation sent successfully.'),
+    onError: (e) => toast.error(apiError(e, 'Could not send invitation.')),
+  });
+
   let resetResult   = $state<TempPasswordResult | null>(null);
   let confirmReset  = $state(false);
   const resetMut = createMutation({
     mutationFn: () => resetStaffPassword(staffId),
     onSuccess: (r) => { confirmReset = false; resetResult = r; },
-    onError: (e: unknown) => {
-      confirmReset = false;
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Could not reset password.';
-      toast.error(msg);
-    },
+    onError: (e) => { confirmReset = false; toast.error(apiError(e, 'Could not reset password.')); },
   });
 
   const GENDER_BG: Record<string, string> = { MALE: '#3B82F6', FEMALE: '#EC4899' };
@@ -255,9 +257,12 @@
             Send a login invitation to this staff member.
           </p>
           <button
+            onclick={() => $inviteMut.mutate()}
+            disabled={$inviteMut.isPending}
             class="w-full rounded-xl border border-[var(--border)] py-2 text-xs font-medium
-                   text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
-            Send invitation
+                   text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]
+                   disabled:opacity-50">
+            {$inviteMut.isPending ? 'Sending…' : 'Send invitation'}
           </button>
         </div>
       {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listPromotions, addPromotion, updatePromotion, deletePromotion, listRanks, type StaffDetail } from '$lib/api/staff';
+  import { apiError } from '$lib/utils';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
@@ -53,9 +54,7 @@
       reason:         reason      || undefined,
     }),
     onSuccess: () => { invalidate(); showForm = false; resetForm(); },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.';
-    },
+    onError: (e) => { formError = apiError(e, 'Failed to record promotion.'); },
   });
 
   const editMut = createMutation({
@@ -66,9 +65,7 @@
       reason:         reason      || undefined,
     }),
     onSuccess: () => { invalidate(); editingId = null; resetForm(); },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.';
-    },
+    onError: (e) => { formError = apiError(e, 'Failed to update promotion.'); },
   });
 
   const delMut = createMutation({

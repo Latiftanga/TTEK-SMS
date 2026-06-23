@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { updateStaff, listCategories, addEmergencyContact, deleteEmergencyContact, type StaffDetail } from '$lib/api/staff';
+  import { apiError } from '$lib/utils';
   import PositionsCard from './PositionsCard.svelte';
 
   interface Props { staff: StaffDetail; staffId: string; }
@@ -28,6 +29,7 @@
   let editError = $state('');
 
   $effect(() => {
+    if (editing) return;
     editForm = {
       first_name:      staff.first_name,
       last_name:       staff.last_name,
@@ -60,9 +62,7 @@
       address:         editForm.address         || undefined,
     }),
     onSuccess: () => { invalidate(); editing = false; editError = ''; },
-    onError: (e: unknown) => {
-      editError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to save.';
-    },
+    onError: (e) => { editError = apiError(e, 'Failed to save.'); },
   });
 
   // ── Emergency contacts ──────────────────────────────────────────────────────
@@ -73,7 +73,7 @@
   const addContactMut = createMutation({
     mutationFn: () => addEmergencyContact(staffId, { name: cForm.name, contact_type: cForm.contact_type, phone: cForm.phone, email: cForm.email || undefined }),
     onSuccess: () => { invalidate(); showContactForm = false; cForm = { name: '', contact_type: '', phone: '', email: '' }; cError = ''; },
-    onError: (e: unknown) => { cError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.'; },
+    onError: (e) => { cError = apiError(e, 'Failed to save contact.'); },
   });
 
   const delContactMut = createMutation({

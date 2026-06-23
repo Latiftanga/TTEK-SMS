@@ -3,6 +3,7 @@
   import { createStaff, listCategories, type StaffDetail } from '$lib/api/staff';
   import { toast } from '$lib/stores/toast';
   import { portal } from '$lib/actions/portal';
+  import { apiError } from '$lib/utils';
 
   interface Props {
     open: boolean;
@@ -40,9 +41,8 @@
       formError = '';
       onSuccess(data);
     },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Failed to create staff member.';
+    onError: (e) => {
+      formError = apiError(e, 'Failed to create staff member.');
       toast.error(formError);
     },
   });

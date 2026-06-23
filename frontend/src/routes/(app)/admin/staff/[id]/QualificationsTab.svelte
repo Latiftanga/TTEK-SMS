@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { addQualification, updateQualification, deleteQualification, type StaffDetail } from '$lib/api/staff';
+  import { apiError } from '$lib/utils';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
@@ -41,9 +42,7 @@
       year_obtained:      form.year_obtained ? Number(form.year_obtained) : undefined,
     }),
     onSuccess: () => { invalidate(); showForm = false; resetForm(); },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.';
-    },
+    onError: (e) => { formError = apiError(e, 'Failed to add qualification.'); },
   });
 
   const editMut = createMutation({
@@ -54,9 +53,7 @@
       year_obtained:      form.year_obtained ? Number(form.year_obtained) : undefined,
     }),
     onSuccess: () => { invalidate(); editingId = null; resetForm(); },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.';
-    },
+    onError: (e) => { formError = apiError(e, 'Failed to update qualification.'); },
   });
 
   const delMut = createMutation({

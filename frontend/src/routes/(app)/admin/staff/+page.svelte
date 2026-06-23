@@ -91,7 +91,8 @@
           </svg>
         </button>
         {#if exportMenuOpen}
-          <div class="absolute right-0 top-full z-10 mt-1 min-w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-lg">
+          <button class="fixed inset-0 z-[5] cursor-default" onclick={() => exportMenuOpen = false} tabindex="-1" aria-hidden="true"></button>
+          <div class="absolute right-0 top-full z-[6] mt-1 min-w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-lg">
             <button onclick={() => doExport('excel')}
               class="w-full px-4 py-2.5 text-left text-sm text-[var(--fg)] transition hover:bg-[var(--hover)]">
               Excel (.xlsx)
