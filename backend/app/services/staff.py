@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy import func
 from app.models.staff import StaffMember, staff_member_positions
 from app.schemas.staff import (
     QualificationRead,
@@ -149,6 +150,59 @@ async def get_staff(
     return _to_detail(member)
 
 
+async def _guard_last_admin(
+    staff_id: uuid.UUID,
+    school_id: uuid.UUID,
+    new_position_ids: list[uuid.UUID],
+    db: AsyncSession,
+) -> None:
+    """Raise 422 if this change would leave the school with no administrator."""
+    from app.models.auth import PositionPermission
+
+    # Find every position that grants school.manage_users (the admin capability).
+    admin_pos_ids = set(await db.scalars(
+        select(PositionPermission.position_id).where(
+            PositionPermission.module == "school",
+            PositionPermission.action == "manage_users",
+            PositionPermission.is_allowed == True,
+        )
+    ))
+    if not admin_pos_ids:
+        return  # no admin positions defined yet — nothing to protect
+
+    current_pos_ids = set(await db.scalars(
+        select(staff_member_positions.c.position_id).where(
+            staff_member_positions.c.staff_member_id == staff_id
+        )
+    ))
+    losing_admin = bool(current_pos_ids & admin_pos_ids) and not bool(set(new_position_ids) & admin_pos_ids)
+    if not losing_admin:
+        return  # this staff member isn't losing admin — nothing to check
+
+    # Count OTHER active staff at this school who still hold an admin position.
+    other_admins = await db.scalar(
+        select(func.count(StaffMember.id.distinct())).where(
+            StaffMember.school_id == school_id,
+            StaffMember.id != staff_id,
+            StaffMember.is_active == True,
+            StaffMember.id.in_(
+                select(staff_member_positions.c.staff_member_id).where(
+                    staff_member_positions.c.position_id.in_(admin_pos_ids)
+                )
+            ),
+        )
+    )
+    if not other_admins:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Cannot remove the administrator position: this is the only "
+                "active administrator. Assign the HEAD position to another "
+                "staff member first."
+            ),
+        )
+
+
 async def update_staff(
     staff_id: uuid.UUID,
     req: StaffMemberUpdate,
@@ -175,6 +229,8 @@ async def update_staff(
         setattr(member, field, val)
 
     if new_position_ids is not None:
+        await _guard_last_admin(staff_id, school_id, new_position_ids, db)
+
         await db.execute(
             delete(staff_member_positions).where(
                 staff_member_positions.c.staff_member_id == staff_id

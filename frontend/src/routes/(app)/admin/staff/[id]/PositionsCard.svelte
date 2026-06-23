@@ -2,6 +2,7 @@
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { updateStaff, listPositions, type StaffDetail } from '$lib/api/staff';
   import { toast } from '$lib/stores/toast';
+  import { apiError } from '$lib/utils';
 
   interface Props { staff: StaffDetail; staffId: string; }
   const { staff, staffId }: Props = $props();
@@ -25,10 +26,7 @@
       editing = false;
       toast.success('Positions updated.');
     },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to update positions.';
-      toast.error(msg);
-    },
+    onError: (e) => toast.error(apiError(e, 'Failed to update positions.')),
   });
 </script>
 
