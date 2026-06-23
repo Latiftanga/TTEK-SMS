@@ -76,6 +76,10 @@ export const addRoom = (houseId: string, req: {
   room_number: string; capacity?: number | null; room_type?: string;
 }): Promise<Room> => api.post(`/housing/houses/${houseId}/rooms`, req).then(r => r.data);
 
+export const updateRoom = (houseId: string, roomId: string, req: {
+  room_number?: string; capacity?: number | null; room_type?: string;
+}): Promise<Room> => api.patch(`/housing/houses/${houseId}/rooms/${roomId}`, req).then(r => r.data);
+
 export const getStudentAssignment = (studentId: string, yearId: string): Promise<AssignmentRead | null> =>
   api.get(`/housing/students/${studentId}/assignment`, { params: { year_id: yearId } }).then(r => r.data);
 
