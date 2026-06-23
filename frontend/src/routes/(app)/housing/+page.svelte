@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
-  import { listHouses, createHouse, listPendingExeats, reviewExeat, recordReturn, type House, type HouseGender } from '$lib/api/housing';
+  import { listHouses, createHouse, listPendingExeats, approveExeat, recordReturn, type House, type HouseGender } from '$lib/api/housing';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -44,7 +44,7 @@
 
   // ── Exeat actions ─────────────────────────────────────────────────────────────
   const reviewMut = createMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'APPROVED' | 'REJECTED' }) => reviewExeat(id, status),
+    mutationFn: ({ id, status }: { id: string; status: 'APPROVED' | 'REJECTED' }) => approveExeat(id, status),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['exeats-pending'] }); toast.success('Exeat updated.'); },
     onError: () => toast.error('Could not update exeat.'),
   });
