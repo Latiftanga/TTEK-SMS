@@ -7,7 +7,6 @@
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
   import { logout } from '$lib/api/auth';
-  import { getCurrentYear } from '$lib/api/academic';
   import { NAV_GROUPS, ROLE_LABELS, IC, type NavRole } from '$lib/nav';
 
   interface Props { open: boolean; onclose: () => void; }
@@ -19,14 +18,6 @@
     collapsed = !collapsed;
     if (browser) localStorage.setItem('sidebar_collapsed', String(collapsed));
   }
-
-  // ── Academic context ─────────────────────────────────────────────────────────
-  const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
-  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
-  const termTooltip = $derived.by(() => {
-    if (!collapsed || !$yearQ.data) return undefined;
-    return `${currentTerm ? currentTerm.name : 'No term'} · ${$yearQ.data.name}`;
-  });
 
   // ── Role resolution ──────────────────────────────────────────────────────────
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
@@ -144,38 +135,6 @@
     {/if}
   </div>
 
-  <!-- ── Academic year / term strip ──────────────────────────────────────── -->
-  {#if $yearQ.data}
-    <a href="/admin/academic"
-       onclick={onclose}
-       title={termTooltip}
-       class="flex shrink-0 items-center border-b border-[var(--border)] transition-colors hover:bg-[var(--hover)]
-              {collapsed ? 'justify-center px-2 py-3' : 'gap-2.5 px-4 py-2.5'}">
-      <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
-           style="background: color-mix(in oklab, var(--brand) 10%, transparent)">
-        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2"
-             viewBox="0 0 24 24" style="color: var(--brand)">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25
-               2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0
-               0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
-        </svg>
-      </div>
-      {#if !collapsed}
-        <div class="min-w-0 flex-1">
-          <p class="text-[11px] font-semibold text-[var(--fg)]">
-            {currentTerm?.name ?? 'No active term'}
-          </p>
-          <p class="text-[10px] text-[var(--fg-muted)]">{$yearQ.data.name}</p>
-        </div>
-        {#if currentTerm}
-          <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-                style="background: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand)">
-            Current
-          </span>
-        {/if}
-      {/if}
-    </a>
   {/if}
 
   <!-- ── Navigation ───────────────────────────────────────────────────────── -->
