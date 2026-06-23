@@ -17,7 +17,7 @@ from app.core.dependencies import require_auth, require_permission
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
     CalendarDayOverride, CalendarDayRead, CalendarGenerateRequest,
-    ScheduleRead, ScheduleUpsert,
+    ScheduleRead, ScheduleUpsert, StudentAbsenceSummary, TodayStatusRead,
 )
 from app.services import attendance as att_svc
 from app.services import attendance_calendar as cal_svc
@@ -103,6 +103,29 @@ async def list_attendance(
 ):
     _, school_id = ids
     return await att_svc.list_attendance(calendar_id, class_id, school_id, db)
+
+
+@router.get("/today", response_model=TodayStatusRead)
+async def get_today_status(
+    class_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Today's calendar status + existing record count for a class — single fast call."""
+    _, school_id = ids
+    return await att_svc.get_today_status(class_id, school_id, db)
+
+
+@router.get("/class-summaries", response_model=list[StudentAbsenceSummary])
+async def get_class_summaries(
+    class_id: uuid.UUID = Query(...),
+    term_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk per-student absence counts for a class — one query for inline display."""
+    _, school_id = ids
+    return await att_svc.get_class_summaries(class_id, term_id, school_id, db)
 
 
 @router.get("/summary", response_model=AttendanceSummaryRead)

@@ -4,10 +4,9 @@
   import { listClasses, listYears } from '$lib/api/academic';
   import { listStudents } from '$lib/api/students';
   import {
-    listCalendar, listAttendanceRecords, markAttendance,
-    type AttendanceStatus, type CalendarDay,
+    listCalendar, listAttendanceRecords, markAttendance, getClassSummaries,
+    type AttendanceStatus, type CalendarDay, type StudentAbsenceSummary,
   } from '$lib/api/attendance';
-  import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
 
   const qc = useQueryClient();
@@ -28,9 +27,9 @@
   $effect(() => { if (currentTermId) calOpts.set({ queryKey: ['calendar', currentTermId] as const, queryFn: () => listCalendar(currentTermId), enabled: true, staleTime: 10 * 60_000 }); });
   const calendarQ = createQuery(calOpts);
 
-  const calByDate = $derived(new Map<string, CalendarDay>(($calendarQ.data ?? []).map(d => [d.date, d])));
-  const calDay    = $derived(calByDate.get(selectedDate) ?? null);
-  const MARKABLE  = new Set(['SCHOOL_DAY', 'EXAM_DAY', 'HALF_DAY']);
+  const calByDate  = $derived(new Map<string, CalendarDay>(($calendarQ.data ?? []).map(d => [d.date, d])));
+  const calDay     = $derived(calByDate.get(selectedDate) ?? null);
+  const MARKABLE   = new Set(['SCHOOL_DAY', 'EXAM_DAY', 'HALF_DAY']);
   const isMarkable = $derived(!!calDay && MARKABLE.has(calDay.day_type));
 
   // ── Students ──────────────────────────────────────────────────────────────────
@@ -48,8 +47,20 @@
   });
   const recordsQ = createQuery(recOpts);
 
+  // ── Class absence summaries (bulk, for inline display) ─────────────────────────
+  const summOpts = writable({ queryKey: ['att-summaries', '', ''] as const, queryFn: () => getClassSummaries('', ''), enabled: false, staleTime: 5 * 60_000 });
+  $effect(() => {
+    if (classId && currentTermId) summOpts.set({ queryKey: ['att-summaries', classId, currentTermId] as const, queryFn: () => getClassSummaries(classId, currentTermId), enabled: true, staleTime: 5 * 60_000 });
+  });
+  const classSummariesQ = createQuery(summOpts);
+
+  // ── Derived counts ─────────────────────────────────────────────────────────────
+  const summaryMap   = $derived(new Map<string, StudentAbsenceSummary>(($classSummariesQ.data ?? []).map(s => [s.student_id, s])));
+  const recordCount  = $derived($recordsQ.data?.length ?? 0);
+  const studentCount = $derived($studentsQ.data?.length ?? 0);
+
   // ── Status inputs ─────────────────────────────────────────────────────────────
-  let markInputs    = $state<Record<string, AttendanceStatus | ''>>({});
+  let markInputs     = $state<Record<string, AttendanceStatus | ''>>({});
   let initializedFor = $state<string | null>(null);
 
   $effect(() => {
@@ -61,8 +72,31 @@
     }
   });
 
+  const unmarkedCount = $derived(($studentsQ.data ?? []).filter(s => !markInputs[s.id]).length);
+
+  // ── Mark-all-present with guard ────────────────────────────────────────────────
+  let confirmMarkAll = $state(false);
+
   function markAllPresent() {
+    const hasNonPresent = ($studentsQ.data ?? []).some(s => markInputs[s.id] && markInputs[s.id] !== 'PRESENT');
+    if (hasNonPresent) { confirmMarkAll = true; return; }
     for (const s of $studentsQ.data ?? []) markInputs[s.id] = 'PRESENT';
+  }
+  function doMarkAllPresent() {
+    for (const s of $studentsQ.data ?? []) markInputs[s.id] = 'PRESENT';
+    confirmMarkAll = false;
+  }
+  function markRemainingPresent() {
+    for (const s of $studentsQ.data ?? []) if (!markInputs[s.id]) markInputs[s.id] = 'PRESENT';
+    showUnmarkedWarning = false;
+  }
+
+  // ── Save guard ────────────────────────────────────────────────────────────────
+  let showUnmarkedWarning = $state(false);
+
+  function handleSave() {
+    if (unmarkedCount > 0) { showUnmarkedWarning = true; return; }
+    $markMut.mutate();
   }
 
   // ── Mutation ──────────────────────────────────────────────────────────────────
@@ -76,6 +110,8 @@
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['att-records'] });
+      qc.invalidateQueries({ queryKey: ['att-summaries'] });
+      showUnmarkedWarning = false;
       toast.success(`${res.length} record(s) saved.`);
     },
     onError: (e: unknown) => toast.error(
@@ -140,17 +176,37 @@
     </p>
   </div>
 {:else}
+  <!-- Submission status banner -->
+  {#if recordCount > 0 && studentCount > 0}
+    {#if recordCount >= studentCount}
+      <div class="mb-3 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 dark:border-green-900 dark:bg-green-950/30">
+        <span class="text-green-600 dark:text-green-400">✓</span>
+        <span class="text-sm font-medium text-green-700 dark:text-green-300">Attendance fully submitted — {recordCount} records saved.</span>
+      </div>
+    {:else}
+      <div class="mb-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-900 dark:bg-amber-950/30">
+        <span class="text-amber-600 dark:text-amber-400">⚠</span>
+        <span class="text-sm font-medium text-amber-700 dark:text-amber-300">Partially submitted — {recordCount} of {studentCount} students recorded.</span>
+      </div>
+    {/if}
+  {/if}
+
   <!-- Action bar -->
   <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-    <p class="text-xs text-[var(--fg-muted)]">
-      {$studentsQ.data?.length ?? 0} student(s)
-      {#if $recordsQ.data?.length}<span class="text-green-600"> · {$recordsQ.data.length} already recorded</span>{/if}
-    </p>
+    <p class="text-xs text-[var(--fg-muted)]">{studentCount} student(s)</p>
     <div class="flex gap-2">
-      <button onclick={markAllPresent} class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-        Mark all present
-      </button>
-      <button onclick={() => $markMut.mutate()} disabled={$markMut.isPending}
+      {#if confirmMarkAll}
+        <div class="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-900 dark:bg-amber-950/30">
+          <span class="text-xs text-amber-700 dark:text-amber-300">Override existing marks?</span>
+          <button onclick={doMarkAllPresent} class="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 transition">Yes, mark all</button>
+          <button onclick={() => confirmMarkAll = false} class="rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
+        </div>
+      {:else}
+        <button onclick={markAllPresent} class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
+          Mark all present
+        </button>
+      {/if}
+      <button onclick={handleSave} disabled={$markMut.isPending}
         class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
         {$markMut.isPending ? 'Saving…' : 'Save attendance'}
       </button>
@@ -160,17 +216,26 @@
   <!-- Student list -->
   {#if $studentsQ.isPending}
     <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
-  {:else if ($studentsQ.data ?? []).length === 0}
+  {:else if studentCount === 0}
     <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">No students in this class.</div>
   {:else}
     <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
       {#each $studentsQ.data ?? [] as student, i (student.id)}
-        {@const cur = markInputs[student.id] ?? ''}
+        {@const cur     = markInputs[student.id] ?? ''}
+        {@const summary = summaryMap.get(student.id)}
         <div class="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-0 {i % 2 === 1 ? 'bg-[var(--hover)]' : ''}">
           <span class="w-7 text-right text-xs font-mono text-[var(--fg-subtle)]">{i + 1}</span>
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-[var(--fg)]">{student.display_name}</p>
-            <p class="text-[10px] font-mono text-[var(--fg-subtle)]">{student.admission_number}</p>
+            <div class="flex items-center gap-2">
+              <p class="text-[10px] font-mono text-[var(--fg-subtle)]">{student.admission_number}</p>
+              {#if summary && summary.days_absent > 0}
+                <span class="text-[10px] font-semibold text-red-500" title="{summary.days_absent} absences this term">{summary.days_absent} abs</span>
+              {/if}
+              {#if summary && summary.days_late > 0}
+                <span class="text-[10px] font-semibold text-amber-500" title="{summary.days_late} lates this term">{summary.days_late} late</span>
+              {/if}
+            </div>
           </div>
           <div class="flex gap-1">
             {#each STATUSES as s}
@@ -184,12 +249,18 @@
         </div>
       {/each}
     </div>
-    <div class="mt-3 flex justify-end">
-      <button onclick={() => $markMut.mutate()} disabled={$markMut.isPending}
-        class="rounded-xl px-5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
-        {$markMut.isPending ? 'Saving…' : 'Save attendance'}
-      </button>
-    </div>
+
+    <!-- Unmarked students warning -->
+    {#if showUnmarkedWarning}
+      <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+        <p class="text-sm font-medium text-amber-800 dark:text-amber-200">{unmarkedCount} student(s) have no status selected and won't be saved.</p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button onclick={markRemainingPresent} class="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition">Mark remaining as Present</button>
+          <button onclick={() => { showUnmarkedWarning = false; $markMut.mutate(); }} class="rounded-lg px-3 py-1.5 text-xs font-semibold border border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Save anyway</button>
+          <button onclick={() => showUnmarkedWarning = false} class="rounded-lg px-3 py-1.5 text-xs text-[var(--fg-subtle)] hover:text-[var(--fg)] transition">Cancel</button>
+        </div>
+      </div>
+    {/if}
   {/if}
 {/if}
 

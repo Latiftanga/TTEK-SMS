@@ -43,6 +43,20 @@ export interface AttendanceSummary {
   days_absent: number;
   days_late: number;
   days_excused: number;
+  days_unmarked: number;
+  attendance_rate: number;
+}
+
+export interface TodayStatus {
+  calendar_day: CalendarDay | null;
+  is_markable: boolean;
+  record_count: number;
+}
+
+export interface StudentAbsenceSummary {
+  student_id: string;
+  days_absent: number;
+  days_late: number;
   attendance_rate: number;
 }
 
@@ -81,6 +95,12 @@ export const listAttendanceRecords = (
   classId: string,
 ): Promise<AttendanceRecord[]> =>
   api.get('/attendance/records', { params: { calendar_id: calendarId, class_id: classId } }).then(r => r.data);
+
+export const getTodayStatus = (classId: string): Promise<TodayStatus> =>
+  api.get('/attendance/today', { params: { class_id: classId } }).then(r => r.data);
+
+export const getClassSummaries = (classId: string, termId: string): Promise<StudentAbsenceSummary[]> =>
+  api.get('/attendance/class-summaries', { params: { class_id: classId, term_id: termId } }).then(r => r.data);
 
 export const getAttendanceSummary = (
   studentId: string,

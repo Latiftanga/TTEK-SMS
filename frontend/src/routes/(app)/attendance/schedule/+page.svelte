@@ -15,7 +15,6 @@
     THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday', SUN: 'Sunday',
   };
 
-  // Local form state — one record per day
   let forms = $state<Record<DayOfWeek, { is_school_day: boolean; start_time: string; end_time: string }>>({
     MON: { is_school_day: true,  start_time: '07:30', end_time: '15:30' },
     TUE: { is_school_day: true,  start_time: '07:30', end_time: '15:30' },
@@ -26,7 +25,6 @@
     SUN: { is_school_day: false, start_time: '', end_time: '' },
   });
 
-  // Populate from server data
   $effect(() => {
     if ($schedQ.data) {
       const map = new Map<DayOfWeek, ScheduleDay>($schedQ.data.map(s => [s.day_of_week, s]));
@@ -41,12 +39,7 @@
   const saveMut = createMutation({
     mutationFn: (day: DayOfWeek) => {
       const f = forms[day];
-      return upsertSchedule({
-        day_of_week: day,
-        is_school_day: f.is_school_day,
-        start_time: f.start_time || null,
-        end_time:   f.end_time || null,
-      });
+      return upsertSchedule({ day_of_week: day, is_school_day: f.is_school_day, start_time: f.start_time || null, end_time: f.end_time || null });
     },
     onSuccess: (_, day) => {
       qc.invalidateQueries({ queryKey: ['schedule'] });
@@ -58,6 +51,20 @@
       toast.error(`Could not save ${DAY_LABELS[day as DayOfWeek]}.`);
     },
   });
+
+  let savingAll = $state(false);
+  async function saveAll() {
+    savingAll = true;
+    try {
+      await Promise.all(DAYS.map(d => upsertSchedule({ day_of_week: d, is_school_day: forms[d].is_school_day, start_time: forms[d].start_time || null, end_time: forms[d].end_time || null })));
+      qc.invalidateQueries({ queryKey: ['schedule'] });
+      toast.success('Schedule saved for all days.');
+    } catch {
+      toast.error('Could not save schedule.');
+    } finally {
+      savingAll = false;
+    }
+  }
 </script>
 
 {#if !canManage}
@@ -65,8 +72,12 @@
     Only administrators can manage the school schedule.
   </div>
 {:else}
-  <div class="mb-3">
+  <div class="mb-3 flex items-center justify-between gap-3">
     <p class="text-sm text-[var(--fg-muted)]">Configure which days are school days and their hours. Used when generating the school calendar for each term.</p>
+    <button onclick={saveAll} disabled={savingAll}
+      class="shrink-0 rounded-xl px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
+      {savingAll ? 'Saving…' : 'Save all'}
+    </button>
   </div>
 
   <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">

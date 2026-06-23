@@ -75,4 +75,18 @@ class AttendanceSummaryRead(BaseModel):
     days_absent: int
     days_late: int
     days_excused: int
+    days_unmarked: int = 0
+    attendance_rate: float  # 0.0–100.0
+
+
+class TodayStatusRead(BaseModel):
+    calendar_day: CalendarDayRead | None
+    is_markable: bool
+    record_count: int
+
+
+class StudentAbsenceSummary(BaseModel):
+    student_id: uuid.UUID
+    days_absent: int
+    days_late: int
     attendance_rate: float  # 0.0–100.0

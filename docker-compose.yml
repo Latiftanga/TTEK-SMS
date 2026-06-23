@@ -53,9 +53,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     command: >
       sh -c "
         alembic upgrade head &&
+        python scripts/seed_reference_data.py &&
+        python scripts/create_superadmin.py &&
         uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
 
@@ -94,7 +102,8 @@ services:
     environment:
       PUBLIC_API_URL: http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     command: sh -c "npx svelte-kit sync && npm run dev"
 
 volumes:
