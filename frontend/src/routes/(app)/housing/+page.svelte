@@ -1,16 +1,15 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
-  import { listHouses, createHouse, listPendingExeats, approveExeat, recordReturn, type House, type HouseGender } from '$lib/api/housing';
+  import { listHouses, createHouse, type House, type HouseGender } from '$lib/api/housing';
   import { userRole } from '$lib/stores/permissions';
-  import { toast } from '$lib/stores/toast';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ExeatsSection from './ExeatsSection.svelte';
 
   const qc = useQueryClient();
   const canManage = $derived($userRole === 'admin');
 
-  const housesQ  = createQuery({ queryKey: ['houses'],         queryFn: listHouses,         staleTime: 2 * 60_000 });
-  const exeatsQ  = createQuery({ queryKey: ['exeats-pending'], queryFn: listPendingExeats,  staleTime: 60_000 });
+  const housesQ = createQuery({ queryKey: ['houses'], queryFn: listHouses, staleTime: 2 * 60_000 });
 
   // ── New house form ────────────────────────────────────────────────────────────
   let showForm = $state(false);
@@ -41,19 +40,6 @@
     if (!form.code.trim()) { formErr = 'House code is required.'; return; }
     $createMut.mutate();
   }
-
-  // ── Exeat actions ─────────────────────────────────────────────────────────────
-  const reviewMut = createMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'APPROVED' | 'REJECTED' }) => approveExeat(id, status),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['exeats-pending'] }); toast.success('Exeat updated.'); },
-    onError: () => toast.error('Could not update exeat.'),
-  });
-
-  const returnMut = createMutation({
-    mutationFn: ({ id, date }: { id: string; date: string }) => recordReturn(id, date),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['exeats-pending'] }); toast.success('Return recorded.'); },
-    onError: () => toast.error('Could not record return.'),
-  });
 
   const GENDER_LABEL: Record<HouseGender, string> = { MALE: 'Boys', FEMALE: 'Girls', MIXED: 'Mixed' };
   const GENDER_COLOR: Record<HouseGender, string> = {
@@ -164,73 +150,7 @@
   {/if}
 </div>
 
-<!-- Pending exeats -->
-<div>
-  <p class="mb-3 text-sm font-semibold text-[var(--fg)]">
-    Pending exeats
-    {#if ($exeatsQ.data ?? []).length > 0}
-      <span class="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700
-                   dark:bg-amber-900/40 dark:text-amber-400">
-        {($exeatsQ.data ?? []).length}
-      </span>
-    {/if}
-  </p>
-
-  {#if $exeatsQ.isPending}
-    <div class="space-y-2">{#each [1,2] as _}<div class="h-16 animate-pulse rounded-2xl bg-[var(--card)]"></div>{/each}</div>
-  {:else if ($exeatsQ.data ?? []).length === 0}
-    <div class="rounded-2xl border border-dashed border-[var(--border)] p-8 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No pending exeats.</p>
-    </div>
-  {:else}
-    <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      <table class="w-full text-sm">
-        <thead><tr class="border-b border-[var(--border)] text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
-          <th class="px-4 py-3">Student ID</th>
-          <th class="hidden px-4 py-3 sm:table-cell">Destination</th>
-          <th class="hidden px-4 py-3 sm:table-cell">Departs</th>
-          <th class="hidden px-4 py-3 sm:table-cell">Returns</th>
-          <th class="px-4 py-3">Actions</th>
-        </tr></thead>
-        <tbody>
-          {#each $exeatsQ.data ?? [] as e (e.id)}
-            <tr class="border-b border-[var(--border)] last:border-0">
-              <td class="px-4 py-3 font-mono text-xs text-[var(--fg-muted)]">{e.student_id.slice(0,8)}…</td>
-              <td class="hidden px-4 py-3 text-[var(--fg-muted)] sm:table-cell">{e.destination}</td>
-              <td class="hidden px-4 py-3 text-[var(--fg-muted)] sm:table-cell">{e.departure_date}</td>
-              <td class="hidden px-4 py-3 text-[var(--fg-muted)] sm:table-cell">{e.return_date}</td>
-              <td class="px-4 py-3">
-                <div class="flex gap-2">
-                  {#if e.status === 'PENDING'}
-                    <button onclick={() => $reviewMut.mutate({ id: e.id, status: 'APPROVED' })}
-                      disabled={$reviewMut.isPending}
-                      class="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 transition hover:bg-green-100
-                             dark:bg-green-950/40 dark:text-green-400 disabled:opacity-50">
-                      Approve
-                    </button>
-                    <button onclick={() => $reviewMut.mutate({ id: e.id, status: 'REJECTED' })}
-                      disabled={$reviewMut.isPending}
-                      class="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100
-                             dark:bg-red-950/40 dark:text-red-400 disabled:opacity-50">
-                      Reject
-                    </button>
-                  {:else if e.status === 'APPROVED'}
-                    <button onclick={() => $returnMut.mutate({ id: e.id, date: new Date().toISOString().slice(0,10) })}
-                      disabled={$returnMut.isPending}
-                      class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold
-                             text-[var(--fg)] hover:bg-[var(--hover)] transition disabled:opacity-50">
-                      Record return
-                    </button>
-                  {/if}
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
-</div>
+<ExeatsSection {canManage} />
 
 <style>
   @reference "tailwindcss";
