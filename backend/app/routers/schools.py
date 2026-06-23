@@ -141,7 +141,10 @@ async def list_my_positions(
     ids: tuple = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return all staff positions available to the authenticated user's school."""
+    """Return all staff positions available to the authenticated user's school.
+
+    School-specific positions take precedence over platform templates with the same code.
+    """
     from sqlalchemy import or_
     _, school_id = ids
     rows = await db.scalars(
@@ -149,7 +152,11 @@ async def list_my_positions(
         .where(or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)))
         .order_by(StaffPosition.name)
     )
-    return list(rows)
+    seen: dict[str, StaffPosition] = {}
+    for pos in rows:
+        if pos.code not in seen or pos.school_id is not None:
+            seen[pos.code] = pos
+    return sorted(seen.values(), key=lambda p: p.name)
 
 
 @router.patch("/me", response_model=SchoolRead)
