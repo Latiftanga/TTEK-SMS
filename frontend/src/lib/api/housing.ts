@@ -47,6 +47,8 @@ export interface AssignmentRead {
 export interface ExeatRead {
   id: string;
   student_id: string;
+  student_name: string | null;
+  admission_number: string | null;
   reason: string;
   destination: string;
   departure_date: string;

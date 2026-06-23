@@ -169,6 +169,8 @@ class ExeatReturn(BaseModel):
 class ExeatRead(BaseModel):
     id: uuid.UUID
     student_id: uuid.UUID
+    student_name: str | None = None
+    admission_number: str | None = None
     reason: str
     destination: str
     departure_date: date

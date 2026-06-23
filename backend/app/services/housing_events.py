@@ -24,8 +24,30 @@ def _to_rollcall(r: NightRollCall) -> RollCallRead:
     return RollCallRead.model_validate(r)
 
 
-def _to_exeat(e: Exeat) -> ExeatRead:
-    return ExeatRead.model_validate(e)
+def _row_to_exeat(exeat: Exeat, first_name: str, last_name: str, admission_number: str) -> ExeatRead:
+    return ExeatRead(
+        id=exeat.id,
+        student_id=exeat.student_id,
+        student_name=f"{first_name} {last_name}",
+        admission_number=admission_number,
+        reason=exeat.reason,
+        destination=exeat.destination,
+        departure_date=exeat.departure_date,
+        return_date=exeat.return_date,
+        status=exeat.status,
+        approved_by_id=exeat.approved_by_id,
+        actual_return_date=exeat.actual_return_date,
+        created_at=exeat.created_at,
+    )
+
+
+def _exeat_select(*where_clauses):
+    """Select Exeat joined with Student fields."""
+    return (
+        select(Exeat, Student.first_name, Student.last_name, Student.admission_number)
+        .join(Student, Student.id == Exeat.student_id)
+        .where(*where_clauses)
+    )
 
 
 async def record_roll_call(
@@ -118,49 +140,53 @@ async def create_exeat(
     )
     db.add(exeat)
     await db.flush()
-    return _to_exeat(exeat)
+    return _row_to_exeat(exeat, student.first_name, student.last_name, student.admission_number)
 
 
 async def list_pending_exeats(school_id: uuid.UUID, db: AsyncSession) -> list[ExeatRead]:
-    rows = (await db.scalars(
-        select(Exeat)
-        .where(Exeat.school_id == school_id, Exeat.status == ExeatStatus.PENDING)
-        .order_by(Exeat.departure_date)
+    """Returns PENDING and APPROVED exeats — i.e. all that still need action."""
+    rows = (await db.execute(
+        _exeat_select(
+            Exeat.school_id == school_id,
+            Exeat.status.in_([ExeatStatus.PENDING, ExeatStatus.APPROVED]),
+        ).order_by(Exeat.departure_date)
     )).all()
-    return [_to_exeat(e) for e in rows]
+    return [_row_to_exeat(e, fn, ln, an) for e, fn, ln, an in rows]
 
 
 async def review_exeat(
     exeat_id: uuid.UUID, req: ExeatApprove,
     school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
 ) -> ExeatRead:
-    exeat = await db.scalar(
-        select(Exeat).where(Exeat.id == exeat_id, Exeat.school_id == school_id)
-    )
-    if not exeat:
+    row = (await db.execute(
+        _exeat_select(Exeat.id == exeat_id, Exeat.school_id == school_id)
+    )).one_or_none()
+    if not row:
         raise HTTPException(404, "Exeat not found.")
+    exeat, fn, ln, an = row
     if exeat.status != ExeatStatus.PENDING:
         raise HTTPException(409, f"Exeat has already been reviewed (status: {exeat.status.value}).")
     exeat.status = req.status
     exeat.approved_by_id = user_id
     await db.flush()
-    return _to_exeat(exeat)
+    return _row_to_exeat(exeat, fn, ln, an)
 
 
 async def record_return(
     exeat_id: uuid.UUID, req: ExeatReturn, school_id: uuid.UUID, db: AsyncSession
 ) -> ExeatRead:
-    exeat = await db.scalar(
-        select(Exeat).where(Exeat.id == exeat_id, Exeat.school_id == school_id)
-    )
-    if not exeat:
+    row = (await db.execute(
+        _exeat_select(Exeat.id == exeat_id, Exeat.school_id == school_id)
+    )).one_or_none()
+    if not row:
         raise HTTPException(404, "Exeat not found.")
+    exeat, fn, ln, an = row
     if exeat.status != ExeatStatus.APPROVED:
         raise HTTPException(409, "Only approved exeats can be marked as returned.")
     exeat.status = ExeatStatus.RETURNED
     exeat.actual_return_date = req.actual_return_date
     await db.flush()
-    return _to_exeat(exeat)
+    return _row_to_exeat(exeat, fn, ln, an)
 
 
 async def list_student_exeats(
@@ -171,9 +197,8 @@ async def list_student_exeats(
     )
     if not student:
         raise HTTPException(404, "Student not found.")
-    rows = (await db.scalars(
-        select(Exeat)
-        .where(Exeat.student_id == student_id, Exeat.school_id == school_id)
+    rows = (await db.execute(
+        _exeat_select(Exeat.student_id == student_id, Exeat.school_id == school_id)
         .order_by(Exeat.departure_date.desc())
     )).all()
-    return [_to_exeat(e) for e in rows]
+    return [_row_to_exeat(e, fn, ln, an) for e, fn, ln, an in rows]
