@@ -47,7 +47,6 @@ export const NAV_GROUPS: NavGroup[] = [
     // Daily work — no heading
     items: [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
-      { href: '/students',    label: 'Students',     icon: IC.students     },
       { href: '/attendance',  label: 'Attendance',   icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
       { href: '/assessments', label: 'Assessments',  icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
       { href: '/fees',        label: 'Fees',         icon: IC.fees,        roles: ['finance', 'admin'] },
@@ -59,6 +58,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/setup',    label: 'School Setup', icon: IC.setup,    roles: ['admin'] },
       { href: '/admin/academic', label: 'Academic',     icon: IC.academic, roles: ['admin'] },
+      { href: '/students',       label: 'Students',     icon: IC.students, roles: ['admin'] },
       { href: '/admin/staff',    label: 'Staff',        icon: IC.staff,    roles: ['admin'] },
     ],
   },
