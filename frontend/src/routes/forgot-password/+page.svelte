@@ -111,7 +111,7 @@
   };
 </script>
 
-<svelte:head><title>Reset password — TTEK-SMS</title></svelte:head>
+<svelte:head><title>Reset password</title></svelte:head>
 
 <div class="relative min-h-screen flex flex-col items-center justify-center p-4 overflow-hidden bg-[var(--bg)]">
   <div class="pointer-events-none absolute -top-48 -right-48 h-96 w-96 rounded-full opacity-[0.07] blur-3xl" style="background: var(--brand)"></div>
@@ -256,6 +256,5 @@
       </div>
     {/if}
 
-    <p class="mt-6 text-center text-[10px] text-[var(--fg-subtle)]">Powered by <span class="font-semibold">TTEK-SMS</span></p>
   </div>
 </div>

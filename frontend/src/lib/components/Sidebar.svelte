@@ -123,7 +123,7 @@
           {$school?.shortName ?? $school?.name ?? 'My School'}
         </p>
         <p class="truncate text-[10px] text-[var(--fg-muted)]">
-          {$school?.motto ?? ($school ? 'School Management' : 'TTEK-SMS')}
+          {$school?.motto ?? 'School Management System'}
         </p>
       </div>
       <button onclick={toggleCollapse} title="Collapse" aria-label="Collapse sidebar"

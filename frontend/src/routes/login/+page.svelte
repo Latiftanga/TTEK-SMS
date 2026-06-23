@@ -124,7 +124,7 @@
   }
 </script>
 
-<svelte:head><title>Sign in — {branding?.school_name ?? 'TTEK-SMS'}</title></svelte:head>
+<svelte:head><title>{branding?.school_name ? `Sign in — ${branding.school_name}` : 'Sign in'}</title></svelte:head>
 
 <div class="relative min-h-screen flex flex-col items-center justify-center p-4 overflow-hidden bg-[var(--bg)]">
 
@@ -160,8 +160,5 @@
       </p>
     {/if}
 
-    <p class="mt-4 text-center text-[10px] text-[var(--fg-subtle)]">
-      Powered by <span class="font-semibold">TTEK-SMS</span>
-    </p>
   </div>
 </div>

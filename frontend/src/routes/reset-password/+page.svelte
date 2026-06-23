@@ -30,7 +30,7 @@
   }
 </script>
 
-<svelte:head><title>Set New Password — TTEK-SMS</title></svelte:head>
+<svelte:head><title>Set New Password</title></svelte:head>
 
 <div class="relative min-h-screen flex flex-col items-center justify-center p-4 bg-[var(--bg)]">
   <div class="pointer-events-none absolute -top-48 -right-48 h-96 w-96 rounded-full opacity-[0.07] blur-3xl"
