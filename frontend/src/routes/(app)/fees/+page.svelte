@@ -2,6 +2,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
   import { isSchoolAdmin } from '$lib/stores/permissions';
+  import { currentUser } from '$lib/stores/auth';
   import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
   import { listStudents, type StudentSummary } from '$lib/api/students';
   import {
@@ -87,7 +88,7 @@
   <div class="flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-xl font-bold text-[var(--fg)]">Fees</h1>
     <div class="flex items-center gap-2">
-      {#if $isSchoolAdmin}
+      {#if $isSchoolAdmin || $currentUser?.is_superadmin}
         <a href="/admin/fees-setup"
           class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2
                  text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
