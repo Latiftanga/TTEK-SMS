@@ -1,7 +1,18 @@
 import { api } from './client';
 
 export type HouseGender = 'MALE' | 'FEMALE' | 'MIXED';
-export type ExeatStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type ExeatStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RETURNED';
+
+export interface RollCall {
+  id: string;
+  house_id: string;
+  school_calendar_id: string;
+  recorded_by_id: string;
+  recorded_at: string;
+  total_expected: number;
+  total_present: number;
+  notes: string | null;
+}
 
 export interface Room {
   id: string;
@@ -49,6 +60,9 @@ export interface ExeatRead {
 export const listHouses = (): Promise<House[]> =>
   api.get('/housing/houses').then(r => r.data);
 
+export const getHouse = (id: string): Promise<House> =>
+  api.get(`/housing/houses/${id}`).then(r => r.data);
+
 export const createHouse = (req: {
   name: string; code: string; gender: HouseGender;
   capacity?: number | null; color?: string | null;
@@ -72,6 +86,17 @@ export const createAssignment = (req: {
 
 export const vacateAssignment = (assignmentId: string, vacated_at: string): Promise<AssignmentRead> =>
   api.patch(`/housing/assignments/${assignmentId}/vacate`, { vacated_at }).then(r => r.data);
+
+export const recordRollCall = (req: {
+  house_id: string; school_calendar_id: string;
+  total_expected: number; total_present: number; notes?: string;
+}): Promise<RollCall> => api.post('/housing/roll-calls', req).then(r => r.data);
+
+export const listRollCalls = (houseId: string): Promise<RollCall[]> =>
+  api.get('/housing/roll-calls', { params: { house_id: houseId } }).then(r => r.data);
+
+export const listPendingExeats = (): Promise<ExeatRead[]> =>
+  api.get('/housing/exeats/pending').then(r => r.data);
 
 export const listStudentExeats = (studentId: string): Promise<ExeatRead[]> =>
   api.get(`/housing/students/${studentId}/exeats`).then(r => r.data);
