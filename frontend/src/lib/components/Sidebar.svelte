@@ -135,8 +135,6 @@
     {/if}
   </div>
 
-  {/if}
-
   <!-- ── Navigation ───────────────────────────────────────────────────────── -->
   <nav class="flex-1 overflow-y-auto py-3 {collapsed ? 'px-2' : 'px-3'}" aria-label="Main navigation">
     {#each visibleGroups as group, gi}
