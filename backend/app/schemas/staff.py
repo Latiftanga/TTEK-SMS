@@ -132,6 +132,7 @@ class StaffMemberDetail(StaffMemberSummary):
     ssnit_number: str | None
     address: str | None
     photo_path: str | None
+    has_account: bool
     qualifications: list[QualificationRead] = []
     emergency_contacts: list[EmergencyContactRead] = []
 

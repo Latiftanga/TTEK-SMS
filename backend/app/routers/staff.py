@@ -222,6 +222,7 @@ async def invite_staff_to_platform(
     """Send a platform invitation to an existing staff member using their profile email/phone."""
     from app.models.staff import StaffMember
     from app.models.school import School
+    from app.models.auth import User
     from app.services.sms_notifications import notify_staff_invite
     from app.core.config import settings
     from sqlalchemy import select
@@ -236,6 +237,16 @@ async def invite_staff_to_platform(
     if not member.email and not member.phone:
         from fastapi import HTTPException
         raise HTTPException(status_code=422, detail="Staff member has no email or phone on file.")
+
+    existing_user = await db.scalar(
+        select(User).where(User.staff_member_id == staff_id)
+    )
+    if existing_user:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=409,
+            detail="This staff member already has an account. They can sign in directly.",
+        )
 
     invite_req = InvitationCreate(
         email=member.email,

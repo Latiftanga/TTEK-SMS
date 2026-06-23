@@ -153,6 +153,24 @@ async def accept_invitation(req: AcceptInvitationRequest, db: AsyncSession) -> U
             detail="This invitation has expired. Ask an admin to send a new one.",
         )
 
+    # Guard against duplicate accounts (email/phone are globally unique)
+    from sqlalchemy import or_
+    conditions = []
+    if invitation.email:
+        conditions.append(User.email == invitation.email)
+    if invitation.phone:
+        conditions.append(User.phone == invitation.phone)
+    if invitation.staff_member_id:
+        conditions.append(User.staff_member_id == invitation.staff_member_id)
+
+    if conditions:
+        existing = await db.scalar(select(User).where(or_(*conditions)))
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account for this staff member already exists. Sign in instead.",
+            )
+
     login_type = LoginType.EMAIL if invitation.email else LoginType.PHONE
     user = User(
         school_id=invitation.school_id,

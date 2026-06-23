@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from sqlalchemy import func
 from app.models.staff import StaffMember, staff_member_positions
+from app.models.auth import User
 from app.schemas.staff import (
     QualificationRead,
     EmergencyContactRead,
@@ -53,7 +54,7 @@ def _to_summary(member: StaffMember) -> StaffMemberSummary:
     )
 
 
-def _to_detail(member: StaffMember) -> StaffMemberDetail:
+def _to_detail(member: StaffMember, has_account: bool = False) -> StaffMemberDetail:
     return StaffMemberDetail(
         **_to_summary(member).model_dump(),
         date_of_birth=member.date_of_birth,
@@ -62,6 +63,7 @@ def _to_detail(member: StaffMember) -> StaffMemberDetail:
         ssnit_number=member.ssnit_number,
         address=member.address,
         photo_path=member.photo_path,
+        has_account=has_account,
         qualifications=[QualificationRead.model_validate(q) for q in member.qualifications],
         emergency_contacts=[EmergencyContactRead.model_validate(c) for c in member.emergency_contacts],
     )
@@ -147,7 +149,8 @@ async def get_staff(
     )
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
-    return _to_detail(member)
+    has_account = bool(await db.scalar(select(User.id).where(User.staff_member_id == staff_id)))
+    return _to_detail(member, has_account=has_account)
 
 
 async def _guard_last_admin(
