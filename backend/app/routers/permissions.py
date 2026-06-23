@@ -45,7 +45,11 @@ async def list_positions_with_permissions(
     ids: tuple = Depends(require_permission("school", "manage_users")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return all positions visible to this school, each with their permission matrix."""
+    """Return all positions visible to this school, each with their permission matrix.
+
+    When a school-specific position shares a code with a platform template,
+    only the school-specific one is returned (it takes precedence).
+    """
     _, school_id = ids
     rows = await db.scalars(
         select(StaffPosition)
@@ -53,7 +57,13 @@ async def list_positions_with_permissions(
         .options(selectinload(StaffPosition.permissions))
         .order_by(StaffPosition.name)
     )
-    return [_to_read(p) for p in rows]
+    # Deduplicate by code: school-specific wins over platform template
+    seen_codes: dict[str, StaffPosition] = {}
+    for pos in rows:
+        existing = seen_codes.get(pos.code)
+        if existing is None or pos.school_id is not None:
+            seen_codes[pos.code] = pos
+    return [_to_read(p) for p in sorted(seen_codes.values(), key=lambda p: p.name)]
 
 
 @router.put("/positions/{position_id}", response_model=PositionWithPerms)
