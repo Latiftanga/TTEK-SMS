@@ -13,16 +13,17 @@
 
   // Local editable state: Map<positionId, Set<"module.action">>
   let dirty = $state<Map<string, Set<string>>>(new Map());
-  let saving = $state<string | null>(null); // positionId currently saving
+  let saving = $state(false);
+  let selectedId = $state<string | null>(null);
 
-  // When positions load, initialise local state from server data
+  const selected = $derived(positions.find(p => p.id === selectedId) ?? positions[0] ?? null);
+
   $effect(() => {
     if ($posQ.data) {
       const m = new Map<string, Set<string>>();
-      for (const pos of $posQ.data) {
-        m.set(pos.id, grantedSet(pos));
-      }
+      for (const pos of $posQ.data) m.set(pos.id, grantedSet(pos));
       dirty = m;
+      if (!selectedId && $posQ.data.length) selectedId = $posQ.data[0].id;
     }
   });
 
@@ -31,39 +32,11 @@
     if (!set) return;
     const key = `${module}.${action}`;
     if (set.has(key)) set.delete(key); else set.add(key);
-    dirty = new Map(dirty); // trigger reactivity
+    dirty = new Map(dirty);
   }
 
   function isGranted(posId: string, module: string, action: string) {
     return dirty.get(posId)?.has(`${module}.${action}`) ?? false;
-  }
-
-  const saveMut = createMutation({
-    mutationFn: ({ posId, perms }: { posId: string; perms: { module: string; action: string; is_allowed: boolean }[] }) =>
-      updatePositionPermissions(posId, perms),
-    onSuccess: (updated) => {
-      qc.setQueryData(['positions-perms'], (old: PositionWithPerms[] | undefined) =>
-        old?.map(p => p.id === updated.id ? updated : p) ?? [updated]
-      );
-      toast.success('Permissions saved.');
-      saving = null;
-    },
-    onError: (e: unknown) => {
-      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Save failed.');
-      saving = null;
-    },
-  });
-
-  function save(pos: PositionWithPerms) {
-    saving = pos.id;
-    const granted = dirty.get(pos.id) ?? new Set();
-    const perms: { module: string; action: string; is_allowed: boolean }[] = [];
-    for (const [module, actions] of Object.entries(PERMISSION_MATRIX)) {
-      for (const action of actions) {
-        perms.push({ module, action, is_allowed: granted.has(`${module}.${action}`) });
-      }
-    }
-    $saveMut.mutate({ posId: pos.id, perms });
   }
 
   function hasChanges(pos: PositionWithPerms): boolean {
@@ -74,125 +47,195 @@
     return false;
   }
 
-  // Scroll: active column highlight
-  let activePos = $state<string | null>(null);
+  const saveMut = createMutation({
+    mutationFn: ({ posId, perms }: { posId: string; perms: { module: string; action: string; is_allowed: boolean }[] }) =>
+      updatePositionPermissions(posId, perms),
+    onSuccess: (updated) => {
+      qc.setQueryData(['positions-perms'], (old: PositionWithPerms[] | undefined) =>
+        old?.map(p => p.id === updated.id ? updated : p) ?? [updated]
+      );
+      toast.success('Permissions saved.');
+      saving = false;
+    },
+    onError: (e: unknown) => {
+      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Save failed.');
+      saving = false;
+    },
+  });
+
+  function save() {
+    if (!selected) return;
+    saving = true;
+    const granted = dirty.get(selected.id) ?? new Set();
+    const perms = Object.entries(PERMISSION_MATRIX).flatMap(([module, actions]) =>
+      actions.map(action => ({ module, action, is_allowed: granted.has(`${module}.${action}`) }))
+    );
+    $saveMut.mutate({ posId: selected.id, perms });
+  }
+
+  // Count granted permissions for a position (for the sidebar badge)
+  function grantCount(pos: PositionWithPerms) {
+    return dirty.get(pos.id)?.size ?? 0;
+  }
 </script>
 
 <svelte:head><title>Permissions</title></svelte:head>
 
 <div class="space-y-4">
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-xl font-bold text-[var(--fg)]">Role Permissions</h1>
-      <p class="mt-0.5 text-sm text-[var(--fg-muted)]">
-        Toggle permissions per position. Changes take effect immediately after saving.
-      </p>
-    </div>
+  <div>
+    <h1 class="text-xl font-bold text-[var(--fg)]">Role Permissions</h1>
+    <p class="mt-0.5 text-sm text-[var(--fg-muted)]">Select a role to view and edit its permissions.</p>
   </div>
 
   {#if $posQ.isPending}
-    <div class="space-y-2">
-      {#each [0,1,2,3] as _}
-        <div class="h-10 animate-pulse rounded-xl bg-[var(--card)]"></div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {#each [0,1,2,3,4,5] as _}
+        <div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>
       {/each}
     </div>
 
   {:else if $posQ.isError}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
+    <div class="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600
+                dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
       Failed to load permissions. You may not have access to this page.
     </div>
 
-  {:else}
-    <!-- Scrollable matrix -->
-    <div class="overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      <table class="w-full min-w-max text-sm">
-        <thead>
-          <tr class="border-b border-[var(--border)]">
-            <th class="sticky left-0 z-10 bg-[var(--card)] px-4 py-3 text-left text-xs font-semibold
-                       uppercase tracking-widest text-[var(--fg-subtle)] min-w-[160px]">
-              Permission
-            </th>
-            {#each positions as pos}
-              <th class="px-3 py-3 text-center min-w-[110px]
-                         {activePos === pos.id ? 'bg-[color-mix(in_oklab,var(--brand)_6%,transparent)]' : ''}">
-                <div class="flex flex-col items-center gap-1">
-                  <span class="text-xs font-semibold text-[var(--fg)] leading-tight">{pos.name}</span>
-                  {#if pos.is_template}
-                    <span class="rounded-full bg-[var(--hover)] px-1.5 py-0.5 text-[9px]
-                                 font-semibold uppercase tracking-wide text-[var(--fg-subtle)]">
-                      Platform
-                    </span>
-                  {/if}
-                </div>
-              </th>
-            {/each}
-          </tr>
-        </thead>
+  {:else if selected}
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
 
-        <tbody>
-          {#each Object.entries(PERMISSION_MATRIX) as [module, actions]}
-            <!-- Module header row -->
-            <tr class="border-t border-[var(--border)] bg-[var(--hover)]/50">
-              <td colspan={positions.length + 1}
-                  class="sticky left-0 px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
-                {MODULE_LABELS[module]}
-              </td>
-            </tr>
-
-            {#each actions as action}
-              {@const key = `${module}.${action}`}
-              <tr class="border-t border-[var(--border)]/50 transition hover:bg-[var(--hover)]/40">
-                <td class="sticky left-0 z-10 bg-[var(--card)] px-4 py-2.5 text-sm text-[var(--fg-muted)]
-                           hover:bg-[var(--hover)]/40">
-                  {ACTION_LABELS[action] ?? action}
-                </td>
-
-                {#each positions as pos}
-                  <td class="px-3 py-2.5 text-center
-                             {activePos === pos.id ? 'bg-[color-mix(in_oklab,var(--brand)_6%,transparent)]' : ''}">
-                    <input
-                      type="checkbox"
-                      checked={isGranted(pos.id, module, action)}
-                      onchange={() => toggle(pos.id, module, action)}
-                      onfocus={() => activePos = pos.id}
-                      onblur={() => activePos = null}
-                      class="h-4 w-4 cursor-pointer rounded accent-[var(--brand)]"
-                    />
-                  </td>
-                {/each}
-              </tr>
-            {/each}
+      <!-- ── Position list ───────────────────────────────────────────────────── -->
+      <div class="lg:w-56 lg:shrink-0">
+        <!-- Mobile: horizontal scroll tabs -->
+        <div class="flex gap-2 overflow-x-auto pb-1 lg:hidden">
+          {#each positions as pos}
+            <button
+              onclick={() => selectedId = pos.id}
+              class="flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium
+                     transition whitespace-nowrap
+                     {selectedId === pos.id
+                       ? 'border-[var(--brand)] bg-[color-mix(in_oklab,var(--brand)_8%,transparent)] text-[var(--brand)]'
+                       : 'border-[var(--border)] bg-[var(--card)] text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
+              {pos.name}
+              {#if hasChanges(pos)}
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+              {/if}
+            </button>
           {/each}
-        </tbody>
+        </div>
 
-        <!-- Save row -->
-        <tfoot>
-          <tr class="border-t-2 border-[var(--border)] bg-[var(--hover)]/30">
-            <td class="sticky left-0 z-10 bg-[var(--card)] px-4 py-3 text-xs text-[var(--fg-subtle)]">
-              Save changes
-            </td>
-            {#each positions as pos}
-              <td class="px-3 py-3 text-center">
-                <button
-                  onclick={() => save(pos)}
-                  disabled={!hasChanges(pos) || saving === pos.id}
-                  class="rounded-lg px-3 py-1.5 text-xs font-semibold transition
-                         {hasChanges(pos)
-                           ? 'bg-[var(--brand)] text-white hover:opacity-90'
-                           : 'bg-[var(--hover)] text-[var(--fg-subtle)] cursor-not-allowed'}
-                         disabled:opacity-60">
-                  {saving === pos.id ? '…' : 'Save'}
-                </button>
-              </td>
+        <!-- Desktop: vertical list -->
+        <div class="hidden lg:flex lg:flex-col lg:gap-1">
+          {#each positions as pos}
+            <button
+              onclick={() => selectedId = pos.id}
+              class="flex w-full items-center justify-between rounded-xl border px-3 py-2.5
+                     text-left text-sm font-medium transition
+                     {selectedId === pos.id
+                       ? 'border-[var(--brand)] bg-[color-mix(in_oklab,var(--brand)_8%,transparent)] text-[var(--brand)]'
+                       : 'border-transparent bg-[var(--card)] text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}">
+              <div class="min-w-0">
+                <p class="truncate leading-snug">{pos.name}</p>
+                {#if pos.is_template}
+                  <p class="text-[10px] font-normal text-[var(--fg-subtle)]">Platform</p>
+                {/if}
+              </div>
+              <div class="flex shrink-0 items-center gap-1.5 ml-2">
+                {#if hasChanges(pos)}
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+                {/if}
+                <span class="text-[10px] text-[var(--fg-subtle)]">{grantCount(pos)}</span>
+              </div>
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <!-- ── Permission panel ───────────────────────────────────────────────── -->
+      <div class="min-w-0 flex-1">
+        <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+
+          <!-- Panel header -->
+          <div class="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+            <div>
+              <h2 class="font-semibold text-[var(--fg)]">{selected.name}</h2>
+              <p class="text-xs text-[var(--fg-muted)]">
+                {grantCount(selected)} permission{grantCount(selected) === 1 ? '' : 's'} granted
+                {#if selected.is_template}· Platform role{/if}
+              </p>
+            </div>
+            <button
+              onclick={save}
+              disabled={!hasChanges(selected) || saving}
+              class="rounded-xl px-4 py-2 text-sm font-semibold transition
+                     {hasChanges(selected)
+                       ? 'bg-[var(--brand)] text-white hover:opacity-90'
+                       : 'bg-[var(--hover)] text-[var(--fg-subtle)] cursor-not-allowed'}
+                     disabled:opacity-60">
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+
+          <!-- Permission groups -->
+          <div class="divide-y divide-[var(--border)]">
+            {#each Object.entries(PERMISSION_MATRIX) as [module, actions]}
+              <div class="px-5 py-4">
+                <p class="mb-3 text-[11px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
+                  {MODULE_LABELS[module]}
+                </p>
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {#each actions as action}
+                    {@const granted = isGranted(selected.id, module, action)}
+                    <label class="flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5
+                                  transition select-none
+                                  {granted
+                                    ? 'border-[var(--brand)]/30 bg-[color-mix(in_oklab,var(--brand)_5%,transparent)]'
+                                    : 'border-[var(--border)] hover:bg-[var(--hover)]'}">
+                      <!-- Toggle switch -->
+                      <button
+                        role="switch"
+                        aria-checked={granted}
+                        onclick={() => toggle(selected.id, module, action)}
+                        class="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200
+                               {granted ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'}">
+                        <span class="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow
+                                     transition-transform duration-200
+                                     {granted ? 'translate-x-4' : 'translate-x-0'}"></span>
+                      </button>
+                      <div class="min-w-0">
+                        <p class="text-sm font-medium leading-tight
+                                  {granted ? 'text-[var(--fg)]' : 'text-[var(--fg-muted)]'}">
+                          {ACTION_LABELS[action] ?? action}
+                        </p>
+                        <p class="text-[10px] text-[var(--fg-subtle)]">{module}.{action}</p>
+                      </div>
+                    </label>
+                  {/each}
+                </div>
+              </div>
             {/each}
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+          </div>
 
-    <p class="text-xs text-[var(--fg-subtle)]">
-      "Platform" positions are shared across all schools. Changes apply to all schools using that position.
-      Per-staff overrides set individually on a staff member's profile always take priority.
-    </p>
+          <!-- Sticky save footer (visible when there are changes) -->
+          {#if hasChanges(selected)}
+            <div class="sticky bottom-0 flex items-center justify-between rounded-b-2xl border-t
+                        border-[var(--border)] bg-[var(--card)] px-5 py-3">
+              <p class="text-xs text-amber-600 dark:text-amber-400">You have unsaved changes.</p>
+              <button
+                onclick={save}
+                disabled={saving}
+                class="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white
+                       transition hover:opacity-90 disabled:opacity-60">
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          {/if}
+        </div>
+
+        <p class="mt-2 text-xs text-[var(--fg-subtle)]">
+          Per-staff overrides set on a staff member's profile always take priority over these role defaults.
+        </p>
+      </div>
+
+    </div>
   {/if}
 </div>
