@@ -222,3 +222,35 @@ export const grantPortalAccess = (studentId: string): Promise<PortalAccessResult
 
 export const revokePortalAccess = (studentId: string): Promise<void> =>
   api.delete(`/students/${studentId}/revoke-portal-access`).then(() => undefined);
+
+// ── Transfers ─────────────────────────────────────────────────────────────────
+
+export type TransferStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
+
+export interface TransferRequest {
+  id: string;
+  student_id: string;
+  student_name: string | null;
+  admission_number: string | null;
+  status: TransferStatus;
+  reason: string | null;
+  requesting_school_id: string | null;
+  reviewed_at: string | null;
+  reviewed_by_id: string | null;
+  created_at: string;
+}
+
+export const createTransferRequest = (
+  studentId: string,
+  data: { reason?: string },
+): Promise<TransferRequest> =>
+  api.post(`/students/${studentId}/transfers`, data).then(r => r.data);
+
+export const listPendingTransfers = (): Promise<TransferRequest[]> =>
+  api.get('/students/transfers/pending').then(r => r.data);
+
+export const reviewTransfer = (
+  transferId: string,
+  status: 'APPROVED' | 'REJECTED' | 'WITHDRAWN',
+): Promise<TransferRequest> =>
+  api.patch(`/students/transfers/${transferId}/review`, { status }).then(r => r.data);

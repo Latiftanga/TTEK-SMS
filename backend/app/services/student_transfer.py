@@ -41,13 +41,31 @@ async def list_pending_transfers(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[TransferRequestRead]:
-    rows = await db.scalars(
+    transfers = list(await db.scalars(
         select(TransferRequest).where(
             TransferRequest.school_id == school_id,
             TransferRequest.status == TransferStatus.PENDING,
         ).order_by(TransferRequest.created_at)
-    )
-    return [TransferRequestRead.model_validate(r) for r in rows]
+    ))
+    if not transfers:
+        return []
+
+    student_ids = list({t.student_id for t in transfers})
+    students = {
+        s.id: s for s in await db.scalars(
+            select(Student).where(Student.id.in_(student_ids))
+        )
+    }
+
+    result = []
+    for t in transfers:
+        data = TransferRequestRead.model_validate(t)
+        stu = students.get(t.student_id)
+        if stu:
+            data.student_name = f"{stu.first_name} {stu.last_name}"
+            data.admission_number = stu.admission_number
+        result.append(data)
+    return result
 
 
 async def review_transfer(

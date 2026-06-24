@@ -250,6 +250,8 @@ class TransferRequestReview(BaseModel):
 class TransferRequestRead(BaseModel):
     id: uuid.UUID
     student_id: uuid.UUID
+    student_name: str | None = None
+    admission_number: str | None = None
     status: TransferStatus
     reason: str | None
     requesting_school_id: uuid.UUID | None

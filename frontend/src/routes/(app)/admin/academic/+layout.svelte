@@ -8,10 +8,11 @@
   const isSHS = $derived($school?.schoolType === 'SHS');
 
   const tabs = $derived([
-    { href: '/admin/academic',             label: 'Calendar', exact: true },
-    { href: '/admin/academic/subjects',    label: 'Subjects'              },
+    { href: '/admin/academic',             label: 'Calendar',   exact: true },
+    { href: '/admin/academic/subjects',    label: 'Subjects'               },
     ...(isSHS ? [{ href: '/admin/academic/programmes', label: 'Programmes' }] : []),
-    { href: '/admin/academic/classes',     label: 'Classes'               },
+    { href: '/admin/academic/classes',     label: 'Classes'                },
+    { href: '/admin/academic/promote',     label: 'Promotion'              },
   ]);
 
   function isActive(href: string, exact = false) {

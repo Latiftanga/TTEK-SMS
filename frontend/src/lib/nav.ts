@@ -22,6 +22,7 @@ export interface NavGroup {
 // ── Icons (24×24 outline, stroke paths only) ──────────────────────────────────
 
 const IC: Record<string, string> = {
+  transfers:  `<path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>`,
   dashboard:  `<path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>`,
   students:   `<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>`,
   attendance: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>`,
@@ -56,10 +57,11 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     heading: 'Administration',
     items: [
-      { href: '/admin/setup',    label: 'School Setup', icon: IC.setup,    roles: ['admin'] },
-      { href: '/admin/academic', label: 'Academic',     icon: IC.academic, roles: ['admin'] },
-      { href: '/students',       label: 'Students',     icon: IC.students, roles: ['admin'] },
-      { href: '/admin/staff',    label: 'Staff',        icon: IC.staff,    roles: ['admin'] },
+      { href: '/admin/setup',      label: 'School Setup', icon: IC.setup,      roles: ['admin'] },
+      { href: '/admin/academic',   label: 'Academic',     icon: IC.academic,   roles: ['admin'] },
+      { href: '/students',         label: 'Students',     icon: IC.students,   roles: ['admin'] },
+      { href: '/admin/transfers',  label: 'Transfers',    icon: IC.transfers,  roles: ['admin'] },
+      { href: '/admin/staff',      label: 'Staff',        icon: IC.staff,      roles: ['admin'] },
     ],
   },
 ];

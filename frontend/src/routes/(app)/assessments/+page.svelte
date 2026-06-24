@@ -31,6 +31,12 @@
     if (cur && !termId) termId = cur.id;
   });
 
+  // Auto-select class when only one is available (e.g. class teacher with one class)
+  $effect(() => {
+    const classes = $classesQ.data ?? [];
+    if (classes.length === 1 && !classId) classId = classes[0].id;
+  });
+
   const listOpts = writable({
     queryKey: ['assessments', classId, termId] as const,
     queryFn: () => listAssessments(classId, termId),
@@ -146,8 +152,16 @@
 
 <!-- Assessments list -->
 {#if !classId || !termId}
-  <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
-    <p class="text-sm text-[var(--fg-muted)]">Select a class and term to view assessments.</p>
+  <div class="rounded-2xl border border-dashed border-[var(--border)] px-6 py-14 text-center">
+    <svg class="mx-auto mb-3 h-10 w-10 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+    </svg>
+    <p class="text-sm font-medium text-[var(--fg-muted)]">
+      {!classId && !termId ? 'Select a class and term to view assessments'
+       : !classId ? 'Select a class to continue'
+       : 'Select a term to continue'}
+    </p>
+    <p class="mt-1 text-xs text-[var(--fg-subtle)]">Use the filters above to get started.</p>
   </div>
 {:else if $assessmentsQ.isPending}
   <div class="space-y-2">
