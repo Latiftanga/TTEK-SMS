@@ -15,7 +15,7 @@ from app.models.students import Student
 from app.schemas.housing import (
     AssignmentCreate, AssignmentRead, AssignmentVacate,
     HouseCreate, HouseDetail, HouseMasterAssign, HouseMasterRead, HouseUpdate,
-    RoomCreate, RoomRead, RoomUpdate,
+    RoomCreate, RoomRead, RoomUpdate, StudentInHouseRead,
 )
 
 
@@ -294,3 +294,38 @@ async def get_student_current_assignment(
         )
     )
     return _to_assignment(assignment) if assignment else None
+
+
+async def list_house_students(
+    house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> list[StudentInHouseRead]:
+    rows = (await db.execute(
+        select(
+            StudentHouseAssignment.id,
+            StudentHouseAssignment.student_id,
+            StudentHouseAssignment.assigned_at,
+            Student.first_name, Student.last_name,
+            Student.admission_number, Student.gender,
+            Room.room_number,
+        )
+        .join(Student, Student.id == StudentHouseAssignment.student_id)
+        .outerjoin(Room, Room.id == StudentHouseAssignment.room_id)
+        .where(
+            StudentHouseAssignment.house_id == house_id,
+            StudentHouseAssignment.school_id == school_id,
+            StudentHouseAssignment.vacated_at.is_(None),
+        )
+        .order_by(Student.last_name, Student.first_name)
+    )).all()
+    return [
+        StudentInHouseRead(
+            assignment_id=r.id,
+            student_id=r.student_id,
+            student_name=f"{r.first_name} {r.last_name}",
+            admission_number=r.admission_number,
+            gender=r.gender,
+            room_number=r.room_number,
+            assigned_at=r.assigned_at,
+        )
+        for r in rows
+    ]

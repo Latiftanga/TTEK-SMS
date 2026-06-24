@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 
-export type DashboardView = 'teacher' | 'admin' | 'approver' | 'finance' | null;
+export type DashboardView = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster' | null;
 
 const STORAGE_KEY = 'user_view';
 

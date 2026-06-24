@@ -184,4 +184,14 @@ class ExeatRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class StudentInHouseRead(BaseModel):
+    assignment_id: uuid.UUID
+    student_id: uuid.UUID
+    student_name: str
+    admission_number: str
+    gender: str | None = None
+    room_number: str | None = None
+    assigned_at: date
+
+
 HouseDetail.model_rebuild()

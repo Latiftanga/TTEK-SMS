@@ -3,10 +3,11 @@
   import { getDashboard } from '$lib/api/dashboard';
   import { userRole } from '$lib/stores/permissions';
   import SkeletonCard from '$lib/components/SkeletonCard.svelte';
-  import TeacherView from './TeacherView.svelte';
-  import AdminView from './AdminView.svelte';
-  import ApproverView from './ApproverView.svelte';
-  import FinanceView from './FinanceView.svelte';
+  import TeacherView      from './TeacherView.svelte';
+  import AdminView        from './AdminView.svelte';
+  import ApproverView     from './ApproverView.svelte';
+  import FinanceView      from './FinanceView.svelte';
+  import HousemasterView  from './HousemasterView.svelte';
 
   const query = createQuery({
     queryKey: ['dashboard'],
@@ -46,5 +47,7 @@
     <ApproverView {data} />
   {:else if data.view === 'finance'}
     <FinanceView {data} />
+  {:else if data.view === 'housemaster'}
+    <HousemasterView {data} />
   {/if}
 {/if}

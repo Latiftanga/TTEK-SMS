@@ -19,7 +19,7 @@ from app.schemas.housing import (
     ExeatApprove, ExeatCreate, ExeatRead, ExeatReturn,
     HouseCreate, HouseDetail, HouseMasterAssign, HouseMasterRead, HouseUpdate,
     RollCallCreate, RollCallRead,
-    RoomCreate, RoomRead, RoomUpdate,
+    RoomCreate, RoomRead, RoomUpdate, StudentInHouseRead,
 )
 from app.services import housing as svc
 from app.services import housing_events as event_svc
@@ -147,6 +147,16 @@ async def assign_house_master(
 ):
     _, school_id = ids
     return await svc.assign_house_master(house_id, req, school_id, db)
+
+
+@router.get("/houses/{house_id}/students", response_model=list[StudentInHouseRead])
+async def list_house_students(
+    house_id: uuid.UUID,
+    ids=Depends(require_permission("housing", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await svc.list_house_students(house_id, school_id, db)
 
 
 @router.get("/houses/{house_id}/master", response_model=HouseMasterRead | None)

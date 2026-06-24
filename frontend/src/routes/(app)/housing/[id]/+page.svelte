@@ -14,7 +14,8 @@
   const qc = useQueryClient();
   const houseId  = $derived($page.params.id);
   const activeTab = $derived(($page.url.searchParams.get('tab') ?? 'exeats') as 'rooms' | 'students' | 'rollcall' | 'exeats');
-  const canManage = $derived($userRole === 'admin');
+  const canAdmin   = $derived($userRole === 'admin');
+  const canOperate = $derived($userRole === 'admin' || $userRole === 'housemaster');
 
   const TABS = [
     { id: 'exeats',   label: 'Exeats'     },
@@ -55,7 +56,7 @@
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['house', houseId] });
-      qc.invalidateQueries({ queryKey: ['houses'] });
+      qc.invalidateQueries({ queryKey: ['houses-mine'] });
       editing = false;
       toast.success('House updated.');
     },
@@ -99,7 +100,7 @@
             </div>
           </div>
         </div>
-        {#if canManage}
+        {#if canAdmin}
           <button onclick={() => editing = true}
             class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold
                    text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Edit</button>
@@ -139,13 +140,13 @@
   </div>
 
   {#if activeTab === 'exeats'}
-    <ExeatsTab {houseId} {canManage} />
+    <ExeatsTab {houseId} canManage={canOperate} />
   {:else if activeTab === 'rooms'}
-    <RoomsTab {houseId} rooms={h.rooms} {canManage} />
+    <RoomsTab {houseId} rooms={h.rooms} canManage={canAdmin} />
   {:else if activeTab === 'students'}
-    <StudentsTab {houseId} {canManage} />
+    <StudentsTab {houseId} canManage={canOperate} />
   {:else if activeTab === 'rollcall'}
-    <RollCallTab {houseId} {canManage} />
+    <RollCallTab {houseId} canManage={canOperate} />
   {/if}
 {/if}
 

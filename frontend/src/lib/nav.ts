@@ -4,7 +4,7 @@
  * Superadmins always see everything regardless of roles.
  */
 
-export type NavRole = 'teacher' | 'admin' | 'approver' | 'finance';
+export type NavRole = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster';
 
 export interface NavItem {
   href: string;
@@ -51,7 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/assessments', label: 'Assessments',  icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
       { href: '/fees',        label: 'Fees',         icon: IC.fees,        roles: ['finance', 'admin'] },
       { href: '/reports',     label: 'Report Cards', icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
-      { href: '/housing',     label: 'Housing',      icon: IC.housing,     roles: ['admin', 'approver'] },
+      { href: '/housing',     label: 'Housing',      icon: IC.housing,     roles: ['admin', 'approver', 'housemaster'] },
     ],
   },
   {

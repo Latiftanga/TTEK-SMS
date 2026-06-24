@@ -6,7 +6,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   const qc = useQueryClient();
-  const canManage = $derived($userRole === 'admin');
+  const canAdmin = $derived($userRole === 'admin');
 
   const housesQ = createQuery({ queryKey: ['houses-mine'], queryFn: listMyHouses, staleTime: 2 * 60_000 });
 
@@ -54,7 +54,7 @@
 
 <div class="mb-3 flex items-center justify-between">
   <p class="text-sm font-semibold text-[var(--fg)]">Houses</p>
-  {#if canManage}
+  {#if canAdmin}
     <button onclick={() => { showForm = !showForm; formErr = ''; }}
       class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
       style="background: var(--brand)">
@@ -116,7 +116,7 @@
   </div>
 {:else if ($housesQ.data ?? []).length === 0}
   <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
-    <p class="text-sm text-[var(--fg-muted)]">No houses yet.{canManage ? ' Add one above.' : ''}</p>
+    <p class="text-sm text-[var(--fg-muted)]">No houses yet.{canAdmin ? ' Add one above.' : ''}</p>
   </div>
 {:else}
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

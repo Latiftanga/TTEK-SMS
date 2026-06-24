@@ -64,7 +64,17 @@ export interface FinanceDashboard {
   outstanding_students: number;
 }
 
-export type DashboardData = TeacherDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard;
+export interface HousemasterDashboard {
+  view: 'housemaster';
+  greeting_name: string;
+  house_id: string | null;
+  house_name: string | null;
+  total_residents: number;
+  pending_exeats: number;
+  off_campus_count: number;
+}
+
+export type DashboardData = TeacherDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard | HousemasterDashboard;
 
 export async function getDashboard(): Promise<DashboardData> {
   const { data } = await client.get<DashboardData>('/dashboard');
