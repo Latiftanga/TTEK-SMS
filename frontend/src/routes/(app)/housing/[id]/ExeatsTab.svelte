@@ -138,7 +138,7 @@
                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400'
                        : 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
                      : 'border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
-            {t === 'EXTERNAL' ? 'External — leaves school' : 'Internal — stays on campus'}
+            {t === 'EXTERNAL' ? 'External — travels out of town/city' : 'Internal — stays within town/locality'}
           </button>
         {/each}
       </div>
@@ -168,11 +168,11 @@
         </div>
         <div class="sm:col-span-2">
           <label class="label">
-            {ef.exeat_type === 'EXTERNAL' ? 'Destination' : 'Location on campus'}
+            Destination
             <span class="text-red-500">*</span>
           </label>
           <input bind:value={ef.destination}
-            placeholder={ef.exeat_type === 'EXTERNAL' ? 'e.g. Accra, Kumasi…' : 'e.g. Sickbay, Library…'}
+            placeholder={ef.exeat_type === 'EXTERNAL' ? 'e.g. Accra, Kumasi…' : 'e.g. Town clinic, Local market…'}
             class="input" />
         </div>
         <div>
@@ -221,8 +221,8 @@
     heading="Internal exeats"
     pending={pendingInternal}
     approved={approvedInternal}
-    approvedLabel="Approved — on campus"
-    destinationHeader="Location"
+    approvedLabel="Approved — in locality"
+    destinationHeader="Destination"
     actionPending={$reviewMut.isPending}
     onApprove={id => $reviewMut.mutate({ id, status: 'APPROVED' })}
     onReject={id => $reviewMut.mutate({ id, status: 'REJECTED' })}
