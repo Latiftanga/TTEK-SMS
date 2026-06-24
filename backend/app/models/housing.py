@@ -48,6 +48,11 @@ class ExeatStatus(str, enum.Enum):
     RETURNED = "RETURNED"
 
 
+class ExeatType(str, enum.Enum):
+    INTERNAL = "INTERNAL"  # student leaves house but stays on school grounds
+    EXTERNAL = "EXTERNAL"  # student leaves school premises entirely
+
+
 class House(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     """A boarding house within the school. Gender determines which students can be assigned."""
     __tablename__ = "house"
@@ -186,6 +191,9 @@ class Exeat(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     return_date: Mapped[date] = mapped_column(Date, nullable=False)
     approved_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
+    )
+    exeat_type: Mapped[ExeatType] = mapped_column(
+        SAEnum(ExeatType, name="exeattype"), default=ExeatType.EXTERNAL, nullable=False
     )
     status: Mapped[ExeatStatus] = mapped_column(
         SAEnum(ExeatStatus, name="exeatstatus"), default=ExeatStatus.PENDING, nullable=False

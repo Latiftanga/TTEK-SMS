@@ -9,6 +9,9 @@
   const qc = useQueryClient();
   const canManage = $derived($userRole === 'admin');
 
+  type Tab = 'houses' | 'exeats';
+  let activeTab = $state<Tab>('houses');
+
   const housesQ = createQuery({ queryKey: ['houses'], queryFn: listHouses, staleTime: 2 * 60_000 });
 
   // ── New house form ────────────────────────────────────────────────────────────
@@ -43,18 +46,37 @@
 
   const GENDER_LABEL: Record<HouseGender, string> = { MALE: 'Boys', FEMALE: 'Girls', MIXED: 'Mixed' };
   const GENDER_COLOR: Record<HouseGender, string> = {
-    MALE: 'bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-950/40 dark:text-blue-400',
+    MALE:   'bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-950/40 dark:text-blue-400',
     FEMALE: 'bg-pink-50 text-pink-700 ring-pink-600/20 dark:bg-pink-950/40 dark:text-pink-400',
-    MIXED: 'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-950/40 dark:text-purple-400',
+    MIXED:  'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-950/40 dark:text-purple-400',
   };
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'houses', label: 'Houses' },
+    { id: 'exeats', label: 'Exeats' },
+  ];
 </script>
 
 <svelte:head><title>Housing</title></svelte:head>
 
 <PageHeader title="Housing" description="Boarding houses, room assignments, exeats, and night roll calls." />
 
-<!-- Houses grid -->
-<div class="mb-6">
+<!-- Tab bar -->
+<div class="mb-5 flex gap-1 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-1">
+  {#each TABS as t}
+    <button
+      onclick={() => activeTab = t.id}
+      class="flex-1 rounded-xl px-4 py-2 text-sm font-medium transition
+             {activeTab === t.id
+               ? 'bg-[var(--brand)] text-white shadow-sm'
+               : 'text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}">
+      {t.label}
+    </button>
+  {/each}
+</div>
+
+<!-- Houses tab -->
+{#if activeTab === 'houses'}
   <div class="mb-3 flex items-center justify-between">
     <p class="text-sm font-semibold text-[var(--fg)]">Houses</p>
     {#if canManage}
@@ -148,9 +170,12 @@
       {/each}
     </div>
   {/if}
-</div>
+{/if}
 
-<ExeatsSection {canManage} />
+<!-- Exeats tab -->
+{#if activeTab === 'exeats'}
+  <ExeatsSection {canManage} />
+{/if}
 
 <style>
   @reference "tailwindcss";

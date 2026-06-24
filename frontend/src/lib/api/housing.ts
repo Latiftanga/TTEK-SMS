@@ -2,6 +2,7 @@ import { api } from './client';
 
 export type HouseGender = 'MALE' | 'FEMALE' | 'MIXED';
 export type ExeatStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RETURNED';
+export type ExeatType = 'INTERNAL' | 'EXTERNAL';
 
 export interface RollCall {
   id: string;
@@ -49,6 +50,7 @@ export interface ExeatRead {
   student_id: string;
   student_name: string | null;
   admission_number: string | null;
+  exeat_type: ExeatType;
   reason: string;
   destination: string;
   departure_date: string;
@@ -108,7 +110,7 @@ export const listStudentExeats = (studentId: string): Promise<ExeatRead[]> =>
   api.get(`/housing/students/${studentId}/exeats`).then(r => r.data);
 
 export const createExeat = (req: {
-  student_id: string; reason: string; destination: string;
+  student_id: string; exeat_type: ExeatType; reason: string; destination: string;
   departure_date: string; return_date: string;
 }): Promise<ExeatRead> => api.post('/housing/exeats', req).then(r => r.data);
 

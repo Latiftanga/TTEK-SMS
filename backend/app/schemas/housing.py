@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, field_validator
-from app.models.housing import ExeatStatus, HouseGender
+from app.models.housing import ExeatStatus, ExeatType, HouseGender
 
 
 class HouseCreate(BaseModel):
@@ -137,6 +137,7 @@ class RollCallRead(BaseModel):
 
 class ExeatCreate(BaseModel):
     student_id: uuid.UUID
+    exeat_type: ExeatType = ExeatType.EXTERNAL
     reason: str
     destination: str
     departure_date: date
@@ -171,6 +172,7 @@ class ExeatRead(BaseModel):
     student_id: uuid.UUID
     student_name: str | None = None
     admission_number: str | None = None
+    exeat_type: ExeatType
     reason: str
     destination: str
     departure_date: date

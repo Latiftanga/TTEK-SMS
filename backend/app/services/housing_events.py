@@ -30,6 +30,7 @@ def _row_to_exeat(exeat: Exeat, first_name: str, last_name: str, admission_numbe
         student_id=exeat.student_id,
         student_name=f"{first_name} {last_name}",
         admission_number=admission_number,
+        exeat_type=exeat.exeat_type,
         reason=exeat.reason,
         destination=exeat.destination,
         departure_date=exeat.departure_date,
@@ -132,6 +133,7 @@ async def create_exeat(
     exeat = Exeat(
         school_id=school_id,
         student_id=req.student_id,
+        exeat_type=req.exeat_type,
         reason=req.reason,
         destination=req.destination,
         departure_date=req.departure_date,
