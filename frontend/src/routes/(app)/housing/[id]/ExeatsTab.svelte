@@ -1,19 +1,19 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import {
-    listPendingExeats, approveExeat, recordReturn, createExeat,
+    listHouseExeats, approveExeat, recordReturn, createExeat,
     type ExeatRead, type ExeatType,
   } from '$lib/api/housing';
   import { listStudents } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
-  import ExeatsTable from './ExeatsTable.svelte';
+  import ExeatsTable from '../ExeatsTable.svelte';
 
-  interface Props { canManage: boolean; }
-  const { canManage }: Props = $props();
+  interface Props { houseId: string; canManage: boolean; }
+  const { houseId, canManage }: Props = $props();
 
   const qc = useQueryClient();
 
-  const exeatsQ   = createQuery({ queryKey: ['exeats-pending'],   queryFn: listPendingExeats, staleTime: 60_000 });
+  const exeatsQ   = createQuery({ queryKey: ['exeats', houseId], queryFn: () => listHouseExeats(houseId), staleTime: 60_000 });
   const studentsQ = createQuery({ queryKey: ['students-boarding'], queryFn: () => listStudents({ active_only: true }), staleTime: 5 * 60_000 });
 
   const pendingExternal  = $derived<ExeatRead[]>(($exeatsQ.data ?? []).filter(e => e.status === 'PENDING'  && e.exeat_type === 'EXTERNAL'));
@@ -24,7 +24,7 @@
   // ── Review ────────────────────────────────────────────────────────────────────
   const reviewMut = createMutation({
     mutationFn: ({ id, status }: { id: string; status: 'APPROVED' | 'REJECTED' }) => approveExeat(id, status),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['exeats-pending'] }); toast.success('Exeat updated.'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['exeats', houseId] }); toast.success('Exeat updated.'); },
     onError: () => toast.error('Could not update exeat.'),
   });
 
@@ -35,17 +35,14 @@
   const returnMut = createMutation({
     mutationFn: () => recordReturn(returningId!, returnDate),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['exeats-pending'] });
+      qc.invalidateQueries({ queryKey: ['exeats', houseId] });
       returningId = null;
       toast.success('Return recorded.');
     },
     onError: () => toast.error('Could not record return.'),
   });
 
-  function openReturn(id: string) {
-    returningId = id;
-    returnDate = new Date().toISOString().slice(0,10);
-  }
+  function openReturn(id: string) { returningId = id; returnDate = new Date().toISOString().slice(0,10); }
 
   // ── New exeat form ────────────────────────────────────────────────────────────
   let showForm = $state(false);
@@ -70,10 +67,10 @@
       departure_date: ef.departure_date, return_date: ef.return_date,
     }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['exeats-pending'] });
+      qc.invalidateQueries({ queryKey: ['exeats', houseId] });
       showForm = false;
       ef = { student_id: '', studentSearch: '', exeat_type: 'EXTERNAL', reason: '', destination: '', departure_date: '', return_date: '' };
-      toast.success('Exeat request created.');
+      toast.success('Exeat created.');
     },
     onError: (e: unknown) => {
       efErr = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not create exeat.';
@@ -115,7 +112,7 @@
   </div>
 {/if}
 
-<!-- New exeat button -->
+<!-- Issue exeat button -->
 {#if canManage}
   <div class="mb-5 flex justify-end">
     <button onclick={() => { showForm = !showForm; efErr = ''; }}
@@ -124,13 +121,13 @@
       <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
       </svg>
-      New exeat
+      Issue exeat
     </button>
   </div>
 
   {#if showForm}
     <div class="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-      <p class="mb-3 text-sm font-semibold text-[var(--fg)]">New exeat request</p>
+      <p class="mb-3 text-sm font-semibold text-[var(--fg)]">Issue exeat</p>
 
       <div class="mb-4 flex gap-2">
         {#each (['EXTERNAL', 'INTERNAL'] as ExeatType[]) as t}
@@ -192,7 +189,7 @@
         <button onclick={handleCreate} disabled={$createMut.isPending}
           class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           style="background: var(--brand)">
-          {$createMut.isPending ? 'Creating…' : 'Create exeat'}
+          {$createMut.isPending ? 'Issuing…' : 'Issue exeat'}
         </button>
         <button onclick={() => { showForm = false; efErr = ''; }}
           class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
@@ -204,7 +201,7 @@
 {/if}
 
 {#if $exeatsQ.isPending}
-  <div class="space-y-3">{#each [1,2,3] as _}<div class="h-16 animate-pulse rounded-2xl bg-[var(--card)]"></div>{/each}</div>
+  <div class="space-y-3">{#each [1,2] as _}<div class="h-16 animate-pulse rounded-2xl bg-[var(--card)]"></div>{/each}</div>
 {:else}
   <ExeatsTable
     dotColor="bg-blue-500"

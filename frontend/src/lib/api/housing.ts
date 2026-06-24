@@ -103,8 +103,14 @@ export const recordRollCall = (req: {
 export const listRollCalls = (houseId: string): Promise<RollCall[]> =>
   api.get('/housing/roll-calls', { params: { house_id: houseId } }).then(r => r.data);
 
+export const listMyHouses = (): Promise<House[]> =>
+  api.get('/housing/houses/mine').then(r => r.data);
+
 export const listPendingExeats = (): Promise<ExeatRead[]> =>
   api.get('/housing/exeats/pending').then(r => r.data);
+
+export const listHouseExeats = (houseId: string): Promise<ExeatRead[]> =>
+  api.get('/housing/exeats/pending', { params: { house_id: houseId } }).then(r => r.data);
 
 export const listStudentExeats = (studentId: string): Promise<ExeatRead[]> =>
   api.get(`/housing/students/${studentId}/exeats`).then(r => r.data);

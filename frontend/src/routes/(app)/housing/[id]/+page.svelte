@@ -6,19 +6,21 @@
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import TabBar from '$lib/components/TabBar.svelte';
-  import RoomsTab     from './RoomsTab.svelte';
-  import StudentsTab  from './StudentsTab.svelte';
-  import RollCallTab  from './RollCallTab.svelte';
+  import RoomsTab    from './RoomsTab.svelte';
+  import StudentsTab from './StudentsTab.svelte';
+  import RollCallTab from './RollCallTab.svelte';
+  import ExeatsTab   from './ExeatsTab.svelte';
 
   const qc = useQueryClient();
   const houseId  = $derived($page.params.id);
-  const activeTab = $derived(($page.url.searchParams.get('tab') ?? 'rooms') as 'rooms' | 'students' | 'rollcall');
+  const activeTab = $derived(($page.url.searchParams.get('tab') ?? 'exeats') as 'rooms' | 'students' | 'rollcall' | 'exeats');
   const canManage = $derived($userRole === 'admin');
 
   const TABS = [
-    { id: 'rooms',    label: 'Rooms'      },
-    { id: 'students', label: 'Students'   },
-    { id: 'rollcall', label: 'Roll Calls' },
+    { id: 'exeats',   label: 'Exeats'     },
+    { id: 'rooms',    label: 'Rooms'       },
+    { id: 'students', label: 'Students'    },
+    { id: 'rollcall', label: 'Roll Calls'  },
   ];
 
   function setTab(id: string) { goto(`?tab=${id}`, { replaceState: true, noScroll: true }); }
@@ -136,7 +138,9 @@
     <TabBar tabs={TABS} active={activeTab} onchange={setTab} />
   </div>
 
-  {#if activeTab === 'rooms'}
+  {#if activeTab === 'exeats'}
+    <ExeatsTab {houseId} {canManage} />
+  {:else if activeTab === 'rooms'}
     <RoomsTab {houseId} rooms={h.rooms} {canManage} />
   {:else if activeTab === 'students'}
     <StudentsTab {houseId} {canManage} />

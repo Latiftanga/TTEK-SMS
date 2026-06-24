@@ -145,14 +145,26 @@ async def create_exeat(
     return _row_to_exeat(exeat, student.first_name, student.last_name, student.admission_number)
 
 
-async def list_pending_exeats(school_id: uuid.UUID, db: AsyncSession) -> list[ExeatRead]:
-    """Returns PENDING and APPROVED exeats — i.e. all that still need action."""
-    rows = (await db.execute(
-        _exeat_select(
-            Exeat.school_id == school_id,
-            Exeat.status.in_([ExeatStatus.PENDING, ExeatStatus.APPROVED]),
-        ).order_by(Exeat.departure_date)
-    )).all()
+async def list_pending_exeats(
+    school_id: uuid.UUID, db: AsyncSession, house_id: uuid.UUID | None = None
+) -> list[ExeatRead]:
+    """Returns PENDING and APPROVED exeats (all still needing action).
+    If house_id is given, restricts to students currently assigned to that house."""
+    q = _exeat_select(
+        Exeat.school_id == school_id,
+        Exeat.status.in_([ExeatStatus.PENDING, ExeatStatus.APPROVED]),
+    )
+    if house_id:
+        active_in_house = (
+            select(StudentHouseAssignment.student_id)
+            .where(
+                StudentHouseAssignment.house_id == house_id,
+                StudentHouseAssignment.school_id == school_id,
+                StudentHouseAssignment.vacated_at.is_(None),
+            )
+        )
+        q = q.where(Exeat.student_id.in_(active_in_house))
+    rows = (await db.execute(q.order_by(Exeat.departure_date))).all()
     return [_row_to_exeat(e, fn, ln, an) for e, fn, ln, an in rows]
 
 

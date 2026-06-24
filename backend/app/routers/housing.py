@@ -70,6 +70,16 @@ async def list_houses(
     return await svc.list_houses(school_id, db)
 
 
+@router.get("/houses/mine", response_model=list[HouseDetail])
+async def list_my_houses(
+    ids=Depends(require_permission("housing", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns all houses for admin/head/deputy; only managed houses for housemasters."""
+    user_id, school_id = ids
+    return await svc.list_my_houses(user_id, school_id, db)
+
+
 @router.get("/houses/{house_id}", response_model=HouseDetail)
 async def get_house(
     house_id: uuid.UUID,
@@ -222,11 +232,12 @@ async def create_exeat(
 
 @router.get("/exeats/pending", response_model=list[ExeatRead])
 async def list_pending_exeats(
+    house_id: uuid.UUID | None = Query(None),
     ids=Depends(require_permission("housing", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await event_svc.list_pending_exeats(school_id, db)
+    return await event_svc.list_pending_exeats(school_id, db, house_id=house_id)
 
 
 @router.patch("/exeats/{exeat_id}/approve", response_model=ExeatRead)

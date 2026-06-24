@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.academic import AcademicYear
+from app.models.auth import User
 from app.models.housing import House, HouseMaster, Room, StudentHouseAssignment
 from app.models.staff import StaffMember
 from app.models.students import Student
@@ -75,6 +76,29 @@ async def list_houses(school_id: uuid.UUID, db: AsyncSession) -> list[HouseDetai
         .order_by(House.name)
     )).all()
     return [_to_detail(h) for h in rows]
+
+
+async def list_my_houses(user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> list[HouseDetail]:
+    """Returns only the houses the caller manages as an active housemaster.
+    If the caller has no HouseMaster record (admin / head / deputy), returns all houses."""
+    user = await db.get(User, user_id)
+    if user and user.staff_member_id:
+        managed_ids = list(await db.scalars(
+            select(HouseMaster.house_id).where(
+                HouseMaster.staff_member_id == user.staff_member_id,
+                HouseMaster.school_id == school_id,
+                HouseMaster.is_active.is_(True),
+            )
+        ))
+        if managed_ids:
+            rows = (await db.scalars(
+                select(House)
+                .where(House.id.in_(managed_ids), House.school_id == school_id)
+                .options(selectinload(House.rooms))
+                .order_by(House.name)
+            )).all()
+            return [_to_detail(h) for h in rows]
+    return await list_houses(school_id, db)
 
 
 async def get_house(house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> HouseDetail:
