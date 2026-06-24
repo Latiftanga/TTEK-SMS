@@ -2,11 +2,26 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
   import { listMyHouses, createHouse, type House, type HouseGender } from '$lib/api/housing';
+  import { getMySchool, updateMySchool } from '$lib/api/schools';
   import { userRole } from '$lib/stores/permissions';
+  import { toast } from '$lib/stores/toast';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   const qc = useQueryClient();
   const canAdmin = $derived($userRole === 'admin');
+
+  const schoolQ = createQuery({ queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000, enabled: () => canAdmin });
+  const hasBoarding = $derived($schoolQ.data?.has_boarding ?? true);
+
+  const enableMut = createMutation({
+    mutationFn: () => updateMySchool({ has_boarding: true }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-school'] });
+      qc.invalidateQueries({ queryKey: ['houses-mine'] });
+      toast.success('Boarding enabled.');
+    },
+    onError: () => toast.error('Could not enable boarding.'),
+  });
 
   const housesQ = createQuery({ queryKey: ['houses-mine'], queryFn: listMyHouses, staleTime: 2 * 60_000 });
 
@@ -51,6 +66,21 @@
 <svelte:head><title>Housing</title></svelte:head>
 
 <PageHeader title="Housing" description="Boarding houses, room assignments, exeats, and night roll calls." />
+
+{#if canAdmin && $schoolQ.data && !hasBoarding}
+  <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-10 text-center">
+    <svg class="mx-auto mb-3 h-10 w-10 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75"/>
+    </svg>
+    <p class="text-sm font-semibold text-[var(--fg)]">Boarding not enabled</p>
+    <p class="mt-1 text-xs text-[var(--fg-muted)]">Enable boarding to manage houses, rooms, exeats, and roll calls.</p>
+    <button onclick={() => $enableMut.mutate()} disabled={$enableMut.isPending}
+      class="mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+      style="background: var(--brand)">
+      {$enableMut.isPending ? 'Enabling…' : 'Enable boarding'}
+    </button>
+  </div>
+{:else}
 
 <div class="mb-3 flex items-center justify-between">
   <p class="text-sm font-semibold text-[var(--fg)]">Houses</p>
@@ -147,6 +177,8 @@
       </button>
     {/each}
   </div>
+{/if}
+
 {/if}
 
 <style>
