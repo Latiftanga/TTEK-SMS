@@ -168,7 +168,12 @@
         <tbody class="divide-y divide-[var(--border)]">
           {#each paged as cls (cls.id)}
             <tr class="group transition hover:bg-[var(--bg)]">
-              <td class="px-4 py-2.5 font-medium text-[var(--fg)]">{cls.display_name}</td>
+              <td class="px-4 py-2.5">
+                <a href="/admin/academic/classes/{cls.id}"
+                  class="font-medium text-[var(--fg)] transition hover:text-[var(--brand)] hover:underline underline-offset-2">
+                  {cls.display_name}
+                </a>
+              </td>
               <td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.capacity ?? '—'}</td>
               <ClassRowCells
                 classId={cls.id}
