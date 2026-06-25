@@ -123,8 +123,8 @@
       {#each students as student, idx (student.id)}
         {@const existing   = scoreMap.get(student.id)}
         {@const val        = scoreInputs[student.id]}
-        {@const numVal     = parseFloat(val)}
-        {@const outOfRange = val !== undefined && val !== '' && (isNaN(numVal) || numVal < 0 || numVal > Number(a.max_score))}
+        {@const numVal     = Number(val)}
+        {@const outOfRange = val != null && val !== '' && (isNaN(numVal) || numVal < 0 || numVal > Number(a.max_score))}
         <tr class="border-b border-[var(--border)] last:border-0 transition
                    {outOfRange ? 'bg-red-50 dark:bg-red-950/20' : 'hover:bg-[var(--hover)]/50'}">
           <td class="px-4 py-3">
