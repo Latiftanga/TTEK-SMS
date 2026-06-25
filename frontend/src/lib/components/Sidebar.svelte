@@ -2,7 +2,6 @@
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { createQuery } from '@tanstack/svelte-query';
   import { currentUser, auth } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
@@ -33,10 +32,7 @@
   const visibleGroups = $derived(
     NAV_GROUPS
       .map(g => ({ ...g, items: g.items.filter(i => canSee(i.roles)) }))
-      .filter(g => {
-        if (g.heading && !isAdmin) return false;
-        return g.items.length > 0;
-      })
+      .filter(g => g.items.length > 0)
   );
 
   function isActive(href: string, exact: boolean | undefined) {

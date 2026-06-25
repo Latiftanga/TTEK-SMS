@@ -69,8 +69,9 @@ export const NAV_GROUPS: NavGroup[] = [
 // ── Role display ──────────────────────────────────────────────────────────────
 
 export const ROLE_LABELS: Record<string, string> = {
-  teacher:  'Class Teacher',
-  admin:    'School Admin',
-  approver: 'HOD / Approver',
-  finance:  'Finance Officer',
+  teacher:     'Class Teacher',
+  admin:       'School Admin',
+  approver:    'HOD / Approver',
+  finance:     'Finance Officer',
+  housemaster: 'House Master',
 };

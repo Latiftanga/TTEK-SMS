@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessments import Grade, GradingScale, Score
@@ -55,25 +56,22 @@ async def list_grading_scales(school_id: uuid.UUID, db: AsyncSession) -> list[Gr
     rows = await db.scalars(
         select(GradingScale)
         .where(GradingScale.school_id == school_id, GradingScale.is_active.is_(True))
+        .options(selectinload(GradingScale.grades))
         .order_by(GradingScale.is_default.desc(), GradingScale.name)
     )
-    scales = list(rows)
-    for s in scales:
-        await db.refresh(s, ["grades"])
-    return scales
+    return list(rows)
 
 
 async def get_grading_scale(
     scale_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> GradingScale:
     scale = await db.scalar(
-        select(GradingScale).where(
-            GradingScale.id == scale_id, GradingScale.school_id == school_id
-        )
+        select(GradingScale)
+        .where(GradingScale.id == scale_id, GradingScale.school_id == school_id)
+        .options(selectinload(GradingScale.grades))
     )
     if not scale:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Grading scale not found.")
-    await db.refresh(scale, ["grades"])
     return scale
 
 

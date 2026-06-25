@@ -4,6 +4,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getStaff, updateStaff, resetStaffPassword, inviteStaff, type TempPasswordResult, type InviteResult } from '$lib/api/staff';
   import { getMySchool } from '$lib/api/schools';
+  import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
   import { apiError } from '$lib/utils';
   import Badge                from '$lib/components/Badge.svelte';
@@ -12,10 +13,12 @@
   import QualificationsTab    from './QualificationsTab.svelte';
   import PromotionsTab        from './PromotionsTab.svelte';
   import LeaveTab             from './LeaveTab.svelte';
-  import PasswordResetModals  from './PasswordResetModals.svelte';
+  import PasswordResetModals    from './PasswordResetModals.svelte';
+  import ResponsibilitiesTab    from './ResponsibilitiesTab.svelte';
 
   const qc = useQueryClient();
   const staffId = $page.params.id;
+  const isOwnProfile = $derived($auth.user?.staff_member_id === staffId);
 
   const query = createQuery({
     queryKey: ['staff', staffId],
@@ -29,12 +32,13 @@
     staleTime: 10 * 60_000,
   });
 
-  type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave';
+  type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave' | 'responsibilities';
   const TABS = $derived([
-    { key: 'profile' as Tab,        label: 'Profile'        },
-    { key: 'qualifications' as Tab, label: 'Qualifications' },
+    { key: 'profile' as Tab,           label: 'Profile'           },
+    { key: 'responsibilities' as Tab,  label: 'Responsibilities'  },
+    { key: 'qualifications' as Tab,    label: 'Qualifications'    },
     ...($schoolQuery.data?.ownership !== 'PRIVATE' ? [{ key: 'promotions' as Tab, label: 'Promotions' }] : []),
-    { key: 'leave' as Tab,          label: 'Leave'          },
+    { key: 'leave' as Tab,             label: 'Leave'             },
   ]);
   const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
   function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
@@ -87,12 +91,12 @@
 
 <!-- Back -->
 <div class="mb-5">
-  <a href="/admin/staff"
+  <a href={isOwnProfile ? '/dashboard' : '/admin/staff'}
      class="inline-flex items-center gap-1.5 text-sm text-[var(--fg-muted)] transition hover:text-[var(--fg)]">
     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
     </svg>
-    All staff
+    {isOwnProfile ? 'Dashboard' : 'All staff'}
   </a>
 </div>
 
@@ -176,15 +180,17 @@
         </div>
       </div>
 
-      <!-- Actions -->
-      <div class="flex shrink-0 flex-col gap-2">
-        <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending} class="btn-ghost">
-          {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
-        </button>
-        <button onclick={() => confirmReset = true} class="btn-ghost">
-          Reset password
-        </button>
-      </div>
+      <!-- Actions: hidden on own profile, and blocked until auth hydrates to avoid flash before isOwnProfile resolves -->
+      {#if $auth.user && !isOwnProfile}
+        <div class="flex shrink-0 flex-col gap-2">
+          <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending} class="btn-ghost">
+            {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
+          </button>
+          <button onclick={() => confirmReset = true} class="btn-ghost">
+            Reset password
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -203,11 +209,13 @@
       </div>
 
       {#if activeTab === 'profile'}
-        <ProfileTab staff={s} staffId={staffId} />
+        <ProfileTab staff={s} staffId={staffId} {isOwnProfile} />
+      {:else if activeTab === 'responsibilities'}
+        <ResponsibilitiesTab staff={s} {staffId} boardingEnabled={$schoolQuery.data?.has_boarding ?? false} {isOwnProfile} />
       {:else if activeTab === 'qualifications'}
         <QualificationsTab staff={s} staffId={staffId} />
       {:else if activeTab === 'promotions'}
-        <PromotionsTab staff={s} staffId={staffId} />
+        <PromotionsTab staff={s} staffId={staffId} readOnly={isOwnProfile} />
       {:else if activeTab === 'leave'}
         <LeaveTab staffId={staffId} />
       {/if}
@@ -260,8 +268,8 @@
         </div>
       {/if}
 
-      <!-- Platform access -->
-      {#if s.email || s.phone}
+      <!-- Platform access (hidden on own profile — you're already signed in) -->
+      {#if !isOwnProfile && (s.email || s.phone)}
         <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
           <p class="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Platform access</p>
 

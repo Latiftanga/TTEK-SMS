@@ -367,3 +367,42 @@ export async function inviteStaff(staffId: string): Promise<InviteResult> {
   const { data } = await client.post<InviteResult>(`/staff/${staffId}/invite`);
   return data;
 }
+
+export interface ClassTeacherAssignment {
+  class_id: string;
+  class_name: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  is_active: boolean;
+}
+
+export interface SubjectAssignment {
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
+  academic_term_id: string;
+  term_name: string;
+  academic_year_name: string;
+  is_active: boolean;
+}
+
+export interface HouseAssignment {
+  house_id: string;
+  house_name: string;
+  house_code: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  is_active: boolean;
+}
+
+export interface StaffResponsibilities {
+  class_teacher: ClassTeacherAssignment | null;
+  subject_assignments: SubjectAssignment[];
+  house_assignments: HouseAssignment[];
+}
+
+export async function getStaffResponsibilities(staffId: string): Promise<StaffResponsibilities> {
+  const { data } = await client.get<StaffResponsibilities>(`/staff/${staffId}/responsibilities`);
+  return data;
+}

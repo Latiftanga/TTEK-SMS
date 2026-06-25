@@ -2,10 +2,9 @@
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { updateStaff, listCategories, addEmergencyContact, deleteEmergencyContact, type StaffDetail } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
-  import PositionsCard from './PositionsCard.svelte';
 
-  interface Props { staff: StaffDetail; staffId: string; }
-  const { staff, staffId }: Props = $props();
+  interface Props { staff: StaffDetail; staffId: string; isOwnProfile?: boolean; }
+  const { staff, staffId, isOwnProfile = false }: Props = $props();
 
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ['staff', staffId] });
@@ -123,12 +122,25 @@
 
     {#if editing}
       <div class="grid gap-4 sm:grid-cols-2">
+        {#if !isOwnProfile}
+          <!-- Admin-only fields -->
+          {#each [
+            { label: 'First name',  key: 'first_name'  },
+            { label: 'Last name',   key: 'last_name'   },
+            { label: 'Middle name', key: 'middle_name' },
+          ] as f}
+            <div>
+              <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
+              <input bind:value={editForm[f.key as keyof typeof editForm] as string}
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+            </div>
+          {/each}
+        {/if}
+
+        <!-- Fields editable by self and admins -->
         {#each [
-          { label: 'First name',  key: 'first_name'  },
-          { label: 'Last name',   key: 'last_name'   },
-          { label: 'Middle name', key: 'middle_name' },
-          { label: 'Phone',       key: 'phone'       },
-          { label: 'Email',       key: 'email'       },
+          { label: 'Phone', key: 'phone' },
+          { label: 'Email', key: 'email' },
         ] as f}
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
@@ -137,29 +149,32 @@
           </div>
         {/each}
 
-        <!-- Category -->
-        <div class="sm:col-span-2">
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Category</label>
-          <select bind:value={editForm.category_id}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-            <option value="">Not specified</option>
-            {#each $categoriesQuery.data ?? [] as cat (cat.id)}
-              <option value={cat.id}>{cat.name}</option>
-            {/each}
-          </select>
-        </div>
+        {#if !isOwnProfile}
+          <!-- Category -->
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Category</label>
+            <select bind:value={editForm.category_id}
+              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+              <option value="">Not specified</option>
+              {#each $categoriesQuery.data ?? [] as cat (cat.id)}
+                <option value={cat.id}>{cat.name}</option>
+              {/each}
+            </select>
+          </div>
 
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
-          <select bind:value={editForm.employment_type}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-            <option value="">Select…</option>
-            <option value="PERMANENT">Permanent</option>
-            <option value="CONTRACT">Contract</option>
-            <option value="NATIONAL_SERVICE">National Service</option>
-            <option value="INTERN">Intern</option>
-          </select>
-        </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
+            <select bind:value={editForm.employment_type}
+              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+              <option value="">Select…</option>
+              <option value="PERMANENT">Permanent</option>
+              <option value="CONTRACT">Contract</option>
+              <option value="NATIONAL_SERVICE">National Service</option>
+              <option value="INTERN">Intern</option>
+            </select>
+          </div>
+        {/if}
+
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Marital status</label>
           <select bind:value={editForm.marital_status}
@@ -172,41 +187,47 @@
             <option value="SEPARATED">Separated</option>
           </select>
         </div>
-        {#each [
-          { label: 'Ghana Card Number', key: 'national_id',  placeholder: 'GHA-XXXXXXXXX-X' },
-          { label: 'SSNIT Number',      key: 'ssnit_number', placeholder: 'C000000000000' },
-        ] as f}
-          <div>
-            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
-            <input bind:value={editForm[f.key as keyof typeof editForm] as string} placeholder={f.placeholder}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
-          </div>
-        {/each}
+
+        {#if !isOwnProfile}
+          {#each [
+            { label: 'Ghana Card Number', key: 'national_id',  placeholder: 'GHA-XXXXXXXXX-X' },
+            { label: 'SSNIT Number',      key: 'ssnit_number', placeholder: 'C000000000000' },
+          ] as f}
+            <div>
+              <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
+              <input bind:value={editForm[f.key as keyof typeof editForm] as string} placeholder={f.placeholder}
+                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+            </div>
+          {/each}
+        {/if}
+
         <div class="sm:col-span-2">
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Home address</label>
           <textarea bind:value={editForm.address} rows="2" placeholder="Street, Town, Region"
             class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none resize-none"></textarea>
         </div>
 
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
-          <select bind:value={editForm.gender}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-            <option value="">Not specified</option>
-            <option value="MALE">Male</option>
-            <option value="FEMALE">Female</option>
-          </select>
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date of birth</label>
-          <input type="date" bind:value={editForm.date_of_birth}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
-          <input type="date" bind:value={editForm.joined_date}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
-        </div>
+        {#if !isOwnProfile}
+          <div>
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
+            <select bind:value={editForm.gender}
+              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+              <option value="">Not specified</option>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date of birth</label>
+            <input type="date" bind:value={editForm.date_of_birth}
+              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
+            <input type="date" bind:value={editForm.joined_date}
+              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+          </div>
+        {/if}
       </div>
       {#if editError}<p class="mt-2 text-xs text-red-500">{editError}</p>{/if}
       <div class="mt-4 flex gap-2">
@@ -231,9 +252,6 @@
       </dl>
     {/if}
   </div>
-
-  <!-- Authority positions -->
-  <PositionsCard {staff} {staffId} />
 
   <!-- Emergency contacts -->
   <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">

@@ -61,8 +61,18 @@ export interface ExeatRead {
   created_at: string;
 }
 
+export interface HouseMasterRead {
+  id: string; house_id: string; staff_member_id: string; academic_year_id: string; is_active: boolean;
+}
+
 export const listHouses = (): Promise<House[]> =>
   api.get('/housing/houses').then(r => r.data);
+
+export const assignHouseMaster = (
+  houseId: string,
+  req: { staff_member_id: string; academic_year_id: string }
+): Promise<HouseMasterRead> =>
+  api.post(`/housing/houses/${houseId}/house-master`, req).then(r => r.data);
 
 export const getHouse = (id: string): Promise<House> =>
   api.get(`/housing/houses/${id}`).then(r => r.data);

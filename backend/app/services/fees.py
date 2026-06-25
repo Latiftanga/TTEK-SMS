@@ -195,15 +195,20 @@ async def bulk_assign_fees(
     enrollments = (await db.scalars(q)).all()
     assigned = skipped = 0
 
-    for te in enrollments:
-        existing = await db.scalar(
-            select(StudentFeeRecord).where(
-                StudentFeeRecord.student_id == te.student_id,
+    # Bulk-load existing assignments to avoid N+1 queries
+    student_ids = [te.student_id for te in enrollments]
+    already_assigned: set[uuid.UUID] = set()
+    if student_ids:
+        already_assigned = set(await db.scalars(
+            select(StudentFeeRecord.student_id).where(
+                StudentFeeRecord.student_id.in_(student_ids),
                 StudentFeeRecord.fee_structure_id == structure_id,
                 StudentFeeRecord.school_id == school_id,
             )
-        )
-        if existing:
+        ))
+
+    for te in enrollments:
+        if te.student_id in already_assigned:
             skipped += 1
             continue
         db.add(StudentFeeRecord(

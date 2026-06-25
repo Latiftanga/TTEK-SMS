@@ -57,7 +57,7 @@ async def _teacher_view(
     ct = await db.scalar(
         select(ClassTeacher).where(
             ClassTeacher.staff_member_id == staff_id,
-            ClassTeacher.academic_term_id == term.id,
+            ClassTeacher.academic_year_id == term.academic_year_id,
             ClassTeacher.is_active.is_(True),
         )
     )

@@ -10,10 +10,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
+from app.core.permissions import invalidate_permissions
+from app.models.academic import ClassTeacher
 from app.models.academic import SchoolLevel
 from app.schemas.academic import (
     CatalogueRead,
@@ -209,7 +212,17 @@ async def assign_class_teacher(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
+    # Capture the outgoing class teacher before the upsert overwrites them.
+    prev_ct_id = await db.scalar(
+        select(ClassTeacher.staff_member_id).where(
+            ClassTeacher.class_id == class_id,
+            ClassTeacher.academic_year_id == req.academic_year_id,
+        )
+    )
     ct = await teacher_svc.assign_class_teacher(class_id, req, school_id, db)
+    if prev_ct_id and prev_ct_id != req.staff_member_id:
+        await invalidate_permissions(prev_ct_id)
+    await invalidate_permissions(req.staff_member_id)
     return ClassTeacherRead.model_validate(ct)
 
 

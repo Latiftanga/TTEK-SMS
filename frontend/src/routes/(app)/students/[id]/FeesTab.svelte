@@ -25,12 +25,12 @@
   // Three reactive queries — swap queryKey when termId changes; TanStack Query handles caching & dedup
   const recordsOpts  = writable({ queryKey: ['student-fee-records',  studentId, termId] as const, queryFn: () => listStudentFeeRecords(studentId, termId), enabled: !!termId, staleTime: 60_000 });
   const paymentsOpts = writable({ queryKey: ['student-payments',      studentId, termId] as const, queryFn: () => listPayments(studentId, termId),          enabled: !!termId, staleTime: 60_000 });
-  const summaryOpts  = writable({ queryKey: ['student-fee-summary',   studentId, termId] as const, queryFn: () => getFeeSummary(studentId, termId),         enabled: !!termId, staleTime: 60_000 });
+  const summaryOpts  = writable({ queryKey: ['student-fee-summary',   studentId, termId] as const, queryFn: () => getFeeSummary(studentId, termId),         enabled: !!termId, staleTime: 60_000, retry: false });
   $effect(() => {
     const sid = studentId, tid = termId;
     recordsOpts.set({  queryKey: ['student-fee-records',  sid, tid] as const, queryFn: () => listStudentFeeRecords(sid, tid), enabled: !!tid, staleTime: 60_000 });
     paymentsOpts.set({ queryKey: ['student-payments',      sid, tid] as const, queryFn: () => listPayments(sid, tid),          enabled: !!tid, staleTime: 60_000 });
-    summaryOpts.set({  queryKey: ['student-fee-summary',   sid, tid] as const, queryFn: () => getFeeSummary(sid, tid),         enabled: !!tid, staleTime: 60_000 });
+    summaryOpts.set({  queryKey: ['student-fee-summary',   sid, tid] as const, queryFn: () => getFeeSummary(sid, tid),         enabled: !!tid, staleTime: 60_000, retry: false });
   });
   const recordsQ  = createQuery(recordsOpts);
   const paymentsQ = createQuery(paymentsOpts);

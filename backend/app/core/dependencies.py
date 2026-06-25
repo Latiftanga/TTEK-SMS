@@ -192,3 +192,43 @@ def require_permission(module: str, action: str):
         return ids
 
     return _enforce
+
+
+async def assert_self_or_permission(
+    user_id: uuid.UUID,
+    target_staff_id: uuid.UUID,
+    module: str,
+    action: str,
+    db: AsyncSession,
+) -> None:
+    """
+    Allow the call if the requesting user IS the target staff member (own-record
+    access) OR if they hold the required permission.  Raises 403 otherwise.
+
+    Use this for endpoints a staff member must be able to call on their own
+    record even without a broad permission (e.g. reading/editing their own
+    qualifications, viewing their own leave history).
+    """
+    from app.models.auth import User
+
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account not found or has been deactivated.",
+        )
+    if user.is_superadmin:
+        return
+    if user.staff_member_id and user.staff_member_id == target_staff_id:
+        return
+    if not user.staff_member_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied: '{module}.{action}' requires a staff account.",
+        )
+    perms = await resolve_permissions(user.staff_member_id, db)
+    if not perms.get(f"{module}.{action}", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied: your role does not allow '{module}.{action}'.",
+        )

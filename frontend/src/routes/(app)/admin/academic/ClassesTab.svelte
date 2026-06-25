@@ -2,28 +2,20 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { listClasses, listProgrammes, listAllTerms, updateClass, type SchoolClass } from '$lib/api/academic';
+  import { listClasses, listProgrammes, updateClass, type SchoolClass } from '$lib/api/academic';
   import ClassCreateForm from './ClassCreateForm.svelte';
   import ClassEditModal from './ClassEditModal.svelte';
-  import ClassRowCells from './ClassRowCells.svelte';
-  import SubjectsModal from './SubjectsModal.svelte';
-  import ClassTeacherModal from './ClassTeacherModal.svelte';
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
 
   const { schoolType } = $props<{ schoolType: string }>();
   const qc = useQueryClient();
 
-  // ── Modal / panel state ───────────────────────────────────────────────────────
-  let showAddForm       = $state(false);
-  let editModal         = $state<SchoolClass | null>(null);
-  let subjectsModal     = $state<{ id: string; name: string } | null>(null);
-  let classTeacherModal = $state<{ id: string; name: string } | null>(null);
+  let showAddForm = $state(false);
+  let editModal   = $state<SchoolClass | null>(null);
 
   const classesQuery    = createQuery({ queryKey: ['classes'],    queryFn: listClasses,    staleTime: 2 * 60_000 });
   const programmesQuery = createQuery({ queryKey: ['programmes'], queryFn: listProgrammes, enabled: schoolType === 'SHS', staleTime: 5 * 60_000 });
-  const termsQuery      = createQuery({ queryKey: ['all-terms'],  queryFn: listAllTerms,   staleTime: 5 * 60_000 });
-  const currentYearId   = $derived(($termsQuery.data ?? []).find(t => t.is_current)?.academic_year_id ?? '');
 
   // ── Filters from URL ──────────────────────────────────────────────────────────
   const search          = $derived($page.url.searchParams.get('q')      ?? '');
@@ -33,7 +25,7 @@
   const filterLevel     = $derived($page.url.searchParams.get('level')  ?? '');
   const currentPage     = $derived(Number($page.url.searchParams.get('p') ?? '1'));
 
-  function setParam(key: string, value: string, extra: Record<string, string> | undefined) {
+  function setParam(key: string, value: string, extra: Record<string, string> | undefined = undefined) {
     const url = new URL($page.url);
     if (value) url.searchParams.set(key, value); else url.searchParams.delete(key);
     if (extra) { for (const [k, v] of Object.entries(extra)) { if (v) url.searchParams.set(k, v); else url.searchParams.delete(k); } }
@@ -47,11 +39,9 @@
     goto(url.toString(), { replaceState: true, keepFocus: true, noScroll: true });
   }
 
-  function clearFilters() {
-    goto($page.url.pathname, { replaceState: true, noScroll: true });
-  }
+  function clearFilters() { goto($page.url.pathname, { replaceState: true, noScroll: true }); }
 
-  // ── Derived data ─────────────────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────────
   const all = $derived<SchoolClass[]>($classesQuery.data ?? []);
   const availableLevels = $derived([...new Set(all.map(c => c.level))].sort());
   const availableYears  = $derived([...new Set(all.filter(c => !filterLevel || c.level === filterLevel).map(c => c.year_group))].sort((a, b) => a - b));
@@ -159,8 +149,6 @@
           <tr class="border-b border-[var(--border)] text-left">
             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Class</th>
             <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] sm:table-cell">Capacity</th>
-            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] md:table-cell">Subjects</th>
-            <th class="hidden px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)] md:table-cell">Class Teacher</th>
             <th class="px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Status</th>
             <th class="px-4 py-2.5"></th>
           </tr>
@@ -168,24 +156,25 @@
         <tbody class="divide-y divide-[var(--border)]">
           {#each paged as cls (cls.id)}
             <tr class="group transition hover:bg-[var(--bg)]">
-              <td class="px-4 py-2.5">
+              <td class="px-4 py-3">
                 <a href="/admin/academic/classes/{cls.id}"
                   class="font-medium text-[var(--fg)] transition hover:text-[var(--brand)] hover:underline underline-offset-2">
                   {cls.display_name}
                 </a>
               </td>
-              <td class="hidden px-4 py-2.5 text-[var(--fg-muted)] sm:table-cell">{cls.capacity ?? '—'}</td>
-              <ClassRowCells
-                classId={cls.id}
-                {currentYearId}
-                onSubjects={() => subjectsModal = { id: cls.id, name: cls.display_name }}
-                onTeacher={() => classTeacherModal = { id: cls.id, name: cls.display_name }}
-              />
-              <td class="px-4 py-2.5">
+              <td class="hidden px-4 py-3 text-[var(--fg-muted)] sm:table-cell">{cls.capacity ?? '—'}</td>
+              <td class="px-4 py-3">
                 <span class="badge {cls.is_active ? 'badge-success' : 'badge-neutral'}">{cls.is_active ? 'Active' : 'Inactive'}</span>
               </td>
-              <td class="px-4 py-2.5 text-right">
+              <td class="px-4 py-3 text-right">
                 <div class="flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
+                  <a href="/admin/academic/classes/{cls.id}"
+                    class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--brand)] transition hover:bg-[var(--hover)]">
+                    Manage
+                    <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/>
+                    </svg>
+                  </a>
                   <button onclick={() => editModal = cls}
                     class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
                     <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
@@ -215,10 +204,4 @@
 
 {#if editModal}
   <ClassEditModal cls={editModal} onClose={() => editModal = null} />
-{/if}
-{#if subjectsModal}
-  <SubjectsModal classId={subjectsModal.id} className={subjectsModal.name} onClose={() => subjectsModal = null} />
-{/if}
-{#if classTeacherModal}
-  <ClassTeacherModal classId={classTeacherModal.id} className={classTeacherModal.name} {currentYearId} onClose={() => classTeacherModal = null} />
 {/if}

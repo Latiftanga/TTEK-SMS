@@ -260,3 +260,39 @@ StaffMemberDetail.model_rebuild()
 class TempPasswordResult(BaseModel):
     temporary_password: str
     display_name: str
+
+
+# ── Responsibilities ──────────────────────────────────────────────────────────
+
+class ClassTeacherAssignment(BaseModel):
+    class_id: uuid.UUID
+    class_name: str
+    academic_year_id: uuid.UUID
+    academic_year_name: str
+    is_active: bool
+
+
+class SubjectAssignment(BaseModel):
+    class_id: uuid.UUID
+    class_name: str
+    subject_id: uuid.UUID
+    subject_name: str
+    academic_term_id: uuid.UUID
+    term_name: str
+    academic_year_name: str
+    is_active: bool
+
+
+class HouseAssignment(BaseModel):
+    house_id: uuid.UUID
+    house_name: str
+    house_code: str
+    academic_year_id: uuid.UUID
+    academic_year_name: str
+    is_active: bool
+
+
+class StaffResponsibilities(BaseModel):
+    class_teacher: ClassTeacherAssignment | None
+    subject_assignments: list[SubjectAssignment]
+    house_assignments: list[HouseAssignment]

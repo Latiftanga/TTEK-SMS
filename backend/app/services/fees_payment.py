@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.fees import FeeDiscount, FeeInstalmentPlan, FeePayment, FeeStructure, StudentFeeRecord
+from app.models.fees import FeeDiscount, FeeInstalmentPlan, FeePayment, FeeStructure, StudentFeeRecord, StudentFeeSummary
 from app.models.school import School
 from app.schemas.fees import (
     FeeDiscountCreate, FeeDiscountRead,
@@ -71,13 +71,24 @@ async def record_payment(
         fee_type_name = fee_type.name if fee_type else "fee"
     else:
         fee_type_name = "fee"
+
+    # Use the trigger-updated summary for the true remaining balance across all fees
+    summary = await db.scalar(
+        select(StudentFeeSummary).where(
+            StudentFeeSummary.student_id == rec.student_id,
+            StudentFeeSummary.academic_term_id == rec.academic_term_id,
+            StudentFeeSummary.school_id == school_id,
+        )
+    )
+    balance = float(summary.balance) if summary else max(0.0, float(rec.amount_due) - float(req.amount_paid))
+
     await sms_svc.notify_fee_receipt(
         student_id=rec.student_id,
         school_id=school_id,
         school_short=(school.short_name or school.name) if school else "",
         amount=req.amount_paid,
         fee_type_name=fee_type_name,
-        balance=rec.amount_due - req.amount_paid,
+        balance=balance,
         entity_id=payment.id,
         db=db,
     )

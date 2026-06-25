@@ -95,13 +95,13 @@ class Assessment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("class.id", ondelete="CASCADE"), nullable=False, index=True
     )
     subject_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("subject.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("subject.id"), nullable=False, index=True
     )
     assessment_type_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("assessment_type.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("assessment_type.id"), nullable=False, index=True
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     max_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)

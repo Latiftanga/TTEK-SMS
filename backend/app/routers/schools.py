@@ -152,8 +152,13 @@ async def list_my_positions(
         .where(or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)))
         .order_by(StaffPosition.name)
     )
+    # CLASS_TEACHER and HOUSEMASTER are derived from actual assignments,
+    # not manually granted — exclude them from the manual picker.
+    DERIVED_CODES = {"CLASS_TEACHER", "HOUSEMASTER"}
     seen: dict[str, StaffPosition] = {}
     for pos in rows:
+        if pos.code in DERIVED_CODES:
+            continue
         if pos.code not in seen or pos.school_id is not None:
             seen[pos.code] = pos
     return sorted(seen.values(), key=lambda p: p.name)

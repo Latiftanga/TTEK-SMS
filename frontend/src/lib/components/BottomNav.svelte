@@ -1,23 +1,37 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { currentUser } from '$lib/stores/auth';
+  import { userRole } from '$lib/stores/permissions';
+  import { IC, type NavRole } from '$lib/nav';
 
   interface Props { onmore: () => void; }
   const { onmore }: Props = $props();
 
-  const ic = {
-    dashboard:  `<path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>`,
-    attendance: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>`,
-    scores:     `<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>`,
-    fees:       `<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>`,
-    menu:       `<circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/>`,
-  };
+  interface Tab {
+    href:  string;
+    label: string;
+    icon:  string;
+    exact?: boolean;
+    roles?: NavRole[];
+  }
 
-  const tabs = [
-    { href: '/dashboard', label: 'Home',       icon: ic.dashboard,  exact: true },
-    { href: '/attendance',label: 'Attendance', icon: ic.attendance              },
-    { href: '/scores',    label: 'Scores',     icon: ic.scores                  },
-    { href: '/fees',      label: 'Fees',       icon: ic.fees                    },
+  const ALL_TABS: Tab[] = [
+    { href: '/dashboard',   label: 'Home',       icon: IC.dashboard,   exact: true },
+    { href: '/attendance',  label: 'Attendance', icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
+    { href: '/assessments', label: 'Scores',     icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
+    { href: '/fees',        label: 'Fees',       icon: IC.fees,        roles: ['finance', 'admin'] },
+    { href: '/housing',     label: 'Housing',    icon: IC.housing,     roles: ['admin', 'housemaster'] },
+    { href: '/reports',     label: 'Reports',    icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
+    { href: '/students',    label: 'Students',   icon: IC.students,    roles: ['admin'] },
   ];
+
+  const tabs = $derived.by(() => {
+    const role = $userRole as NavRole | null;
+    const isSuperadmin = $currentUser?.is_superadmin ?? false;
+    return ALL_TABS
+      .filter(t => isSuperadmin || !t.roles || (role !== null && t.roles.includes(role)))
+      .slice(0, 4);
+  });
 
   function isActive(href: string, exact: boolean | undefined) {
     const p = $page.url.pathname;
@@ -35,24 +49,20 @@
 >
   <div class="flex h-[62px] items-center px-2">
 
-    {#each tabs as tab}
+    {#each tabs as tab (tab.href)}
       {@const active = isActive(tab.href, tab.exact)}
       <a
         href={tab.href}
         aria-current={active ? 'page' : undefined}
         class="flex flex-1 flex-col items-center justify-center gap-1 py-2 select-none"
       >
-        <!-- Pill capsule wrapping the icon -->
         <div
           class="flex h-8 w-14 items-center justify-center rounded-2xl transition-all duration-200"
           style={active ? 'background-color: rgba(var(--brand-rgb), 0.13)' : ''}
         >
           <svg
             class="transition-all duration-200"
-            style="
-              width: 22px; height: 22px;
-              color: {active ? 'var(--brand)' : 'var(--fg-muted)'};
-            "
+            style="width: 22px; height: 22px; color: {active ? 'var(--brand)' : 'var(--fg-muted)'};"
             fill="none"
             stroke="currentColor"
             stroke-width={active ? '2.2' : '1.6'}
@@ -62,8 +72,6 @@
             {@html tab.icon}
           </svg>
         </div>
-
-        <!-- Label -->
         <span
           class="text-[10px] font-semibold leading-none transition-colors duration-200"
           style="color: {active ? 'var(--brand)' : 'var(--fg-muted)'}"
@@ -87,7 +95,7 @@
           viewBox="0 0 24 24"
           aria-hidden="true"
         >
-          {@html ic.menu}
+          <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
         </svg>
       </div>
       <span class="text-[10px] font-semibold leading-none" style="color: var(--fg-muted)">More</span>

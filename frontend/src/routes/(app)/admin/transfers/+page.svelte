@@ -89,7 +89,7 @@
 
             <!-- Reason -->
             <p class="hidden max-w-xs truncate text-xs text-[var(--fg-muted)] sm:block">
-              {tr.reason ?? <span class="text-[var(--fg-subtle)] italic">No reason given</span>}
+              {#if tr.reason}{tr.reason}{:else}<span class="text-[var(--fg-subtle)] italic">No reason given</span>{/if}
             </p>
 
             <!-- Actions -->

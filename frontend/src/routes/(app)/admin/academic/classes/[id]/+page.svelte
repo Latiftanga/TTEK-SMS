@@ -2,23 +2,17 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { getClass, updateClass, listAllTerms, listYears } from '$lib/api/academic';
+  import { getClass, updateClass } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
   import StudentsTab from './StudentsTab.svelte';
   import SubjectsTab from './SubjectsTab.svelte';
-  import TeachersTab from './TeachersTab.svelte';
 
   const qc      = useQueryClient();
   const classId = $derived($page.params.id);
 
-  const classQ  = createQuery({ queryKey: ['class', classId], queryFn: () => getClass(classId), staleTime: 60_000 });
-  const yearsQ  = createQuery({ queryKey: ['academic-years'], queryFn: listYears,    staleTime: 5 * 60_000 });
-  const termsQ  = createQuery({ queryKey: ['all-terms'],      queryFn: listAllTerms, staleTime: 5 * 60_000 });
+  const classQ = createQuery({ queryKey: ['class', classId], queryFn: () => getClass(classId), staleTime: 60_000 });
 
-  const currentYearId = $derived(($termsQ.data ?? []).find(t => t.is_current)?.academic_year_id ?? '');
-  const currentTermId = $derived(($termsQ.data ?? []).find(t => t.is_current)?.id ?? '');
-
-  type Tab = 'students' | 'subjects' | 'teachers';
+  type Tab = 'students' | 'subjects';
   let activeTab = $state<Tab>('students');
 
   // ── Edit ──────────────────────────────────────────────────────────────────────
@@ -132,7 +126,7 @@
   <!-- Tab nav -->
   <div class="mb-5 border-b border-[var(--border)]">
     <nav class="-mb-px flex gap-1">
-      {#each ([['students','Students'],['subjects','Subjects'],['teachers','Teachers']] as const) as [key, label]}
+      {#each ([['students','Students'],['subjects','Subjects']] as const) as [key, label]}
         <button onclick={() => activeTab = key}
           class="relative px-4 pb-3 pt-1 text-sm font-medium transition
                  {activeTab === key ? 'text-[var(--brand)]' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
@@ -148,10 +142,8 @@
   <!-- Tab content -->
   {#if activeTab === 'students'}
     <StudentsTab {classId} capacity={c.capacity} />
-  {:else if activeTab === 'subjects'}
-    <SubjectsTab {classId} />
   {:else}
-    <TeachersTab {classId} {currentYearId} {currentTermId} years={$yearsQ.data ?? []} terms={$termsQ.data ?? []} />
+    <SubjectsTab {classId} />
   {/if}
 {/if}
 

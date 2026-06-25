@@ -12,8 +12,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
+from app.core.permissions import invalidate_permissions
+from app.models.housing import HouseMaster
 from app.schemas.housing import (
     AssignmentCreate, AssignmentRead, AssignmentVacate,
     ExeatApprove, ExeatCreate, ExeatRead, ExeatReturn,
@@ -146,7 +150,20 @@ async def assign_house_master(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.assign_house_master(house_id, req, school_id, db)
+    # Collect currently active housemasters before reassignment so we can
+    # bust their permission cache (they lose HOUSEMASTER derived role).
+    prev_ids = list(await db.scalars(
+        select(HouseMaster.staff_member_id).where(
+            HouseMaster.house_id == house_id,
+            HouseMaster.academic_year_id == req.academic_year_id,
+            HouseMaster.is_active.is_(True),
+        )
+    ))
+    result = await svc.assign_house_master(house_id, req, school_id, db)
+    for sid in prev_ids:
+        await invalidate_permissions(sid)
+    await invalidate_permissions(req.staff_member_id)
+    return result
 
 
 @router.get("/houses/{house_id}/students", response_model=list[StudentInHouseRead])

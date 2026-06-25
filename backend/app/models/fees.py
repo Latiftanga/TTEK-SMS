@@ -125,10 +125,10 @@ class StudentFeeRecord(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False, index=True
     )
     fee_structure_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("fee_structure.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("fee_structure.id"), nullable=False, index=True
     )
     amount_due: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -148,7 +148,7 @@ class FeePayment(Base, UUIDPrimaryKey, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False, index=True
     )
     fee_record_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("student_fee_record.id", ondelete="CASCADE"), nullable=False, index=True
@@ -187,10 +187,10 @@ class FeeDiscount(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
     )
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False, index=True
     )
     fee_record_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("student_fee_record.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("student_fee_record.id", ondelete="CASCADE"), nullable=False, index=True
     )
     discount_type: Mapped[DiscountType] = mapped_column(SAEnum(DiscountType, name="discounttype"), nullable=False)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -211,7 +211,7 @@ class FeeInstalmentPlan(Base, UUIDPrimaryKey, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
     )
     fee_record_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("student_fee_record.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("student_fee_record.id", ondelete="CASCADE"), nullable=False, index=True
     )
     instalment_number: Mapped[int] = mapped_column(nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)

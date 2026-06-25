@@ -59,6 +59,8 @@ async def mark_attendance(
 
     now = datetime.now(timezone.utc)
     saved: list[AttendanceRecord] = []
+    new_absent_ids: set = set()   # student_ids that are newly marked ABSENT (not re-marks)
+
     for mark in req.records:
         existing = await db.scalar(
             select(AttendanceRecord).where(
@@ -86,23 +88,26 @@ async def mark_attendance(
             )
             db.add(rec)
             saved.append(rec)
+            if mark.status == AttendanceStatus.ABSENT:
+                new_absent_ids.add(mark.student_id)
 
     await db.flush()
 
-    # Fire absence alerts — only for ABSENT marks; skip re-marks to avoid spam
-    school = await db.get(School, school_id)
-    school_short = (school.short_name or school.name) if school else ""
-    absence_date = cal.date.isoformat()
-    for rec, mark in zip(saved, req.records):
-        if mark.status == AttendanceStatus.ABSENT:
-            await sms_svc.notify_attendance_absent(
-                student_id=mark.student_id,
-                school_id=school_id,
-                school_short=school_short,
-                absence_date=absence_date,
-                entity_id=rec.id,
-                db=db,
-            )
+    # Fire absence alerts only for NEW ABSENT marks — never on re-marks
+    if new_absent_ids:
+        school = await db.get(School, school_id)
+        school_short = (school.short_name or school.name) if school else ""
+        absence_date = cal.date.isoformat()
+        for rec, mark in zip(saved, req.records):
+            if mark.student_id in new_absent_ids:
+                await sms_svc.notify_attendance_absent(
+                    student_id=mark.student_id,
+                    school_id=school_id,
+                    school_short=school_short,
+                    absence_date=absence_date,
+                    entity_id=rec.id,
+                    db=db,
+                )
 
     return [_to_read(r) for r in saved]
 
@@ -157,7 +162,7 @@ async def get_summary(
     absent  = counts.get("ABSENT", 0)
     late    = counts.get("LATE", 0)
     excused = counts.get("EXCUSED", 0)
-    rate    = round(present / total * 100, 1) if total > 0 else 0.0
+    rate    = round((present + late + excused) / total * 100, 1) if total > 0 else 0.0
 
     return AttendanceSummaryRead(
         student_id=student_id,
@@ -242,7 +247,8 @@ async def get_class_summaries(
         present = counts.get("PRESENT", 0)
         absent  = counts.get("ABSENT", 0)
         late    = counts.get("LATE", 0)
-        rate    = round(present / total_days * 100, 1) if total_days > 0 else 0.0
+        excused = counts.get("EXCUSED", 0)
+        rate    = round((present + late + excused) / total_days * 100, 1) if total_days > 0 else 0.0
         result.append(StudentAbsenceSummary(
             student_id=sid,
             days_absent=absent,

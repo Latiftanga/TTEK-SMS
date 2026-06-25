@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_auth, require_permission
+from app.core.dependencies import assert_self_or_permission, require_auth, require_permission
 from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -42,6 +42,7 @@ from app.schemas.staff import (
     StaffMemberDetail,
     StaffMemberSummary,
     StaffMemberUpdate,
+    StaffResponsibilities,
     TempPasswordResult,
 )
 from app.services import auth_invite as invite_svc
@@ -49,6 +50,7 @@ from app.services import staff as staff_svc
 from app.services import staff_contacts as contacts_svc
 from app.services import staff_import as import_svc
 from app.services import staff_leave as leave_svc
+from app.services import staff_responsibilities as responsibilities_svc
 from app.services.staff_import_template import build_template
 
 router = APIRouter(prefix="/staff", tags=["staff"])
@@ -192,13 +194,25 @@ async def review_leave(
     return LeaveRead.model_validate(leave)
 
 
+@router.get("/{staff_id}/responsibilities", response_model=StaffResponsibilities)
+async def get_staff_responsibilities(
+    staff_id: uuid.UUID,
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
+    return await responsibilities_svc.get_responsibilities(staff_id, school_id, db)
+
+
 @router.get("/{staff_id}", response_model=StaffMemberDetail)
 async def get_staff(
     staff_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "view")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
     return await staff_svc.get_staff(staff_id, school_id, db)
 
 
@@ -206,10 +220,30 @@ async def get_staff(
 async def update_staff(
     staff_id: uuid.UUID,
     req: StaffMemberUpdate,
-    ids=Depends(require_permission("staff", "edit")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
+
+    # Self-edit without staff.edit permission: restrict to personal-contact fields only.
+    # Superadmins and staff with staff.edit may update any field.
+    from app.models.auth import User
+    from app.core.permissions import resolve_permissions
+    caller = await db.get(User, user_id)
+    is_self = caller and caller.staff_member_id == staff_id
+    has_edit = caller and caller.is_superadmin or (
+        caller and caller.staff_member_id and
+        (await resolve_permissions(caller.staff_member_id, db)).get("staff.edit", False)
+    )
+    if is_self and not has_edit:
+        req = StaffMemberUpdate(
+            phone=req.phone,
+            email=req.email,
+            address=req.address,
+            marital_status=req.marital_status,
+        )
+
     return await staff_svc.update_staff(staff_id, req, school_id, db)
 
 
@@ -301,10 +335,11 @@ async def delete_emergency_contact(
 async def add_qualification(
     staff_id: uuid.UUID,
     req: QualificationCreate,
-    ids=Depends(require_permission("staff", "edit")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
     qual = await contacts_svc.add_qualification(staff_id, req, school_id, db)
     return QualificationRead.model_validate(qual)
 
@@ -314,10 +349,11 @@ async def update_qualification(
     staff_id: uuid.UUID,
     qual_id: uuid.UUID,
     req: QualificationUpdate,
-    ids=Depends(require_permission("staff", "edit")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
     qual = await contacts_svc.update_qualification(staff_id, qual_id, req, school_id, db)
     return QualificationRead.model_validate(qual)
 
@@ -326,10 +362,11 @@ async def update_qualification(
 async def delete_qualification(
     staff_id: uuid.UUID,
     qual_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "edit")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
     await contacts_svc.delete_qualification(staff_id, qual_id, school_id, db)
 
 
@@ -370,10 +407,11 @@ async def record_promotion(
 @router.get("/{staff_id}/promotions", response_model=list[PromotionRead])
 async def list_promotions(
     staff_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "view")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
     return await leave_svc.list_promotions(staff_id, school_id, db)
 
 
@@ -381,10 +419,11 @@ async def list_promotions(
 async def submit_leave(
     staff_id: uuid.UUID,
     req: LeaveCreate,
-    ids=Depends(require_permission("staff", "edit")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
     leave = await leave_svc.submit_leave(staff_id, req, school_id, db)
     return LeaveRead.model_validate(leave)
 
@@ -392,10 +431,11 @@ async def submit_leave(
 @router.get("/{staff_id}/leave", response_model=list[LeaveRead])
 async def list_leave(
     staff_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "view")),
+    ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
     leaves = await leave_svc.list_leave(staff_id, school_id, db)
     return [LeaveRead.model_validate(l) for l in leaves]
 

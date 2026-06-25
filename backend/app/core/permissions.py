@@ -139,8 +139,10 @@ async def resolve_permissions(
     if cached is not None:
         return cached
 
-    from app.models.auth import PositionPermission, StaffPermission
+    from app.models.auth import PositionPermission, StaffPermission, StaffPosition
     from app.models.staff import StaffMember, staff_member_positions
+    from app.models.academic import ClassTeacher
+    from app.models.housing import HouseMaster
 
     perms: dict[str, bool] = {}
 
@@ -153,7 +155,35 @@ async def resolve_permissions(
                 staff_member_positions.c.staff_member_id == staff_member_id
             )
         )
-        position_ids = [r[0] for r in pos_id_rows]
+        position_ids = list(r[0] for r in pos_id_rows)
+
+        # Auto-derive CLASS_TEACHER and HOUSEMASTER positions from actual
+        # assignments — staff don't get manually granted these roles.
+        derived_codes: list[str] = []
+        is_ct = await db.scalar(
+            select(ClassTeacher.id).where(
+                ClassTeacher.staff_member_id == staff_member_id,
+                ClassTeacher.is_active == True,  # noqa: E712
+            ).limit(1)
+        )
+        if is_ct:
+            derived_codes.append("CLASS_TEACHER")
+
+        is_hm = await db.scalar(
+            select(HouseMaster.id).where(
+                HouseMaster.staff_member_id == staff_member_id,
+                HouseMaster.is_active == True,  # noqa: E712
+            ).limit(1)
+        )
+        if is_hm:
+            derived_codes.append("HOUSEMASTER")
+
+        if derived_codes:
+            derived_pos_ids = await db.scalars(
+                select(StaffPosition.id).where(StaffPosition.code.in_(derived_codes))
+            )
+            position_ids.extend(derived_pos_ids)
+
         if position_ids:
             position_rows = await db.execute(
                 select(PositionPermission).where(
