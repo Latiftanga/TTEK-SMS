@@ -26,6 +26,7 @@ class ScheduleRead(BaseModel):
 
 class CalendarGenerateRequest(BaseModel):
     term_id: uuid.UUID
+    force: bool = False  # when True, re-evaluates existing entries against current schedule
 
 
 class CalendarDayRead(BaseModel):

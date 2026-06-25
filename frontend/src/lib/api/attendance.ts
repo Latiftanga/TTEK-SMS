@@ -71,8 +71,8 @@ export const upsertSchedule = (data: {
 }): Promise<ScheduleDay> =>
   api.post('/attendance/schedule', data).then(r => r.data);
 
-export const generateCalendar = (termId: string): Promise<CalendarDay[]> =>
-  api.post('/attendance/calendar/generate', { term_id: termId }).then(r => r.data);
+export const generateCalendar = (termId: string, force = false): Promise<CalendarDay[]> =>
+  api.post('/attendance/calendar/generate', { term_id: termId, force }).then(r => r.data);
 
 export const listCalendar = (termId: string): Promise<CalendarDay[]> =>
   api.get('/attendance/calendar', { params: { term_id: termId } }).then(r => r.data);

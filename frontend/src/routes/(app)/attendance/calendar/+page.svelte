@@ -46,12 +46,18 @@
     }));
   });
 
-  // ── Generate ───────────────────────────────────────────────────────────────────
+  // ── Generate / force-regenerate ───────────────────────────────────────────────
+  let confirmRegen = $state(false);
+
   const genMut = createMutation({
-    mutationFn: () => generateCalendar(termId),
-    onSuccess: (res) => {
+    mutationFn: (force: boolean) => generateCalendar(termId, force),
+    onSuccess: (res, force) => {
       qc.invalidateQueries({ queryKey: ['calendar', termId] });
-      toast.success(`${res.length} calendar day(s) generated.`);
+      confirmRegen = false;
+      toast.success(force
+        ? `Calendar regenerated — ${res.length} day(s) updated.`
+        : `${res.length} calendar day(s) generated.`
+      );
     },
     onError: (e: unknown) => toast.error(
       (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not generate calendar.'
@@ -102,10 +108,27 @@
     </select>
   </div>
   {#if canManage && termId}
-    <button onclick={() => $genMut.mutate()} disabled={$genMut.isPending}
+    <button onclick={() => $genMut.mutate(false)} disabled={$genMut.isPending}
       class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] disabled:opacity-50 transition">
-      {$genMut.isPending ? 'Generating…' : 'Generate calendar'}
+      {$genMut.isPending && !confirmRegen ? 'Generating…' : 'Generate calendar'}
     </button>
+    {#if byMonth.length > 0}
+      {#if !confirmRegen}
+        <button onclick={() => confirmRegen = true}
+          class="rounded-xl border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30">
+          Regenerate
+        </button>
+      {:else}
+        <div class="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+          <span class="text-xs text-amber-700 dark:text-amber-300">Re-evaluate all days against current schedule?</span>
+          <button onclick={() => $genMut.mutate(true)} disabled={$genMut.isPending}
+            class="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition">
+            {$genMut.isPending ? '…' : 'Yes, regenerate'}
+          </button>
+          <button onclick={() => confirmRegen = false} class="text-xs text-amber-700 hover:text-amber-900 dark:text-amber-400 transition">Cancel</button>
+        </div>
+      {/if}
+    {/if}
   {/if}
 </div>
 

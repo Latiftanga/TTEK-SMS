@@ -9,9 +9,11 @@
   } from '$lib/api/attendance';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import { userRole } from '$lib/stores/permissions';
   setPageTitle('Attendance');
 
   const qc = useQueryClient();
+  const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
 
   // ── Selectors ─────────────────────────────────────────────────────────────────
   const today = new Date().toISOString().slice(0, 10);
@@ -174,8 +176,15 @@
 {:else if !isMarkable}
   <div class="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center dark:border-amber-900 dark:bg-amber-950/30">
     <p class="text-sm font-medium text-amber-700 dark:text-amber-400">
-      Cannot mark attendance on a {calDay.day_type.replace('_', ' ')} day.
+      Cannot mark attendance — this date is classified as <strong>{calDay.day_type.replace(/_/g, ' ')}</strong>.
     </p>
+    {#if canManage}
+      <p class="mt-1 text-xs text-amber-600 dark:text-amber-500">
+        If this is wrong, go to the <a href="/attendance/calendar" class="underline font-semibold">Calendar tab</a> to override this day, or use "Regenerate" to re-evaluate the whole term against the current schedule.
+      </p>
+    {:else}
+      <p class="mt-1 text-xs text-amber-600 dark:text-amber-500">Contact your administrator to correct this calendar entry.</p>
+    {/if}
   </div>
 {:else}
   <!-- Submission status banner -->

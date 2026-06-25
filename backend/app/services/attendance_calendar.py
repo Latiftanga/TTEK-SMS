@@ -94,26 +94,32 @@ async def generate_calendar(
     )
     holiday_dates: set[date] = {h.date for h in holiday_rows}
 
-    # Fetch dates already in the calendar for this term (skip them)
-    existing_dates_rows = await db.scalars(
-        select(SchoolCalendar.date).where(
+    # Fetch existing entries — for force mode we need the full objects to update in place
+    existing_rows = await db.scalars(
+        select(SchoolCalendar).where(
             SchoolCalendar.school_id == school_id,
             SchoolCalendar.academic_term_id == req.term_id,
         )
     )
-    existing_dates: set[date] = set(existing_dates_rows)
+    existing_map: dict[date, SchoolCalendar] = {r.date: r for r in existing_rows}
 
-    created: list[SchoolCalendar] = []
+    touched: list[SchoolCalendar] = []
     current = term.start_date
     while current <= term.end_date:
-        if current not in existing_dates:
-            dow = _WEEKDAY_TO_DOW[current.weekday()]
-            if current in holiday_dates:
-                day_type = DayType.PUBLIC_HOLIDAY
-            elif dow in school_days:
-                day_type = DayType.SCHOOL_DAY
-            else:
-                day_type = DayType.WEEKEND
+        dow = _WEEKDAY_TO_DOW[current.weekday()]
+        if current in holiday_dates:
+            day_type = DayType.PUBLIC_HOLIDAY
+        elif dow in school_days:
+            day_type = DayType.SCHOOL_DAY
+        else:
+            day_type = DayType.WEEKEND
+
+        if current in existing_map:
+            if req.force:
+                # Update in-place — preserves the row ID so AttendanceRecord FKs survive
+                existing_map[current].day_type = day_type
+                touched.append(existing_map[current])
+        else:
             cal = SchoolCalendar(
                 school_id=school_id,
                 date=current,
@@ -121,11 +127,11 @@ async def generate_calendar(
                 academic_term_id=req.term_id,
             )
             db.add(cal)
-            created.append(cal)
+            touched.append(cal)
         current += timedelta(days=1)
 
     await db.flush()
-    return created
+    return touched
 
 
 async def list_calendar(
