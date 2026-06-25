@@ -10,6 +10,7 @@
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import PageHeader from '$lib/components/PageHeader.svelte';
   setPageTitle('Assessments');
 
   const qc = useQueryClient();
@@ -88,6 +89,8 @@
     $createMut.mutate();
   }
 </script>
+
+<PageHeader title="Assessments" description="Enter scores, approve, and publish results by class and term." />
 
 <!-- Filters -->
 <div class="mb-5 flex flex-wrap items-end gap-3">

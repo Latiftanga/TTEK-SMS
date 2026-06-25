@@ -4,6 +4,7 @@
   import { toast } from '$lib/stores/toast';
   import ScaleCard from './ScaleCard.svelte';
   import { setPageTitle } from '$lib/stores/title';
+  import PageHeader from '$lib/components/PageHeader.svelte';
 
   const qc = useQueryClient();
   setPageTitle('Grading Scales');
@@ -42,13 +43,11 @@
   }
 </script>
 
-<div class="flex items-center justify-between mb-4">
-  <div>
-    <p class="text-sm font-semibold text-[var(--fg)]">Grading Scales</p>
-    <p class="text-xs text-[var(--fg-muted)]">Define letter grade bands. The default scale is used when approving scores.</p>
-  </div>
+<PageHeader title="Grading Scales" description="Define letter grade bands. The default scale is used when approving scores." />
+
+<div class="mb-4 flex justify-end">
   <button onclick={() => { showForm = !showForm; formError = ''; }}
-    class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 shrink-0"
+    class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
     style="background: var(--brand)">
     <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>

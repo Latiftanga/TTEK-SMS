@@ -6,6 +6,7 @@
   } from '$lib/api/assessments';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import PageHeader from '$lib/components/PageHeader.svelte';
 
   const qc = useQueryClient();
   setPageTitle('Assessment Types');
@@ -90,32 +91,25 @@
   }
 </script>
 
-<!-- Header -->
-<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-  <div>
-    <p class="text-sm font-semibold text-[var(--fg)]">Assessment Types</p>
-    <p class="text-xs text-[var(--fg-muted)]">
-      Define categories of assessment. Weights are percentages — they should sum to 100.
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    {#if ($typesQ.data ?? []).length > 0}
-      <span class="rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1 ring-inset
-        {weightOk
-          ? 'bg-green-50 text-green-700 ring-green-600/20 dark:bg-green-950/30 dark:text-green-400'
-          : 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'}">
-        Total: {totalWeight.toFixed(2)}%{weightOk ? ' ✓' : ' ≠ 100'}
-      </span>
-    {/if}
-    <button onclick={() => { showForm = !showForm; formError = ''; editingId = null; }}
-      class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
-      style="background: var(--brand)">
-      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-      </svg>
-      Add type
-    </button>
-  </div>
+<PageHeader title="Assessment Types" description="Define categories like class tests, exams, and projects. Weights must sum to 100." />
+
+<div class="mb-4 flex items-center justify-end gap-2">
+  {#if ($typesQ.data ?? []).length > 0}
+    <span class="rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1 ring-inset
+      {weightOk
+        ? 'bg-green-50 text-green-700 ring-green-600/20 dark:bg-green-950/30 dark:text-green-400'
+        : 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'}">
+      Total: {totalWeight.toFixed(2)}%{weightOk ? ' ✓' : ' ≠ 100'}
+    </span>
+  {/if}
+  <button onclick={() => { showForm = !showForm; formError = ''; editingId = null; }}
+    class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+    style="background: var(--brand)">
+    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+    </svg>
+    Add type
+  </button>
 </div>
 
 {#if showForm}
