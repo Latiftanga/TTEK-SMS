@@ -28,15 +28,9 @@
     }
   });
 
-  const studentOpts = writable({ class_id: '', active_only: true });
-  $effect(() => { studentOpts.set({ class_id: classId, active_only: true }); });
-
-  const studentsQ = createQuery({
-    queryKey: ['students', $studentOpts],
-    queryFn: () => listStudents($studentOpts),
-    enabled: !!classId,
-    staleTime: 60_000,
-  });
+  const studentOpts = writable({ queryKey: ['grad-students', ''], queryFn: () => listStudents({}), enabled: false, staleTime: 60_000 });
+  $effect(() => { if (classId) studentOpts.set({ queryKey: ['grad-students', classId], queryFn: () => listStudents({ class_id: classId, active_only: true }), enabled: true, staleTime: 60_000 }); });
+  const studentsQ = createQuery(studentOpts);
 
   // Per-student action map: student_id → GraduationType | 'SKIP'
   type Action = 'SKIP' | 'GRADUATED' | 'WITHDRAWN' | 'TRANSFERRED';
