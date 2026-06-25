@@ -24,7 +24,7 @@ from app.core.dependencies import assert_self_or_permission, require_auth, requi
 from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.schemas.auth import InvitationCreate
+from app.schemas.auth import InvitationCreate, StaffPermissionRead, StaffPermissionUpsert
 from app.schemas.documents import ImportBatchResult
 from app.schemas.staff import (
     EmergencyContactCreate,
@@ -50,6 +50,7 @@ from app.services import staff as staff_svc
 from app.services import staff_contacts as contacts_svc
 from app.services import staff_import as import_svc
 from app.services import staff_leave as leave_svc
+from app.services import staff_permissions as perms_svc
 from app.services import staff_responsibilities as responsibilities_svc
 from app.services.staff_import_template import build_template
 
@@ -474,3 +475,41 @@ async def export_staff_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="staff_register.pdf"'},
     )
+
+
+# ── Personal permission overrides ─────────────────────────────────────────────
+
+@router.get("/{staff_id}/permissions", response_model=list[StaffPermissionRead])
+async def list_staff_permissions(
+    staff_id: uuid.UUID,
+    ids=Depends(require_permission("school", "manage_users")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all 29 permissions with resolved source for a staff member."""
+    _, school_id = ids
+    return await perms_svc.list_permissions(staff_id, school_id, db)
+
+
+@router.post("/{staff_id}/permissions", response_model=list[StaffPermissionRead])
+async def set_staff_permission(
+    staff_id: uuid.UUID,
+    req: StaffPermissionUpsert,
+    ids=Depends(require_permission("school", "manage_users")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upsert a personal permission override for a staff member."""
+    _, school_id = ids
+    return await perms_svc.set_permission(staff_id, school_id, req, db)
+
+
+@router.delete("/{staff_id}/permissions/{module}/{action}", response_model=list[StaffPermissionRead])
+async def clear_staff_permission(
+    staff_id: uuid.UUID,
+    module: str,
+    action: str,
+    ids=Depends(require_permission("school", "manage_users")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a personal permission override, reverting to the position default."""
+    _, school_id = ids
+    return await perms_svc.clear_permission(staff_id, school_id, module, action, db)

@@ -71,6 +71,20 @@ class InvitationCreate(BaseModel):
     staff_member_id: uuid.UUID | None = None   # links resulting User to existing StaffMember
 
 
+class StaffPermissionRead(BaseModel):
+    module: str
+    action: str
+    effective: bool
+    source: str      # "override" | "position" | "default_deny"
+    override_is_allowed: bool | None = None
+
+
+class StaffPermissionUpsert(BaseModel):
+    module: str
+    action: str
+    is_allowed: bool
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str

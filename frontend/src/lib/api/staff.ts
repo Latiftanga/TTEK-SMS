@@ -407,3 +407,31 @@ export async function getStaffResponsibilities(staffId: string): Promise<StaffRe
   const { data } = await client.get<StaffResponsibilities>(`/staff/${staffId}/responsibilities`);
   return data;
 }
+
+export type PermissionSource = 'override' | 'position' | 'default_deny';
+
+export interface StaffPermission {
+  module: string;
+  action: string;
+  effective: boolean;
+  source: PermissionSource;
+  override_is_allowed: boolean | null;
+}
+
+export const listStaffPermissions = (staffId: string): Promise<StaffPermission[]> =>
+  client.get<StaffPermission[]>(`/staff/${staffId}/permissions`).then(r => r.data);
+
+export const setStaffPermission = (
+  staffId: string,
+  module: string,
+  action: string,
+  is_allowed: boolean,
+): Promise<StaffPermission[]> =>
+  client.post<StaffPermission[]>(`/staff/${staffId}/permissions`, { module, action, is_allowed }).then(r => r.data);
+
+export const clearStaffPermission = (
+  staffId: string,
+  module: string,
+  action: string,
+): Promise<StaffPermission[]> =>
+  client.delete<StaffPermission[]>(`/staff/${staffId}/permissions/${module}/${action}`).then(r => r.data);
