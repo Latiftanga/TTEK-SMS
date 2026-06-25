@@ -12,6 +12,7 @@
   import { listStudents } from '$lib/api/students';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
   import ScoreTable from './ScoreTable.svelte';
 
   const qc = useQueryClient();
@@ -106,9 +107,9 @@
     onSuccess: () => { goto('/assessments'); toast.success('Assessment deleted.'); },
     onError: () => toast.error('Could not delete assessment.'),
   });
-</script>
 
-<svelte:head><title>{$assessmentQ.data?.name ?? 'Assessment'}</title></svelte:head>
+  $effect(() => setPageTitle($assessmentQ.data?.name ?? 'Assessment'));
+</script>
 
 <button onclick={() => goto('/assessments')}
   class="mb-3 flex items-center gap-1 text-xs text-[var(--fg-muted)] transition hover:text-[var(--fg)]">

@@ -4,6 +4,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getStudent, updateStudent } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
   import ProfileTab    from './ProfileTab.svelte';
   import GuardiansTab  from './GuardiansTab.svelte';
   import EnrollmentTab from './EnrollmentTab.svelte';
@@ -46,11 +47,9 @@
   function initials(first: string, last: string) {
     return (first[0] + last[0]).toUpperCase();
   }
-</script>
 
-<svelte:head>
-  <title>{$query.data?.display_name ?? 'Student'} — Profile</title>
-</svelte:head>
+  $effect(() => setPageTitle($query.data?.display_name ?? 'Student'));
+</script>
 
 <div class="mb-2">
   <button onclick={() => goto('/students')}

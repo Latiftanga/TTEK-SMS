@@ -5,8 +5,10 @@
   import { currentUser } from '$lib/stores/auth';
   import PaymentsTab from './PaymentsTab.svelte';
   import SetupTab    from './SetupTab.svelte';
+  import { setPageTitle } from '$lib/stores/title';
 
   const isAdmin = $derived($isSchoolAdmin || !!$currentUser?.is_superadmin);
+  setPageTitle('Fees');
 
   type Tab = 'payments' | 'setup';
   let activeTab = $state<Tab>('payments');
@@ -21,7 +23,6 @@
   const termName = $derived(terms.find(t => t.id === termId)?.name ?? '');
 </script>
 
-<svelte:head><title>Fees</title></svelte:head>
 
 <div class="space-y-6">
   <div class="flex flex-wrap items-center justify-between gap-3">

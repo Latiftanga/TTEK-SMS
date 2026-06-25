@@ -5,8 +5,10 @@
     type AssessmentType,
   } from '$lib/api/assessments';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
+  setPageTitle('Assessment Types');
 
   const typesQ = createQuery({
     queryKey: ['assessment-types'],

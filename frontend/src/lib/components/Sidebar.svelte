@@ -6,7 +6,7 @@
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
   import { logout } from '$lib/api/auth';
-  import { NAV_GROUPS, ROLE_LABELS, IC, type NavRole } from '$lib/nav';
+  import { NAV_GROUPS, ROLE_LABELS, IC, type NavRole, type NavItem, type ChildNavItem } from '$lib/nav';
 
   interface Props { open: boolean; onclose: () => void; }
   const { open, onclose }: Props = $props();
@@ -21,7 +21,6 @@
   // ── Role resolution ──────────────────────────────────────────────────────────
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
   const role         = $derived($userRole as NavRole | null);
-  const isAdmin      = $derived(isSuperadmin || role === 'admin');
 
   function canSee(roles: NavRole[] | undefined): boolean {
     if (isSuperadmin || !roles) return true;
@@ -31,15 +30,74 @@
 
   const visibleGroups = $derived(
     NAV_GROUPS
-      .map(g => ({ ...g, items: g.items.filter(i => canSee(i.roles)) }))
+      .map(g => ({
+        ...g,
+        items: g.items
+          .filter(i => canSee(i.roles))
+          .map(i => ({ ...i, children: i.children?.filter(c => canSee(c.roles)) })),
+      }))
       .filter(g => g.items.length > 0)
   );
 
+  // ── Active detection ─────────────────────────────────────────────────────────
   function isActive(href: string, exact: boolean | undefined) {
     const p = $page.url.pathname;
     return exact ? p === href : p.startsWith(href);
   }
 
+  function isChildActive(href: string, siblings: ChildNavItem[]): boolean {
+    const p = $page.url.pathname;
+    if (p === href) return true;
+    // Only match startsWith if no sibling is a more specific match for this path
+    const siblingMatch = siblings.some(s => s.href !== href && (p === s.href || p.startsWith(s.href + '/')));
+    return !siblingMatch && p.startsWith(href + '/');
+  }
+
+  function isParentActive(item: NavItem): boolean {
+    if (item.children?.length) {
+      return item.children.some(c => {
+        const p = $page.url.pathname;
+        return p === c.href || p.startsWith(c.href + '/');
+      });
+    }
+    return isActive(item.href, item.exact);
+  }
+
+  // ── Submenu open/close state (persisted) ─────────────────────────────────────
+  let openHrefs = $state<string[]>((() => {
+    if (!browser) return [];
+    const saved = JSON.parse(localStorage.getItem('sidebar_open') || '[]') as string[];
+    const path = window.location.pathname;
+    for (const g of NAV_GROUPS) {
+      for (const item of g.items) {
+        if (item.children && !saved.includes(item.href)) {
+          const hasActive = item.children.some(c => path === c.href || path.startsWith(c.href + '/'));
+          if (hasActive) saved.push(item.href);
+        }
+      }
+    }
+    return saved;
+  })());
+
+  // Auto-expand parent when navigating to a child page
+  $effect(() => {
+    const path = $page.url.pathname;
+    for (const g of NAV_GROUPS) {
+      for (const item of g.items) {
+        if (item.children && !openHrefs.includes(item.href)) {
+          const hasActive = item.children.some(c => path === c.href || path.startsWith(c.href + '/'));
+          if (hasActive) { openHrefs = [...openHrefs, item.href]; return; }
+        }
+      }
+    }
+  });
+
+  function toggleOpen(href: string) {
+    openHrefs = openHrefs.includes(href) ? openHrefs.filter(h => h !== href) : [...openHrefs, href];
+    if (browser) localStorage.setItem('sidebar_open', JSON.stringify(openHrefs));
+  }
+
+  // ── Misc ─────────────────────────────────────────────────────────────────────
   const schoolInitials = $derived.by(() => {
     const n = $school?.name ?? 'S';
     const words = n.split(' ').filter((w: string) => w.length > 1);
@@ -64,7 +122,7 @@
 
   const linkBase = $derived(collapsed
     ? 'group flex items-center justify-center rounded-lg p-2.5 transition-all duration-150 text-sm'
-    : 'group flex items-center gap-3 rounded-lg px-3 py-2 transition-all duration-150 text-sm'
+    : 'group flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all duration-150 text-sm'
   );
 
   function linkClass(active: boolean) {
@@ -73,7 +131,7 @@
       : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}`;
   }
 
-  const iconClass = (active: boolean) =>
+  const iconCls = (active: boolean) =>
     `h-[18px] w-[18px] shrink-0 transition-colors duration-150 ${active ? '' : 'group-hover:text-[var(--fg)]'}`;
 </script>
 
@@ -148,28 +206,69 @@
 
       <ul class="space-y-0.5 {gi > 0 && !group.heading ? 'mt-1' : ''}">
         {#each group.items as item}
-          {@const active = isActive(item.href, item.exact)}
+          {@const active   = isParentActive(item)}
+          {@const hasKids  = !!item.children?.length}
+          {@const expanded = !collapsed && hasKids && openHrefs.includes(item.href)}
           <li>
-            <a href={item.href}
-               onclick={onclose}
-               title={collapsed ? item.label : null}
-               aria-current={active ? 'page' : undefined}
-               class={linkClass(active)}
-               style={active
-                 ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);'
-                 : ''}>
-              <svg class={iconClass(active)}
-                   fill="none" stroke="currentColor"
-                   stroke-width={active ? '2.2' : '1.6'}
-                   viewBox="0 0 24 24"
-                   aria-hidden="true"
-                   style={active ? 'color: var(--brand)' : ''}>
-                {@html item.icon}
-              </svg>
-              {#if !collapsed}
-                <span class="truncate">{item.label}</span>
+            {#if hasKids}
+              <!-- Parent with submenu -->
+              <button
+                onclick={() => collapsed ? goto(item.href) : toggleOpen(item.href)}
+                title={collapsed ? item.label : undefined}
+                class={linkClass(active)}
+                style={active ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);' : ''}>
+                <svg class={iconCls(active)} fill="none" stroke="currentColor"
+                     stroke-width={active ? '2.2' : '1.6'} viewBox="0 0 24 24" aria-hidden="true"
+                     style={active ? 'color: var(--brand)' : ''}>
+                  {@html item.icon}
+                </svg>
+                {#if !collapsed}
+                  <span class="flex-1 truncate text-left">{item.label}</span>
+                  <svg class="h-3.5 w-3.5 shrink-0 transition-transform duration-200 {expanded ? 'rotate-180' : ''}"
+                       fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                    {@html IC.chevronD}
+                  </svg>
+                {/if}
+              </button>
+              <!-- Children -->
+              {#if expanded}
+                <ul class="mt-0.5 space-y-0.5 border-l border-[var(--border)] ml-[22px] pl-3">
+                  {#each item.children ?? [] as child}
+                    {@const childActive = isChildActive(child.href, item.children ?? [])}
+                    <li>
+                      <a href={child.href} onclick={onclose}
+                         aria-current={childActive ? 'page' : undefined}
+                         class="flex items-center rounded-md px-2 py-1.5 text-[0.8125rem] transition
+                                {childActive
+                                  ? 'font-semibold'
+                                  : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
+                         style={childActive ? 'color: var(--brand)' : ''}>
+                        {child.label}
+                      </a>
+                    </li>
+                  {/each}
+                </ul>
               {/if}
-            </a>
+            {:else}
+              <!-- Regular link -->
+              <a href={item.href}
+                 onclick={onclose}
+                 title={collapsed ? item.label : undefined}
+                 aria-current={active ? 'page' : undefined}
+                 class={linkClass(active)}
+                 style={active
+                   ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);'
+                   : ''}>
+                <svg class={iconCls(active)} fill="none" stroke="currentColor"
+                     stroke-width={active ? '2.2' : '1.6'} viewBox="0 0 24 24" aria-hidden="true"
+                     style={active ? 'color: var(--brand)' : ''}>
+                  {@html item.icon}
+                </svg>
+                {#if !collapsed}
+                  <span class="truncate">{item.label}</span>
+                {/if}
+              </a>
+            {/if}
           </li>
         {/each}
       </ul>

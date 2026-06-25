@@ -8,6 +8,8 @@
     type AttendanceStatus, type CalendarDay, type StudentAbsenceSummary,
   } from '$lib/api/attendance';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Attendance');
 
   const qc = useQueryClient();
 

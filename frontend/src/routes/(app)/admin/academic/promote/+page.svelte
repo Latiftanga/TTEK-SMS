@@ -4,8 +4,10 @@
   import { listStudents, bulkAssignStudentsToClass, bulkEnrollStudents } from '$lib/api/students';
   import { writable } from 'svelte/store';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
+  setPageTitle('Bulk Promotion');
 
   const classesQ = createQuery({ queryKey: ['classes'],        queryFn: listClasses, staleTime: 5 * 60_000 });
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
@@ -135,7 +137,6 @@
   };
 </script>
 
-<svelte:head><title>Bulk Promotion</title></svelte:head>
 
 <div class="space-y-6">
   <div>

@@ -10,6 +10,8 @@
   import StudentForm          from './StudentForm.svelte';
   import StudentImportDrawer  from './StudentImportDrawer.svelte';
   import BulkActionModal      from './BulkActionModal.svelte';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Students');
   import EmptyState           from '$lib/components/EmptyState.svelte';
   import PageHeader           from '$lib/components/PageHeader.svelte';
 
@@ -108,7 +110,6 @@
   }
 </script>
 
-<svelte:head><title>Students</title></svelte:head>
 
 <PageHeader title="Students" description="Manage enrolment, guardians, and student records.">
   <button onclick={() => importOpen = true} class="btn-ghost">

@@ -6,7 +6,9 @@
   import StaffImportModal from './StaffImportModal.svelte';
   import Badge            from '$lib/components/Badge.svelte';
   import EmptyState       from '$lib/components/EmptyState.svelte';
+  import { setPageTitle } from '$lib/stores/title';
 
+  setPageTitle('Staff');
   let drawerOpen   = $state(false);
   let importOpen   = $state(false);
   let search       = $state('');

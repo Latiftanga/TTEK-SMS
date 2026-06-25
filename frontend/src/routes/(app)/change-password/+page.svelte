@@ -1,6 +1,8 @@
 <script lang="ts">
   import { changePassword } from '$lib/api/auth';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Change Password');
 
   let current    = $state('');
   let next       = $state('');
@@ -42,7 +44,6 @@
   }
 </script>
 
-<svelte:head><title>Change Password</title></svelte:head>
 
 <div class="mx-auto max-w-md">
   <div class="mb-6">

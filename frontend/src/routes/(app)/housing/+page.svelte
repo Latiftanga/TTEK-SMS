@@ -6,8 +6,10 @@
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
+  setPageTitle('Housing');
   const canAdmin = $derived($userRole === 'admin');
 
   const schoolQ = createQuery({ queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000, enabled: () => canAdmin });
@@ -63,7 +65,6 @@
   };
 </script>
 
-<svelte:head><title>Housing</title></svelte:head>
 
 <PageHeader title="Housing" description="Boarding houses, room assignments, exeats, and night roll calls." />
 

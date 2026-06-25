@@ -3,6 +3,7 @@
   import { listSubjects, createSubject, updateSubject, type Subject } from '$lib/api/academic';
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   const qc = useQueryClient();
 
@@ -29,6 +30,8 @@
 
   const PAGE  = 20;
   const paged = $derived(filtered.slice((page - 1) * PAGE, page * PAGE));
+
+  let confirmDeactivateSubj = $state<{ id: string; name: string } | null>(null);
 
   // ── Create form ───────────────────────────────────────────────────────────────
   let showForm  = $state(false);
@@ -166,7 +169,7 @@
                       <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
                       Edit
                     </button>
-                    <button onclick={() => $updateMut.mutate({ id: subj.id, req: { is_active: !subj.is_active } })} disabled={$updateMut.isPending}
+                    <button onclick={() => subj.is_active ? (confirmDeactivateSubj = { id: subj.id, name: subj.name }) : $updateMut.mutate({ id: subj.id, req: { is_active: true } })} disabled={$updateMut.isPending}
                       class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-40 {subj.is_active ? 'text-red-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30' : 'text-green-500 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-950/30'}">
                       {#if subj.is_active}
                         <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -187,3 +190,14 @@
     <Pagination total={filtered.length} pageSize={PAGE} {page} label="subjects" onPageChange={(p) => page = p} />
   {/if}
 </div>
+
+<ConfirmModal
+  open={!!confirmDeactivateSubj}
+  title="Deactivate {confirmDeactivateSubj?.name ?? 'subject'}?"
+  message="This subject will be hidden from new class assignments. You can reactivate it at any time."
+  confirmLabel="Deactivate"
+  variant="warning"
+  isPending={$updateMut.isPending}
+  onConfirm={() => { $updateMut.mutate({ id: confirmDeactivateSubj!.id, req: { is_active: false } }); confirmDeactivateSubj = null; }}
+  onCancel={() => confirmDeactivateSubj = null}
+/>

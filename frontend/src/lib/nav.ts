@@ -6,12 +6,19 @@
 
 export type NavRole = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster';
 
-export interface NavItem {
+export interface ChildNavItem {
   href: string;
   label: string;
-  icon: string;      // SVG inner path(s) — rendered via {@html}
+  roles?: NavRole[];
+}
+
+export interface NavItem {
+  href: string;        // used for active detection; also link target in collapsed mode
+  label: string;
+  icon: string;        // SVG inner path(s) — rendered via {@html}
   exact?: boolean;
-  roles?: NavRole[]; // omit = all roles
+  roles?: NavRole[];
+  children?: ChildNavItem[];
 }
 
 export interface NavGroup {
@@ -36,6 +43,7 @@ const IC: Record<string, string> = {
   signOut:    `<path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>`,
   chevronL:   `<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>`,
   chevronR:   `<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>`,
+  chevronD:   `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>`,
 };
 
 export { IC };
@@ -48,7 +56,14 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
       { href: '/attendance',  label: 'Attendance',   icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
-      { href: '/assessments', label: 'Assessments',  icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
+      {
+        href: '/assessments', label: 'Assessments',  icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
+        children: [
+          { href: '/assessments',        label: 'Assessments',    roles: ['teacher', 'admin', 'approver'] },
+          { href: '/assessments/scales', label: 'Grading Scales', roles: ['admin', 'approver'] },
+          { href: '/assessments/types',  label: 'Types',          roles: ['admin', 'approver'] },
+        ],
+      },
       { href: '/fees',        label: 'Fees',         icon: IC.fees,        roles: ['finance', 'admin'] },
       { href: '/reports',     label: 'Report Cards', icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
       { href: '/housing',     label: 'Housing',      icon: IC.housing,     roles: ['admin', 'approver', 'housemaster'] },
@@ -57,11 +72,22 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     heading: 'Administration',
     items: [
-      { href: '/admin/setup',      label: 'School Setup', icon: IC.setup,      roles: ['admin'] },
-      { href: '/admin/academic',   label: 'Academic',     icon: IC.academic,   roles: ['admin'] },
-      { href: '/students',         label: 'Students',     icon: IC.students,   roles: ['admin'] },
-      { href: '/admin/transfers',  label: 'Transfers',    icon: IC.transfers,  roles: ['admin'] },
-      { href: '/admin/staff',      label: 'Staff',        icon: IC.staff,      roles: ['admin'] },
+      { href: '/admin/setup', label: 'School Setup', icon: IC.setup,     roles: ['admin'] },
+      {
+        href: '/admin/academic/classes', label: 'Academic', icon: IC.academic, roles: ['admin'],
+        children: [
+          { href: '/admin/academic/classes', label: 'Classes',       roles: ['admin'] },
+          { href: '/admin/academic/years',   label: 'Calendar',      roles: ['admin'] },
+        ],
+      },
+      {
+        href: '/students', label: 'Students', icon: IC.students, roles: ['admin'],
+        children: [
+          { href: '/students',         label: 'Directory',  roles: ['admin'] },
+          { href: '/admin/transfers',  label: 'Transfers',  roles: ['admin'] },
+        ],
+      },
+      { href: '/admin/staff', label: 'Staff', icon: IC.staff, roles: ['admin'] },
     ],
   },
 ];

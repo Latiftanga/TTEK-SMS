@@ -3,8 +3,10 @@
   import { listGradingScales, createGradingScale } from '$lib/api/assessments';
   import { toast } from '$lib/stores/toast';
   import ScaleCard from './ScaleCard.svelte';
+  import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
+  setPageTitle('Grading Scales');
 
   const scalesQ = createQuery({
     queryKey: ['grading-scales'],

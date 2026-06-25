@@ -9,6 +9,8 @@
   import { listClasses, listYears, listSubjects } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Assessments');
 
   const qc = useQueryClient();
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');

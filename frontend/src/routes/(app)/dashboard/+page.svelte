@@ -8,6 +8,8 @@
   import ApproverView     from './ApproverView.svelte';
   import FinanceView      from './FinanceView.svelte';
   import HousemasterView  from './HousemasterView.svelte';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Dashboard');
 
   const query = createQuery({
     queryKey: ['dashboard'],

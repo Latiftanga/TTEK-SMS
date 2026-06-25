@@ -6,8 +6,6 @@
   const { data }: Props = $props();
 </script>
 
-<svelte:head><title>Dashboard</title></svelte:head>
-
 <div class="mb-6">
   <h1 class="text-xl font-bold text-[var(--fg)]">Good day, {data.greeting_name}</h1>
   {#if data.house_name}

@@ -3,8 +3,10 @@
   import { listSchedule, upsertSchedule, type DayOfWeek, type ScheduleDay } from '$lib/api/attendance';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
+  setPageTitle('Schedule');
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
 
   const schedQ = createQuery({ queryKey: ['schedule'], queryFn: listSchedule, staleTime: 5 * 60_000 });

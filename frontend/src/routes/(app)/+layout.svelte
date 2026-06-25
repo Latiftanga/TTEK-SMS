@@ -4,11 +4,14 @@
   import TopBar   from '$lib/components/TopBar.svelte';
   import BottomNav from '$lib/components/BottomNav.svelte';
   import Toast    from '$lib/components/Toast.svelte';
+  import { documentTitle } from '$lib/stores/title';
 
   const { children } = $props();
 
   let sidebarOpen = $state(false);
 </script>
+
+<svelte:head><title>{$documentTitle}</title></svelte:head>
 
 <div class="flex h-screen overflow-hidden bg-[var(--bg)]">
   <Sidebar open={sidebarOpen} onclose={() => sidebarOpen = false} />

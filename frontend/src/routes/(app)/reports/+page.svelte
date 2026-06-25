@@ -8,6 +8,8 @@
   } from '$lib/api/reports';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Report Cards');
 
   // ── Selectors ─────────────────────────────────────────────────────────────────
   let classId  = $state('');
@@ -112,7 +114,6 @@
   });
 </script>
 
-<svelte:head><title>Report Cards</title></svelte:head>
 
 <!-- Filters row -->
 <div class="mb-5 flex flex-wrap items-end gap-3">

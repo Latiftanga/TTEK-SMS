@@ -5,6 +5,7 @@
   import { listHouses, assignHouseMaster } from '$lib/api/housing';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   interface Props { staff: StaffDetail; staffId: string; boardingEnabled: boolean; isOwnProfile?: boolean; }
   const { staff, staffId, boardingEnabled, isOwnProfile = false }: Props = $props();
@@ -69,6 +70,8 @@
     onError:   (e) => toast.error(apiError(e, 'Failed to remove.')),
   });
 
+  let confirmRemovePosId = $state<string | null>(null);
+
   // ── Flat list ─────────────────────────────────────────────────────────────────
   type Row = { key: string; label: string; detail: string | null; active: boolean; posId?: string };
   const rows = $derived.by((): Row[] => {
@@ -82,7 +85,7 @@
       list.push({ key: `ct:${ct.class_id}`, label: 'Class Teacher', detail: `${ct.class_name} · ${ct.academic_year_name}`, active: ct.is_active });
     }
     for (const s of d?.subject_assignments ?? [])
-      list.push({ key: `st:${s.subject_id}:${s.academic_term_id}`, label: s.subject_name, detail: `${s.class_name} · ${s.term_name}`, active: s.is_active });
+      list.push({ key: `st:${s.subject_id}:${s.class_id}:${s.academic_term_id}`, label: s.subject_name, detail: `${s.class_name} · ${s.term_name}`, active: s.is_active });
     for (const h of d?.house_assignments ?? [])
       list.push({ key: `hm:${h.house_id}:${h.academic_year_id}`, label: 'House Master', detail: `${h.house_name} · ${h.academic_year_name}`, active: h.is_active });
     return list;
@@ -195,7 +198,7 @@
             {#if row.detail}<p class="text-xs text-[var(--fg-muted)]">{row.detail}</p>{/if}
           </div>
           {#if admin && row.posId}
-            <button onclick={() => $removePosMut.mutate(row.posId!)} disabled={$removePosMut.isPending}
+            <button onclick={() => confirmRemovePosId = row.posId!} disabled={$removePosMut.isPending}
               class="shrink-0 text-xs text-[var(--fg-muted)] transition hover:text-red-500 disabled:opacity-50">
               Remove
             </button>
@@ -204,5 +207,14 @@
       {/each}
     </div>
   {/if}
-
 </div>
+
+<ConfirmModal
+  open={!!confirmRemovePosId}
+  title="Remove position?"
+  message="This position and its permission template will be removed from the staff member. Their personal permission overrides are unaffected."
+  confirmLabel="Remove"
+  isPending={$removePosMut.isPending}
+  onConfirm={() => { $removePosMut.mutate(confirmRemovePosId!); confirmRemovePosId = null; }}
+  onCancel={() => confirmRemovePosId = null}
+/>

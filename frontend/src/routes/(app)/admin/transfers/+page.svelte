@@ -3,8 +3,10 @@
   import { listPendingTransfers, reviewTransfer, type TransferRequest } from '$lib/api/students';
   import { goto } from '$app/navigation';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
+  setPageTitle('Transfer Requests');
 
   const transfersQ = createQuery({
     queryKey: ['pending-transfers'],
@@ -37,7 +39,6 @@
   }
 </script>
 
-<svelte:head><title>Transfer Requests</title></svelte:head>
 
 <div class="space-y-6">
   <div class="flex items-center justify-between gap-3">

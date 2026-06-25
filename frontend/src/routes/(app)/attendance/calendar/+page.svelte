@@ -8,6 +8,8 @@
   } from '$lib/api/attendance';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Calendar');
   import CalendarGrid from './CalendarGrid.svelte';
 
   const qc = useQueryClient();
