@@ -254,3 +254,39 @@ export const reviewTransfer = (
   status: 'APPROVED' | 'REJECTED' | 'WITHDRAWN',
 ): Promise<TransferRequest> =>
   api.patch(`/students/transfers/${transferId}/review`, { status }).then(r => r.data);
+
+// ── Year-end graduation ───────────────────────────────────────────────────────
+
+export type GraduationType = 'GRADUATED' | 'WITHDRAWN' | 'TRANSFERRED' | 'PROMOTED' | 'REPEATED';
+
+export interface GraduationRecord {
+  id: string;
+  student_id: string;
+  academic_year_id: string;
+  graduation_type: GraduationType;
+  notes: string | null;
+  processed_at: string;
+  processed_by_id: string;
+}
+
+export interface GraduationRecordCreate {
+  student_id: string;
+  graduation_type: GraduationType;
+  notes?: string | null;
+}
+
+export interface BulkGraduateResult {
+  processed: number;
+  skipped: number;
+  records: GraduationRecord[];
+}
+
+export const listGraduationRecords = (academic_year_id?: string): Promise<GraduationRecord[]> =>
+  api.get('/students/graduation', { params: academic_year_id ? { academic_year_id } : {} }).then(r => r.data);
+
+export const bulkGraduate = (req: {
+  academic_year_id: string;
+  records: GraduationRecordCreate[];
+  deactivate_students?: boolean;
+}): Promise<BulkGraduateResult> =>
+  api.post('/students/graduation/bulk', req).then(r => r.data);

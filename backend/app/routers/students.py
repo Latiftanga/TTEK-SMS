@@ -35,8 +35,10 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas.documents import ImportBatchResult
 from app.schemas.students import (
-    BulkEnrollResult, BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
+    BulkEnrollResult, BulkGraduateRequest, BulkGraduateResult,
+    BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
     EnrollmentCreate, EnrollmentRead,
+    GraduationRecordRead,
     GuardianCreate, GuardianUpdate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
     PortalAccessResult,
@@ -46,6 +48,7 @@ from app.schemas.students import (
     TermEnrollmentCreate, TermEnrollmentRead,
     TransferRequestCreate, TransferRequestRead, TransferRequestReview,
 )
+from app.services import graduation as graduation_svc
 from app.services import student as svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
@@ -259,6 +262,30 @@ async def review_transfer(
 ):
     user_id, school_id = ids
     return await transfer_svc.review_transfer(tr_id, req, school_id, user_id, db)
+
+
+# ── Year-end graduation (must be before /{student_id} to avoid UUID capture) ─
+
+@router.get("/graduation", response_model=list[GraduationRecordRead])
+async def list_graduation_records(
+    academic_year_id: uuid.UUID | None = Query(None),
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List graduation records, optionally filtered by academic year."""
+    _, school_id = ids
+    return await graduation_svc.list_graduation_records(school_id, db, academic_year_id=academic_year_id)
+
+
+@router.post("/graduation/bulk", response_model=BulkGraduateResult, status_code=201)
+async def bulk_graduate(
+    req: BulkGraduateRequest,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Process year-end outcomes for a batch of students."""
+    user_id, school_id = ids
+    return await graduation_svc.process_bulk_graduation(req, user_id, school_id, db)
 
 
 # ── Single-student endpoints ──────────────────────────────────────────────────
