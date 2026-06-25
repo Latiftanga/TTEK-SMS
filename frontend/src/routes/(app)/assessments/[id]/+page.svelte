@@ -36,13 +36,13 @@
   const typeName    = (id: string) => ($typesQ.data    ?? []).find(t => t.id === id)?.name ?? '—';
 
   // ── Score inputs ──────────────────────────────────────────────────────────────
-  let scoreInputs    = $state<Record<string, string>>({});
+  let scoreInputs    = $state<Record<string, string | number>>({});
   let initializedFor = $state<string | null>(null);
 
   $effect(() => {
     if ($scoresQ.data && initializedFor !== assessmentId) {
-      const init: Record<string, string> = {};
-      for (const s of $scoresQ.data) init[s.student_id] = String(s.raw_score);
+      const init: Record<string, number> = {};
+      for (const s of $scoresQ.data) init[s.student_id] = Number(s.raw_score);
       scoreInputs = init; initializedFor = assessmentId;
     }
   });
@@ -55,8 +55,8 @@
     mutationFn: () => {
       const a = $assessmentQ.data!;
       const entries = ($studentsQ.data ?? [])
-        .filter(s => scoreInputs[s.id]?.trim() !== '' && scoreInputs[s.id] !== undefined)
-        .map(s => ({ student_id: s.id, raw_score: parseFloat(scoreInputs[s.id]) }));
+        .filter(s => scoreInputs[s.id] != null && scoreInputs[s.id] !== '')
+        .map(s => ({ student_id: s.id, raw_score: Number(scoreInputs[s.id]) }));
       const invalid = entries.filter(e => isNaN(e.raw_score) || e.raw_score < 0 || e.raw_score > Number(a.max_score));
       if (invalid.length > 0) throw new Error(`${invalid.length} score(s) out of range 0–${a.max_score}.`);
       return submitScores(assessmentId, entries);
@@ -64,8 +64,8 @@
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ['scores', assessmentId] });
       const m = new Map(saved.map(s => [s.student_id, s]));
-      const next: Record<string, string> = {};
-      for (const s of $studentsQ.data ?? []) next[s.id] = m.get(s.id) ? String(m.get(s.id)!.raw_score) : (scoreInputs[s.id] ?? '');
+      const next: Record<string, string | number> = {};
+      for (const s of $studentsQ.data ?? []) next[s.id] = m.get(s.id) ? Number(m.get(s.id)!.raw_score) : (scoreInputs[s.id] ?? '');
       scoreInputs = next; initializedFor = assessmentId;
       toast.success('Scores saved.');
     },

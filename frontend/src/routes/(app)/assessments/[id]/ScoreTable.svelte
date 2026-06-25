@@ -7,7 +7,7 @@
     assessment: Assessment;
     students: StudentRow[];
     scoreMap: Map<string, Score>;
-    scoreInputs: Record<string, string>;
+    scoreInputs: Record<string, string | number>;
     canEnterScores: boolean;
     isPending: boolean;
     onSave: () => void;
@@ -19,16 +19,17 @@
 
   // ── Progress / stats ──────────────────────────────────────────────────────────
   const enteredCount = $derived(
-    students.filter(s => scoreInputs[s.id]?.trim() !== '' && scoreInputs[s.id] !== undefined).length
+    students.filter(s => scoreInputs[s.id] != null && scoreInputs[s.id] !== '').length
   );
   const progress = $derived(students.length > 0 ? Math.round((enteredCount / students.length) * 100) : 0);
 
   const hasUnsaved = $derived.by(() => {
     for (const s of students) {
       const existing = scoreMap.get(s.id);
-      const val = scoreInputs[s.id] ?? '';
-      const saved = existing !== undefined ? String(existing.raw_score) : '';
-      if (val !== saved) return true;
+      const raw = scoreInputs[s.id];
+      const inputNum = (raw === '' || raw == null) ? null : Number(raw);
+      const savedNum = existing !== undefined ? Number(existing.raw_score) : null;
+      if (inputNum !== savedNum) return true;
     }
     return false;
   });
