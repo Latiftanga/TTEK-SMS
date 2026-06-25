@@ -5,9 +5,10 @@
   import { writable } from 'svelte/store';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import PageHeader from '$lib/components/PageHeader.svelte';
 
   const qc = useQueryClient();
-  setPageTitle('Bulk Promotion');
+  setPageTitle('Promotion');
 
   const classesQ = createQuery({ queryKey: ['classes'],        queryFn: listClasses, staleTime: 5 * 60_000 });
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
@@ -138,12 +139,9 @@
 </script>
 
 
-<div class="space-y-6">
-  <div>
-    <h1 class="text-xl font-bold text-[var(--fg)]">Class Promotion</h1>
-    <p class="mt-0.5 text-sm text-[var(--fg-muted)]">Move a group of students to a new class for the next academic year.</p>
-  </div>
+<PageHeader title="Class Promotion" description="Move students from one class to the next year group. Also registers them in the first term of the target year." />
 
+<div class="space-y-6">
   <!-- Action type selector -->
   <div class="flex gap-2">
     {#each Object.entries(ACTION_LABELS) as [key, meta]}

@@ -76,8 +76,9 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: '/admin/academic/classes', label: 'Academic', icon: IC.academic, roles: ['admin'],
         children: [
-          { href: '/admin/academic/classes', label: 'Classes',       roles: ['admin'] },
-          { href: '/admin/academic/years',   label: 'Calendar',      roles: ['admin'] },
+          { href: '/admin/academic/classes',  label: 'Classes',    roles: ['admin'] },
+          { href: '/admin/academic/years',    label: 'Calendar',   roles: ['admin'] },
+          { href: '/admin/academic/promote',  label: 'Promotion',  roles: ['admin'] },
         ],
       },
       {
