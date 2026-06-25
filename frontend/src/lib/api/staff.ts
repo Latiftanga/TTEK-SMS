@@ -68,6 +68,7 @@ export interface StaffDetail extends StaffSummary {
   ssnit_number: string | null;
   address: string | null;
   photo_path: string | null;
+  has_account: boolean;
   qualifications: Qualification[];
   emergency_contacts: EmergencyContact[];
 }
