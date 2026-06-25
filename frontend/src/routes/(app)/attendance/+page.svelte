@@ -150,11 +150,11 @@
   </div>
   <div>
     <label class="label" for="att-date">Date</label>
-    <input id="att-date" type="date" bind:value={selectedDate} class="sel" />
+    <input id="att-date" type="date" bind:value={selectedDate} max={today} class="sel" />
   </div>
   {#if calDay}
     <span class="mb-1 rounded-full px-3 py-1 text-xs font-semibold {dayTypeColor[calDay.day_type]}">
-      {calDay.day_type.replace('_', ' ')}
+      {calDay.day_type.replace(/_/g, ' ')}
       {#if calDay.notes} · {calDay.notes}{/if}
     </span>
   {/if}

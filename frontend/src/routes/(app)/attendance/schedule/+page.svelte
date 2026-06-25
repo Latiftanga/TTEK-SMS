@@ -6,7 +6,7 @@
   import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
-  setPageTitle('Schedule');
+  setPageTitle('Attendance Schedule');
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
 
   const schedQ = createQuery({ queryKey: ['schedule'], queryFn: listSchedule, staleTime: 5 * 60_000 });

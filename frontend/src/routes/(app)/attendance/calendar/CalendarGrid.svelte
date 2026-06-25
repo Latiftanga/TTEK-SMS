@@ -47,7 +47,7 @@
   };
 </script>
 
-<div class="mb-6">
+<div>
   <h3 class="mb-2 text-sm font-semibold text-[var(--fg)]">{MONTH_NAMES[month]} {year}</h3>
   <!-- Day headers -->
   <div class="mb-1 grid grid-cols-7 gap-1 text-center">
