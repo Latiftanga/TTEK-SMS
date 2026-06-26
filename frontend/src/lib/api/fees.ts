@@ -167,3 +167,22 @@ export const applyDiscount = (data: {
 
 export const listDiscounts = (studentId: string, termId: string) =>
   api.get<FeeDiscount[]>('/fees/discounts', { params: { student_id: studentId, term_id: termId } }).then(r => r.data);
+
+// Instalment plans
+export interface Instalment {
+  id: string;
+  fee_record_id: string;
+  instalment_number: number;
+  amount: string;
+  due_date: string;
+  is_paid: boolean;
+}
+
+export const listInstalments = (recordId: string): Promise<Instalment[]> =>
+  api.get<Instalment[]>(`/fees/records/${recordId}/instalments`).then(r => r.data);
+
+export const setInstalmentPlan = (
+  recordId: string,
+  items: { instalment_number: number; amount: number; due_date: string }[],
+): Promise<Instalment[]> =>
+  api.put<Instalment[]>(`/fees/records/${recordId}/instalments`, items).then(r => r.data);

@@ -8,6 +8,7 @@
     ghs, PAYMENT_METHOD_LABELS, DISCOUNT_TYPE_LABELS,
     type FeeRecord, type PaymentMethod, type DiscountType,
   } from '$lib/api/fees';
+  import InstalmentModal from './InstalmentModal.svelte';
   import { toast } from '$lib/stores/toast';
 
   interface Props { studentId: string; }
@@ -85,6 +86,9 @@
     if (!payAmount || isNaN(n) || n <= 0) { payError = 'Enter a valid amount.'; return; }
     $payMut.mutate();
   }
+
+  // ── Instalment modal ──────────────────────────────────────────────────────────
+  let instRecord = $state<FeeRecord | null>(null);
 
   // ── Discount modal ────────────────────────────────────────────────────────────
   let discRecord  = $state<FeeRecord | null>(null);
@@ -171,6 +175,7 @@
               <div class="flex gap-1">
                 <button onclick={() => openPay(r)} class="rounded-lg border border-[var(--brand)] px-2.5 py-1 text-xs font-semibold text-[var(--brand)] transition hover:bg-[var(--brand)] hover:text-white">Pay</button>
                 <button onclick={() => openDisc(r)} class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--fg-muted)] transition hover:border-[var(--fg-muted)] hover:text-[var(--fg)]">Discount</button>
+                <button onclick={() => instRecord = r} class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--fg-muted)] transition hover:border-[var(--fg-muted)] hover:text-[var(--fg)]">Instalments</button>
               </div>
             {/if}
           </div>
@@ -234,6 +239,11 @@
       </div>
     </div>
   </div>
+{/if}
+
+<!-- Instalment modal -->
+{#if instRecord}
+  <InstalmentModal record={instRecord} onClose={() => instRecord = null} />
 {/if}
 
 <!-- Discount modal -->
