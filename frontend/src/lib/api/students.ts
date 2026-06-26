@@ -217,6 +217,14 @@ export const importStudents = (file: File): Promise<ImportBatchResult> => {
 export const exportStudentsCsv = (params: StudentListParams = {}): Promise<Blob> =>
   api.get('/students/export', { params, responseType: 'blob' }).then(r => r.data);
 
+export interface StudentCustomExportParams extends Omit<StudentListParams, 'limit' | 'skip'> {
+  fields: string;
+  fmt: 'csv' | 'excel';
+}
+
+export const customExportStudents = (params: StudentCustomExportParams): Promise<Blob> =>
+  api.get('/students/export/custom', { params, responseType: 'blob' }).then(r => r.data);
+
 export const grantPortalAccess = (studentId: string): Promise<PortalAccessResult> =>
   api.post<PortalAccessResult>(`/students/${studentId}/grant-portal-access`).then(r => r.data);
 

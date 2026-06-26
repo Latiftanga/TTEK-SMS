@@ -14,6 +14,7 @@
   setPageTitle('Students');
   import EmptyState           from '$lib/components/EmptyState.svelte';
   import PageHeader           from '$lib/components/PageHeader.svelte';
+  import CustomExportModal    from '$lib/components/CustomExportModal.svelte';
 
   // ── Filter state ────────────────────────────────────────────────────────────
   let search     = $state('');
@@ -71,7 +72,9 @@
   // ── UI state ─────────────────────────────────────────────────────────────────
   let formOpen   = $state(false);
   let importOpen = $state(false);
-  let exporting  = $state(false);
+  let exporting        = $state(false);
+  let customExportOpen = $state(false);
+  let exportMenuOpen   = $state(false);
 
   // ── Selection ────────────────────────────────────────────────────────────────
   let selected   = $state(new Set<string>());
@@ -116,10 +119,19 @@
     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
     Import
   </button>
-  <button onclick={handleExport} disabled={exporting} class="btn-ghost">
-    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-    {exporting ? 'Exporting…' : 'Export CSV'}
-  </button>
+  <div class="relative">
+    <button onclick={() => exportMenuOpen = !exportMenuOpen} disabled={exporting} class="btn-ghost">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+      {exporting ? 'Exporting…' : 'Export'}
+    </button>
+    {#if exportMenuOpen}
+      <button class="fixed inset-0 z-[5] cursor-default" onclick={() => exportMenuOpen = false} tabindex="-1" aria-hidden="true"></button>
+      <div class="absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg">
+        <button onclick={() => { exportMenuOpen = false; handleExport(); }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Full export (CSV)</button>
+        <button onclick={() => { exportMenuOpen = false; customExportOpen = true; }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Custom export…</button>
+      </div>
+    {/if}
+  </div>
   <button onclick={() => formOpen = true} class="btn-primary">
     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
     Add student
@@ -280,3 +292,6 @@
 
 <StudentForm open={formOpen} onClose={() => formOpen = false} />
 <StudentImportDrawer open={importOpen} onClose={() => importOpen = false} />
+{#if customExportOpen}
+  <CustomExportModal entityType="students" filterParams={params} onClose={() => customExportOpen = false} />
+{/if}

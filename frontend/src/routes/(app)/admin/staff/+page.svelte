@@ -6,6 +6,7 @@
   import StaffImportModal from './StaffImportModal.svelte';
   import Badge            from '$lib/components/Badge.svelte';
   import EmptyState       from '$lib/components/EmptyState.svelte';
+  import CustomExportModal from '$lib/components/CustomExportModal.svelte';
   import { setPageTitle } from '$lib/stores/title';
 
   setPageTitle('Staff');
@@ -46,22 +47,23 @@
     return list;
   });
 
-  let exportMenuOpen = $state(false);
+  let exportMenuOpen   = $state(false);
+  let customExportOpen = $state(false);
+
+  const exportFilterParams = $derived({
+    active_only: activeOnly,
+    search:      search.trim() || undefined,
+    gender:      genderFilter || undefined,
+    category_id: jobFilter
+      ? ($query.data ?? []).find(s => s.category_name === jobFilter)?.category_id ?? undefined
+      : undefined,
+  });
 
   async function doExport(type: 'excel' | 'pdf') {
     exportMenuOpen = false;
     const { exportStaffExcel, exportStaffPdf } = await import('$lib/api/staff');
-    const categoryId = jobFilter
-      ? ($query.data ?? []).find(s => s.category_name === jobFilter)?.category_id ?? undefined
-      : undefined;
-    const params = {
-      active_only: activeOnly,
-      category_id: categoryId,
-      gender:      genderFilter || undefined,
-      search:      search.trim() || undefined,
-    };
-    if (type === 'excel') await exportStaffExcel(params);
-    else await exportStaffPdf(params);
+    if (type === 'excel') await exportStaffExcel(exportFilterParams);
+    else await exportStaffPdf(exportFilterParams);
   }
 
   function initials(s: StaffSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }
@@ -111,6 +113,11 @@
             <button onclick={() => doExport('pdf')}
               class="w-full px-4 py-2.5 text-left text-sm text-[var(--fg)] transition hover:bg-[var(--hover)]">
               PDF
+            </button>
+            <div class="my-1 border-t border-[var(--border)]"></div>
+            <button onclick={() => { exportMenuOpen = false; customExportOpen = true; }}
+              class="w-full px-4 py-2.5 text-left text-sm text-[var(--fg)] transition hover:bg-[var(--hover)]">
+              Custom export…
             </button>
           </div>
         {/if}
@@ -260,3 +267,11 @@
     </div>
   {/if}
 </div>
+
+{#if customExportOpen}
+  <CustomExportModal
+    entityType="staff"
+    filterParams={exportFilterParams}
+    onClose={() => customExportOpen = false}
+  />
+{/if}

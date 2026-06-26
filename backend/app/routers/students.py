@@ -121,6 +121,42 @@ async def export_students(
     )
 
 
+@router.get("/export/custom")
+async def export_students_custom(
+    fields: str = Query(""),
+    fmt: str = Query("csv", pattern="^(csv|excel)$"),
+    active_only: bool = Query(True),
+    class_id: uuid.UUID | None = Query(None),
+    term_id: uuid.UUID | None = Query(None),
+    gender: str | None = Query(None),
+    level: str | None = Query(None),
+    search: str | None = Query(None),
+    ids=Depends(require_permission("students", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export students with caller-selected fields as CSV or Excel."""
+    from app.services.student_custom_export import export_students_custom as _export
+    _, school_id = ids
+    field_list = [f.strip() for f in fields.split(",") if f.strip()]
+    data = await _export(
+        school_id, db,
+        fields=field_list, fmt=fmt,
+        active_only=active_only, class_id=class_id, term_id=term_id,
+        gender=gender, level=level, search=search,
+    )
+    if fmt == "excel":
+        return StreamingResponse(
+            iter([data]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="students.xlsx"'},
+        )
+    return StreamingResponse(
+        iter([data]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="students.csv"'},
+    )
+
+
 # ── Bulk import (declared before /{student_id} to avoid path capture) ────────
 
 @router.get("/import/template")
