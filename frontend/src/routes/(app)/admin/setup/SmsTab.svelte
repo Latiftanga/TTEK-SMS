@@ -4,7 +4,8 @@
     listSmsConfigs, upsertSmsConfig, activateSmsProvider, deleteSmsConfig,
     type SmsProvider, type SmsConfigPayload,
   } from '$lib/api/sms';
-  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import ConfirmModal   from '$lib/components/ConfirmModal.svelte';
+  import SmsLogViewer   from './SmsLogViewer.svelte';
 
   const qc = useQueryClient();
 
@@ -129,6 +130,8 @@
       {/each}
     </div>
   {/if}
+
+  <SmsLogViewer />
 
   <div class="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
     <p class="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Credential guide</p>
