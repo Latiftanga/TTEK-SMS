@@ -4,7 +4,7 @@ import csv
 import io
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class, SHSProgramme
@@ -28,6 +28,7 @@ async def export_students_csv(
     class_id: uuid.UUID | None = None,
     term_id: uuid.UUID | None = None,
     gender: str | None = None,
+    search: str | None = None,
     level: str | None = None,
 ) -> bytes:
     q = select(Student).where(Student.school_id == school_id)
@@ -48,6 +49,13 @@ async def export_students_csv(
             TermEnrollment.is_active == True,  # noqa: E712
             TermEnrollment.academic_term_id == term_id,
         )
+    if search:
+        s = f"%{search}%"
+        q = q.where(or_(
+            Student.first_name.ilike(s),
+            Student.last_name.ilike(s),
+            Student.admission_number.ilike(s),
+        ))
     q = q.distinct().order_by(Student.last_name, Student.first_name)
     students = list(await db.scalars(q))
 

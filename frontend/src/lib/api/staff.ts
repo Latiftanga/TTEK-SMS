@@ -265,7 +265,14 @@ export async function deletePromotion(staffId: string, promotionId: string): Pro
   await client.delete(`/staff/${staffId}/promotions/${promotionId}`);
 }
 
-export async function exportStaffExcel(params?: { category_id?: string; active_only?: boolean }): Promise<void> {
+export interface StaffExportParams {
+  category_id?: string;
+  active_only?: boolean;
+  search?: string;
+  gender?: string;
+}
+
+export async function exportStaffExcel(params?: StaffExportParams): Promise<void> {
   const response = await client.get('/staff/export/excel', { params, responseType: 'blob' });
   const url = URL.createObjectURL(new Blob([response.data]));
   const a = Object.assign(document.createElement('a'), { href: url, download: 'staff_register.xlsx' });
@@ -273,7 +280,7 @@ export async function exportStaffExcel(params?: { category_id?: string; active_o
   URL.revokeObjectURL(url);
 }
 
-export async function exportStaffPdf(params?: { category_id?: string; active_only?: boolean }): Promise<void> {
+export async function exportStaffPdf(params?: StaffExportParams): Promise<void> {
   const response = await client.get('/staff/export/pdf', { params, responseType: 'blob' });
   const url = URL.createObjectURL(new Blob([response.data]));
   const a = Object.assign(document.createElement('a'), { href: url, download: 'staff_register.pdf' });

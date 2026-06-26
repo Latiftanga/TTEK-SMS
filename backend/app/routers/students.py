@@ -102,6 +102,7 @@ async def export_students(
     term_id: uuid.UUID | None = Query(None),
     gender: str | None = Query(None),
     level: str | None = Query(None),
+    search: str | None = Query(None),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -111,7 +112,7 @@ async def export_students(
     csv_bytes = await export_students_csv(
         school_id, db,
         active_only=active_only, class_id=class_id, term_id=term_id,
-        gender=gender, level=level,
+        gender=gender, level=level, search=search,
     )
     return StreamingResponse(
         iter([csv_bytes]),

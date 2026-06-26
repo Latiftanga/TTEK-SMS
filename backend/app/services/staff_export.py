@@ -10,7 +10,7 @@ import io
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,8 @@ async def _load_staff(
     db: AsyncSession,
     category_id: uuid.UUID | None,
     active_only: bool,
+    search: str | None = None,
+    gender: str | None = None,
 ) -> tuple[School, list[StaffMember]]:
     school = await db.get(School, school_id)
     q = (
@@ -38,6 +40,15 @@ async def _load_staff(
         q = q.where(StaffMember.is_active == True)
     if category_id:
         q = q.where(StaffMember.category_id == category_id)
+    if gender:
+        q = q.where(StaffMember.gender == gender)
+    if search:
+        s = f"%{search}%"
+        q = q.where(or_(
+            StaffMember.first_name.ilike(s),
+            StaffMember.last_name.ilike(s),
+            StaffMember.staff_number.ilike(s),
+        ))
     members = list(await db.scalars(q))
     return school, members
 
@@ -54,6 +65,8 @@ async def export_excel(
     db: AsyncSession,
     category_id: uuid.UUID | None = None,
     active_only: bool = True,
+    search: str | None = None,
+    gender: str | None = None,
 ) -> bytes:
     try:
         import openpyxl
@@ -61,7 +74,7 @@ async def export_excel(
     except ImportError as exc:
         raise RuntimeError("openpyxl is not installed. Add it to requirements.txt.") from exc
 
-    school, members = await _load_staff(school_id, db, category_id, active_only)
+    school, members = await _load_staff(school_id, db, category_id, active_only, search=search, gender=gender)
     show_rank = school and school.ownership == SchoolOwnership.PUBLIC
 
     wb = openpyxl.Workbook()
@@ -116,12 +129,14 @@ async def export_pdf(
     db: AsyncSession,
     category_id: uuid.UUID | None = None,
     active_only: bool = True,
+    search: str | None = None,
+    gender: str | None = None,
 ) -> bytes:
     from jinja2 import Environment, FileSystemLoader
     from weasyprint import HTML
     import os
 
-    school, members = await _load_staff(school_id, db, category_id, active_only)
+    school, members = await _load_staff(school_id, db, category_id, active_only, search=search, gender=gender)
     show_rank = school and school.ownership == SchoolOwnership.PUBLIC
 
     template_dir = os.path.join(os.path.dirname(__file__), "..", "templates")

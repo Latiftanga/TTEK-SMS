@@ -51,8 +51,17 @@
   async function doExport(type: 'excel' | 'pdf') {
     exportMenuOpen = false;
     const { exportStaffExcel, exportStaffPdf } = await import('$lib/api/staff');
-    if (type === 'excel') await exportStaffExcel();
-    else await exportStaffPdf();
+    const categoryId = jobFilter
+      ? ($query.data ?? []).find(s => s.category_name === jobFilter)?.category_id ?? undefined
+      : undefined;
+    const params = {
+      active_only: activeOnly,
+      category_id: categoryId,
+      gender:      genderFilter || undefined,
+      search:      search.trim() || undefined,
+    };
+    if (type === 'excel') await exportStaffExcel(params);
+    else await exportStaffPdf(params);
   }
 
   function initials(s: StaffSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }

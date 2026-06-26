@@ -445,13 +445,15 @@ async def list_leave(
 async def export_staff_excel(
     category_id: uuid.UUID | None = Query(None),
     active_only: bool = Query(True),
+    search: str | None = Query(None),
+    gender: str | None = Query(None),
     ids=Depends(require_permission("staff", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Export the staff register as an Excel workbook (.xlsx)."""
     from app.services.staff_export import export_excel
     _, school_id = ids
-    xlsx = await export_excel(school_id, db, category_id=category_id, active_only=active_only)
+    xlsx = await export_excel(school_id, db, category_id=category_id, active_only=active_only, search=search, gender=gender)
     return StreamingResponse(
         iter([xlsx]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -463,13 +465,15 @@ async def export_staff_excel(
 async def export_staff_pdf(
     category_id: uuid.UUID | None = Query(None),
     active_only: bool = Query(True),
+    search: str | None = Query(None),
+    gender: str | None = Query(None),
     ids=Depends(require_permission("staff", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Export the staff register as a PDF (A4 landscape)."""
     from app.services.staff_export import export_pdf
     _, school_id = ids
-    pdf = await export_pdf(school_id, db, category_id=category_id, active_only=active_only)
+    pdf = await export_pdf(school_id, db, category_id=category_id, active_only=active_only, search=search, gender=gender)
     return StreamingResponse(
         iter([pdf]),
         media_type="application/pdf",
