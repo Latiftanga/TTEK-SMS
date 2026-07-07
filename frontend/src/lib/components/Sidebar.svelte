@@ -2,11 +2,11 @@
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { currentUser, auth } from '$lib/stores/auth';
+  import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
-  import { logout } from '$lib/api/auth';
-  import { NAV_GROUPS, ROLE_LABELS, IC, type NavRole, type NavItem, type ChildNavItem } from '$lib/nav';
+  import { NAV_GROUPS, IC, type NavRole, type NavItem, type ChildNavItem } from '$lib/nav';
+  import SidebarFooter from './SidebarFooter.svelte';
 
   interface Props { open: boolean; onclose: () => void; }
   const { open, onclose }: Props = $props();
@@ -104,22 +104,6 @@
     return (words.length >= 2 ? words[0][0] + words[1][0] : n.slice(0, 2)).toUpperCase();
   });
 
-  const userLabel = $derived($currentUser?.display_name ?? $currentUser?.email ?? $currentUser?.phone ?? '—');
-  const roleLabel = $derived(
-    isSuperadmin ? 'Platform Admin'
-    : role ? (ROLE_LABELS[role] ?? 'Staff member')
-    : 'Staff member'
-  );
-
-  async function handleLogout() {
-    const rt = localStorage.getItem('refresh_token') ?? '';
-    await logout(rt);
-    auth.clearAuth();
-    school.clear();
-    userRole.reset();
-    goto('/login');
-  }
-
   const linkBase = $derived(collapsed
     ? 'group flex items-center justify-center rounded-lg p-2.5 transition-all duration-150 text-sm'
     : 'group flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all duration-150 text-sm'
@@ -171,22 +155,15 @@
           {$school?.motto ?? 'School Management System'}
         </p>
       </div>
-      <button onclick={toggleCollapse} title="Collapse" aria-label="Collapse sidebar"
-        class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md
-               text-[var(--fg-subtle)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
-        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          {@html IC.chevronL}
-        </svg>
-      </button>
-    {:else}
-      <button onclick={toggleCollapse} title="Expand" aria-label="Expand sidebar"
-        class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md
-               text-[var(--fg-subtle)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
-        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          {@html IC.chevronR}
-        </svg>
-      </button>
     {/if}
+    <button onclick={toggleCollapse}
+      title={collapsed ? 'Expand' : 'Collapse'} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      class="hidden lg:flex h-6 w-6 shrink-0 items-center justify-center rounded-md
+             text-[var(--fg-subtle)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--fg-muted)]">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        {@html collapsed ? IC.chevronR : IC.chevronL}
+      </svg>
+    </button>
   </div>
 
   <!-- ── Navigation ───────────────────────────────────────────────────────── -->
@@ -209,7 +186,11 @@
           {@const active   = isParentActive(item)}
           {@const hasKids  = !!item.children?.length}
           {@const expanded = !collapsed && hasKids && openHrefs.includes(item.href)}
-          <li>
+          <li class="relative">
+            {#if active && !collapsed}
+              <span class="pointer-events-none absolute inset-y-1 -left-3 w-[3px] rounded-r-full"
+                    style="background: var(--brand)" aria-hidden="true"></span>
+            {/if}
             {#if hasKids}
               <!-- Parent with submenu -->
               <button
@@ -238,11 +219,15 @@
                     <li>
                       <a href={child.href} onclick={onclose}
                          aria-current={childActive ? 'page' : undefined}
-                         class="flex items-center rounded-md px-2 py-1.5 text-[0.8125rem] transition
+                         class="flex items-center gap-1.5 rounded-md px-2 py-1.5 transition
                                 {childActive
-                                  ? 'font-semibold'
-                                  : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
+                                  ? 'text-[0.8125rem] font-semibold'
+                                  : 'text-xs font-medium text-[var(--fg-subtle)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}"
                          style={childActive ? 'color: var(--brand)' : ''}>
+                        {#if childActive}
+                          <span class="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style="background: var(--brand)" aria-hidden="true"></span>
+                        {/if}
                         {child.label}
                       </a>
                     </li>
@@ -275,47 +260,5 @@
     {/each}
   </nav>
 
-  <!-- ── User strip ───────────────────────────────────────────────────────── -->
-  <div class="shrink-0 border-t border-[var(--border)] p-2">
-    {#if collapsed}
-      <div class="flex flex-col items-center gap-1">
-        <a href="/profile" onclick={onclose} title={userLabel}
-           class="flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-bold
-                  text-white transition-opacity hover:opacity-80"
-           style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 60%, #7c3aed) 100%)">
-          {userLabel.slice(0, 2).toUpperCase()}
-        </a>
-        <button onclick={handleLogout} title="Sign out"
-          class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors
-                 text-[var(--fg-muted)] hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
-            {@html IC.signOut}
-          </svg>
-        </button>
-      </div>
-    {:else}
-      <div class="flex items-center gap-1.5">
-        <a href="/profile" onclick={onclose}
-           class="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5
-                  transition-colors hover:bg-[var(--hover)]">
-          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
-                      text-[11px] font-bold text-white"
-               style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 60%, #7c3aed) 100%)">
-            {userLabel.slice(0, 2).toUpperCase()}
-          </div>
-          <div class="min-w-0">
-            <p class="truncate text-xs font-semibold text-[var(--fg)]">{userLabel}</p>
-            <p class="text-[10px] text-[var(--fg-muted)]">{roleLabel}</p>
-          </div>
-        </a>
-        <button onclick={handleLogout} title="Sign out"
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors
-                 text-[var(--fg-muted)] hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
-            {@html IC.signOut}
-          </svg>
-        </button>
-      </div>
-    {/if}
-  </div>
+  <SidebarFooter {collapsed} {onclose} />
 </aside>

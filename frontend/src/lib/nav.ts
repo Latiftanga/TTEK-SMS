@@ -57,16 +57,14 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
       { href: '/attendance',  label: 'Attendance',   icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
       {
-        href: '/assessments', label: 'Assessments',  icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
+        href: '/assessments', label: 'Assessments', icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
         children: [
-          { href: '/assessments',        label: 'Score Entry',    roles: ['teacher', 'admin', 'approver'] },
-          { href: '/assessments/scales', label: 'Grading Scales', roles: ['admin', 'approver'] },
-          { href: '/assessments/types',  label: 'Types',          roles: ['admin', 'approver'] },
+          { href: '/assessments', label: 'Score Entry',   roles: ['teacher', 'admin', 'approver'] },
+          { href: '/reports',     label: 'Report Cards',  roles: ['teacher', 'admin', 'approver'] },
         ],
       },
-      { href: '/fees',        label: 'Fees',         icon: IC.fees,        roles: ['finance', 'admin'] },
-      { href: '/reports',     label: 'Report Cards', icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
-      { href: '/housing',     label: 'Housing',      icon: IC.housing,     roles: ['admin', 'approver', 'housemaster'] },
+      { href: '/fees',    label: 'Fees',    icon: IC.fees,    roles: ['finance', 'admin'] },
+      { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'] },
     ],
   },
   {
