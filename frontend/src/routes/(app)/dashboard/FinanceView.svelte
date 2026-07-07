@@ -17,10 +17,10 @@
   const C = 2 * Math.PI * 40;
 
   const actions = $derived.by(() => [
-    { href: '/fees/pay',         label: 'Record Payment',   sub: 'Accept a new payment',   primary: true  },
-    { href: '/fees?outstanding', label: 'View Outstanding', sub: `${data.outstanding_students} students`, primary: false },
-    { href: '/fees/discounts',   label: 'Manage Discounts', sub: 'Apply or review',         primary: false },
-    { href: '/fees/report',      label: 'Fee Report',       sub: 'Export & analyse',        primary: false },
+    { href: '/fees',  label: 'Record Payment',   sub: 'Accept a new payment',                        primary: true  },
+    { href: '/fees',  label: 'View Outstanding', sub: `${data.outstanding_students} students`,        primary: false },
+    { href: '/fees',  label: 'Manage Discounts', sub: 'Apply or review waivers',                     primary: false },
+    { href: '/fees',  label: 'Fee Report',       sub: 'Export & analyse',                            primary: false },
   ]);
 
   const icons = {

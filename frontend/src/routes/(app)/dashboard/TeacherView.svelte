@@ -20,7 +20,7 @@
       urgent: !data.my_class?.attendance_marked_today,
     },
     {
-      href: '/scores',
+      href: '/assessments',
       label: 'Enter Scores',
       badge: data.pending_score_assessments > 0 ? `${data.pending_score_assessments} pending` : 'No pending',
       urgent: data.pending_score_assessments > 0,
@@ -132,7 +132,7 @@
       <StatCard label="Pending Scores" value={data.pending_score_assessments}
         iconPath={icons.pencil}
         color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
-        href="/scores" alert={data.pending_score_assessments > 0} />
+        href="/assessments" alert={data.pending_score_assessments > 0} />
       <StatCard label="Absent Today" value={data.my_class?.absent_today ?? 0}
         iconPath={icons.userMinus}
         color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"

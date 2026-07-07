@@ -20,7 +20,7 @@
     { href: '/attendance',  label: 'Attendance', icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
     { href: '/assessments', label: 'Scores',     icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
     { href: '/fees',        label: 'Fees',       icon: IC.fees,        roles: ['finance', 'admin'] },
-    { href: '/housing',     label: 'Housing',    icon: IC.housing,     roles: ['admin', 'housemaster'] },
+    { href: '/housing',     label: 'Housing',    icon: IC.housing,     roles: ['admin', 'approver', 'housemaster'] },
     { href: '/reports',     label: 'Reports',    icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
     { href: '/students',    label: 'Students',   icon: IC.students,    roles: ['admin'] },
   ];

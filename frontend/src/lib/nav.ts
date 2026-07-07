@@ -59,7 +59,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         href: '/assessments', label: 'Assessments',  icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
         children: [
-          { href: '/assessments',        label: 'Assessments',    roles: ['teacher', 'admin', 'approver'] },
+          { href: '/assessments',        label: 'Score Entry',    roles: ['teacher', 'admin', 'approver'] },
           { href: '/assessments/scales', label: 'Grading Scales', roles: ['admin', 'approver'] },
           { href: '/assessments/types',  label: 'Types',          roles: ['admin', 'approver'] },
         ],
@@ -77,13 +77,13 @@ export const NAV_GROUPS: NavGroup[] = [
         href: '/admin/academic/classes', label: 'Academic', icon: IC.academic, roles: ['admin'],
         children: [
           { href: '/admin/academic/classes',    label: 'Classes',    roles: ['admin'] },
-          { href: '/admin/academic/years',      label: 'Calendar',   roles: ['admin'] },
+          { href: '/admin/academic/years',      label: 'Years & Terms', roles: ['admin'] },
           { href: '/admin/academic/promote',    label: 'Promotion',  roles: ['admin'] },
           { href: '/admin/academic/graduation', label: 'Graduation', roles: ['admin'] },
         ],
       },
       {
-        href: '/students', label: 'Students', icon: IC.students, roles: ['admin'],
+        href: '/students', label: 'Students', icon: IC.students, roles: ['teacher', 'admin'],
         children: [
           { href: '/students',         label: 'Directory',  roles: ['admin'] },
           { href: '/admin/transfers',  label: 'Transfers',  roles: ['admin'] },

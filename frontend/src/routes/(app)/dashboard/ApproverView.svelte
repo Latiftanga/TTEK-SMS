@@ -38,12 +38,12 @@
       <StatCard
         label="Pending Approvals" value={data.pending_approvals}
         icon="⏳" color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400"
-        href="/scores?filter=pending" alert={data.pending_approvals > 0}
+        href="/assessments" alert={data.pending_approvals > 0}
       />
       <StatCard
         label="This Term" value={data.assessments_this_term}
         icon="📝" color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
-        href="/scores" trend={`${approved} approved`}
+        href="/assessments" trend={`${approved} approved`}
       />
     </div>
 
@@ -91,7 +91,7 @@
   <div>
     <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Actions</p>
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
-      <a href="/scores?filter=pending" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
+      <a href="/assessments" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
         <div class="flex h-8 w-8 items-center justify-center rounded-lg
                     {data.pending_approvals > 0 ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-gray-100 dark:bg-gray-800'}">
           {#if data.pending_approvals > 0}
@@ -108,7 +108,7 @@
         </div>
         <svg class="h-4 w-4 text-gray-300 dark:text-gray-700 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
       </a>
-      <a href="/scores" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
+      <a href="/assessments" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
         <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
           <svg class="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>

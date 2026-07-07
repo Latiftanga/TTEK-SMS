@@ -13,8 +13,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.academic import Class, SHSProgramme
+from app.models.academic import Class, ClassTeacher, SHSProgramme, SubjectTeacher
 from app.models.auth import User
+from app.models.housing import HouseMaster, StudentHouseAssignment
 from app.models.students import (
     Guardian,
     Student,
@@ -194,8 +195,39 @@ async def list_students(
     term_id: uuid.UUID | None = None,
     gender: str | None = None,
     level: str | None = None,
+    staff_member_id: uuid.UUID | None = None,
 ) -> list[StudentSummary]:
     q = select(Student).where(Student.school_id == school_id)
+
+    if staff_member_id is not None:
+        # Restrict to students the staff member is directly responsible for:
+        # classes they teach (ClassTeacher) or subjects they deliver (SubjectTeacher),
+        # plus any house they manage (HouseMaster).
+        taught_class_ids = (
+            select(ClassTeacher.class_id).where(
+                ClassTeacher.staff_member_id == staff_member_id,
+                ClassTeacher.is_active == True,  # noqa: E712
+            )
+        ).union(
+            select(SubjectTeacher.class_id).where(
+                SubjectTeacher.staff_member_id == staff_member_id,
+                SubjectTeacher.is_active == True,  # noqa: E712
+            )
+        )
+        in_taught_class = select(StudentClassAssignment.student_id).where(
+            StudentClassAssignment.class_id.in_(taught_class_ids),
+            StudentClassAssignment.is_active == True,  # noqa: E712
+        )
+        managed_house_ids = select(HouseMaster.house_id).where(
+            HouseMaster.staff_member_id == staff_member_id,
+            HouseMaster.is_active == True,  # noqa: E712
+        )
+        in_managed_house = select(StudentHouseAssignment.student_id).where(
+            StudentHouseAssignment.house_id.in_(managed_house_ids),
+            StudentHouseAssignment.vacated_at.is_(None),
+        )
+        q = q.where(or_(Student.id.in_(in_taught_class), Student.id.in_(in_managed_house)))
+
     if active_only:
         q = q.where(Student.is_active == True)  # noqa: E712
     if gender:

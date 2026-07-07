@@ -31,8 +31,8 @@
   const adminLinks = [
     { href: '/admin/academic',   label: 'Academic Setup',    sub: 'Years, terms & calendar',   icon: icons.academic  },
     { href: '/admin/staff',      label: 'Manage Staff',      sub: 'Profiles & permissions',    icon: icons.staff     },
-    { href: '/admin/fees-setup', label: 'Fee Structure',     sub: 'Types, amounts & waivers',  icon: icons.feeSetup  },
-    { href: '/admin/sms',        label: 'SMS Notifications', sub: 'Provider & auto-alerts',    icon: icons.sms       },
+    { href: '/fees',                          label: 'Fee Structure',     sub: 'Types, amounts & waivers',  icon: icons.feeSetup  },
+    { href: '/admin/setup?tab=communication', label: 'SMS Notifications', sub: 'Provider & auto-alerts',    icon: icons.sms       },
   ];
 </script>
 
@@ -45,7 +45,7 @@
     <p class="mt-0.5 text-sm text-[var(--fg-muted)]">{data.school_name}</p>
   </div>
   {#if data.pending_approvals > 0}
-    <a href="/scores?filter=pending"
+    <a href="/assessments"
        class="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-200 dark:border-amber-700
               bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-xs font-semibold
               text-amber-700 dark:text-amber-400 transition hover:bg-amber-100 dark:hover:bg-amber-900/60">
@@ -91,7 +91,7 @@
     iconPath={icons.pending}
     color="bg-amber-50 dark:bg-amber-950/40"
     iconColor="text-amber-500 dark:text-amber-400"
-    href="/scores"
+    href="/assessments"
     alert={data.pending_approvals > 0}
   />
 </div>

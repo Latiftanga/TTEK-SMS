@@ -11,6 +11,7 @@
   import StudentImportDrawer  from './StudentImportDrawer.svelte';
   import BulkActionModal      from './BulkActionModal.svelte';
   import { setPageTitle } from '$lib/stores/title';
+  import { isSchoolAdmin } from '$lib/stores/permissions';
   setPageTitle('Students');
   import EmptyState           from '$lib/components/EmptyState.svelte';
   import PageHeader           from '$lib/components/PageHeader.svelte';
@@ -114,28 +115,33 @@
 </script>
 
 
-<PageHeader title="Students" description="Manage enrolment, guardians, and student records.">
-  <button onclick={() => importOpen = true} class="btn-ghost">
-    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-    Import
-  </button>
-  <div class="relative">
-    <button onclick={() => exportMenuOpen = !exportMenuOpen} disabled={exporting} class="btn-ghost">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-      {exporting ? 'Exporting…' : 'Export'}
+<PageHeader
+  title="Students"
+  description={$isSchoolAdmin ? 'Manage enrolment, guardians, and student records.' : 'Students assigned to your classes or house.'}
+>
+  {#if $isSchoolAdmin}
+    <button onclick={() => importOpen = true} class="btn-ghost">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+      Import
     </button>
-    {#if exportMenuOpen}
-      <button class="fixed inset-0 z-[5] cursor-default" onclick={() => exportMenuOpen = false} tabindex="-1" aria-hidden="true"></button>
-      <div class="absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg">
-        <button onclick={() => { exportMenuOpen = false; handleExport(); }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Full export (CSV)</button>
-        <button onclick={() => { exportMenuOpen = false; customExportOpen = true; }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Custom export…</button>
-      </div>
-    {/if}
-  </div>
-  <button onclick={() => formOpen = true} class="btn-primary">
-    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-    Add student
-  </button>
+    <div class="relative">
+      <button onclick={() => exportMenuOpen = !exportMenuOpen} disabled={exporting} class="btn-ghost">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+        {exporting ? 'Exporting…' : 'Export'}
+      </button>
+      {#if exportMenuOpen}
+        <button class="fixed inset-0 z-[5] cursor-default" onclick={() => exportMenuOpen = false} tabindex="-1" aria-hidden="true"></button>
+        <div class="absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg">
+          <button onclick={() => { exportMenuOpen = false; handleExport(); }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Full export (CSV)</button>
+          <button onclick={() => { exportMenuOpen = false; customExportOpen = true; }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Custom export…</button>
+        </div>
+      {/if}
+    </div>
+    <button onclick={() => formOpen = true} class="btn-primary">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+      Add student
+    </button>
+  {/if}
 </PageHeader>
 
 <!-- Stats row -->
@@ -223,9 +229,11 @@
     <table class="w-full text-sm">
       <thead>
         <tr class="border-b border-[var(--border)] bg-[var(--hover)]">
-          <th class="w-10 px-4 py-3">
-            <input type="checkbox" checked={allSelected} onchange={toggleAll} class="rounded accent-[var(--brand)]" />
-          </th>
+          {#if $isSchoolAdmin}
+            <th class="w-10 px-4 py-3">
+              <input type="checkbox" checked={allSelected} onchange={toggleAll} class="rounded accent-[var(--brand)]" />
+            </th>
+          {/if}
           <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Student</th>
           <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden sm:table-cell">Admission No.</th>
           <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden md:table-cell">Class</th>
@@ -237,9 +245,11 @@
         {#each students as s (s.id)}
           <tr onclick={() => goto(`/students/${s.id}`)}
             class="cursor-pointer transition hover:bg-[var(--hover)] {selected.has(s.id) ? '!bg-[color-mix(in_srgb,var(--brand)_5%,transparent)]' : ''}">
-            <td class="w-10 px-4 py-3" onclick={(e) => { e.stopPropagation(); toggle(s.id); }}>
-              <input type="checkbox" checked={selected.has(s.id)} onchange={() => toggle(s.id)} class="rounded accent-[var(--brand)]" />
-            </td>
+            {#if $isSchoolAdmin}
+              <td class="w-10 px-4 py-3" onclick={(e) => { e.stopPropagation(); toggle(s.id); }}>
+                <input type="checkbox" checked={selected.has(s.id)} onchange={() => toggle(s.id)} class="rounded accent-[var(--brand)]" />
+              </td>
+            {/if}
             <td class="px-4 py-3">
               <div class="flex items-center gap-3">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
@@ -288,10 +298,14 @@
   </div>
 {/if}
 
-<BulkActionModal {selected} classes={$classesQ.data ?? []} onClear={() => selected = new Set()} />
+{#if $isSchoolAdmin}
+  <BulkActionModal {selected} classes={$classesQ.data ?? []} onClear={() => selected = new Set()} />
+{/if}
 
-<StudentForm open={formOpen} onClose={() => formOpen = false} />
-<StudentImportDrawer open={importOpen} onClose={() => importOpen = false} />
-{#if customExportOpen}
-  <CustomExportModal entityType="students" filterParams={params} onClose={() => customExportOpen = false} />
+{#if $isSchoolAdmin}
+  <StudentForm open={formOpen} onClose={() => formOpen = false} />
+  <StudentImportDrawer open={importOpen} onClose={() => importOpen = false} />
+  {#if customExportOpen}
+    <CustomExportModal entityType="students" filterParams={params} onClose={() => customExportOpen = false} />
+  {/if}
 {/if}

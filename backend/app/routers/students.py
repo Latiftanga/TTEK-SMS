@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
+from app.core.permissions import resolve_permissions
 from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -86,12 +87,23 @@ async def list_students(
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    from app.models.auth import User
+    user_id, school_id = ids
+
+    # Admins (students.edit) see everyone; view-only staff see only their own students.
+    staff_member_id = None
+    user = await db.get(User, user_id)
+    if user and not user.is_superadmin and user.staff_member_id:
+        perms = await resolve_permissions(user.staff_member_id, db)
+        if not perms.get("students.edit", False):
+            staff_member_id = user.staff_member_id
+
     return await svc.list_students(
         school_id, db,
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
         gender=gender, level=level,
+        staff_member_id=staff_member_id,
     )
 
 
