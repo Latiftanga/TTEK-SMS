@@ -3,6 +3,7 @@
   import { writable } from 'svelte/store';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { get } from 'svelte/store';
   import {
     getAssessment, listScores, submitScores, approveScores,
     publishAssessment, updateAssessment, deleteAssessment,
@@ -11,6 +12,9 @@
   import { listSubjects } from '$lib/api/academic';
   import { listStudents } from '$lib/api/students';
   import { userRole } from '$lib/stores/permissions';
+  import { auth } from '$lib/stores/auth';
+  import { queueWrite } from '$lib/offline/outbox';
+  import { refreshOutboxCount } from '$lib/offline/sync';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import ScoreTable from './ScoreTable.svelte';
@@ -50,20 +54,53 @@
   const scoreMap = $derived(new Map(($scoresQ.data ?? []).map((s: Score) => [s.student_id, s])));
   const unapprovedCount = $derived(($scoresQ.data ?? []).filter(s => !s.is_approved).length);
 
+  // ── Offline queue helper ──────────────────────────────────────────────────────
+  async function queueScoresOffline(asmtId: string, entries: { student_id: string; raw_score: number }[]): Promise<void> {
+    const schoolId = get(auth).schoolId ?? '';
+    const osa = auth.offlineSessionStartedAt ?? new Date().toISOString();
+    for (const e of entries) {
+      await queueWrite({ entity: 'Score', method: 'POST', endpoint: `/assessments/${asmtId}/scores`,
+        payload: { assessment_id: asmtId, student_id: e.student_id, raw_score: e.raw_score },
+        offline_session_started_at: osa, school_id: schoolId });
+    }
+    await refreshOutboxCount();
+  }
+
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const submitMut = createMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const a = $assessmentQ.data!;
       const entries = ($studentsQ.data ?? [])
         .filter(s => scoreInputs[s.id] != null && scoreInputs[s.id] !== '')
         .map(s => ({ student_id: s.id, raw_score: Number(scoreInputs[s.id]) }));
       const invalid = entries.filter(e => isNaN(e.raw_score) || e.raw_score < 0 || e.raw_score > Number(a.max_score));
       if (invalid.length > 0) throw new Error(`${invalid.length} score(s) out of range 0–${a.max_score}.`);
-      return submitScores(assessmentId, entries);
+      try {
+        return { saved: await submitScores(assessmentId, entries), entries };
+      } catch (err: unknown) {
+        // No response → network unreachable; queue for later sync.
+        if (!(err as { response?: unknown }).response) {
+          await queueScoresOffline(assessmentId, entries);
+          return { saved: null, entries };
+        }
+        throw err;
+      }
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, entries }) => {
+      if (!saved) {
+        // Optimistically update cache so ScoreTable shows "All saved".
+        const now = new Date().toISOString();
+        qc.setQueryData(['scores', assessmentId], (old: Score[] | undefined) => [
+          ...(old ?? []).filter(s => !entries.some(e => e.student_id === s.student_id)),
+          ...entries.map(e => ({ id: `offline-${e.student_id}`, student_id: e.student_id,
+            raw_score: String(e.raw_score), is_approved: false, cached_grade_label: null, submitted_at: now })),
+        ] as Score[]);
+        initializedFor = assessmentId;
+        toast.info('No connection — scores queued and will sync when you reconnect.');
+        return;
+      }
       qc.invalidateQueries({ queryKey: ['scores', assessmentId] });
-      const m = new Map(saved.map(s => [s.student_id, s]));
+      const m = new Map(saved.map((s: Score) => [s.student_id, s]));
       const next: Record<string, string | number> = {};
       for (const s of $studentsQ.data ?? []) next[s.id] = m.get(s.id) ? Number(m.get(s.id)!.raw_score) : (scoreInputs[s.id] ?? '');
       scoreInputs = next; initializedFor = assessmentId;

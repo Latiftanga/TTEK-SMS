@@ -1,14 +1,17 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import Sidebar  from '$lib/components/Sidebar.svelte';
-  import TopBar   from '$lib/components/TopBar.svelte';
+  import Sidebar   from '$lib/components/Sidebar.svelte';
+  import TopBar    from '$lib/components/TopBar.svelte';
   import BottomNav from '$lib/components/BottomNav.svelte';
-  import Toast    from '$lib/components/Toast.svelte';
+  import Toast     from '$lib/components/Toast.svelte';
   import { documentTitle } from '$lib/stores/title';
+  import { initOfflineSync, pendingOutboxCount } from '$lib/offline/sync';
 
   const { children } = $props();
 
   let sidebarOpen = $state(false);
+
+  $effect(() => { initOfflineSync(); });
 </script>
 
 <svelte:head><title>{$documentTitle}</title></svelte:head>
@@ -18,6 +21,22 @@
 
   <div class="flex flex-1 flex-col overflow-hidden">
     <TopBar toggleSidebar={() => sidebarOpen = !sidebarOpen} />
+
+    {#if $pendingOutboxCount > 0}
+      <div class="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2
+                  dark:border-amber-800 dark:bg-amber-950/40">
+        <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 lg:px-8">
+          <div class="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"></span>
+            {$pendingOutboxCount} score{$pendingOutboxCount === 1 ? '' : 's'} queued offline
+          </div>
+          <a href="/sync"
+             class="text-xs font-semibold text-amber-700 underline hover:no-underline dark:text-amber-400">
+            Review →
+          </a>
+        </div>
+      </div>
+    {/if}
 
     <main class="flex-1 overflow-y-auto">
       <div class="mx-auto max-w-7xl px-4 py-7 pb-24 lg:px-8 lg:pb-8">
