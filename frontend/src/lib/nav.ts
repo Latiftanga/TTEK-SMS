@@ -74,12 +74,12 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/setup', label: 'School Setup', icon: IC.setup,     roles: ['admin'] },
       {
-        href: '/admin/academic/classes', label: 'Academic', icon: IC.academic, roles: ['admin'],
+        href: '/admin/academic', label: 'Academic', icon: IC.academic, roles: ['admin'],
         children: [
-          { href: '/admin/academic/classes',    label: 'Classes',    roles: ['admin'] },
           { href: '/admin/academic/years',      label: 'Years & Terms', roles: ['admin'] },
-          { href: '/admin/academic/promote',    label: 'Promotion',  roles: ['admin'] },
-          { href: '/admin/academic/graduation', label: 'Graduation', roles: ['admin'] },
+          { href: '/admin/academic/classes',    label: 'Classes',       roles: ['admin'] },
+          { href: '/admin/academic/promote',    label: 'Promotion',     roles: ['admin'] },
+          { href: '/admin/academic/graduation', label: 'Graduation',    roles: ['admin'] },
         ],
       },
       {

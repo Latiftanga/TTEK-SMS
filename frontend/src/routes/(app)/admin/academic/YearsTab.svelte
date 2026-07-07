@@ -16,6 +16,15 @@
   let expandedYearId = $state<string | null>(null);
   let confirmYearId  = $state<string | null>(null);
 
+  // Auto-expand the current year on first data load
+  let _autoExpanded = false;
+  $effect(() => {
+    if (!_autoExpanded && $yearsQuery.data) {
+      const cur = $yearsQuery.data.find(y => y.is_current);
+      if (cur) { _autoExpanded = true; expandedYearId = cur.id; }
+    }
+  });
+
   let showYearForm = $state(false);
   let yearForm = $state({ name: '', start_date: '', end_date: '' });
   let yearError = $state('');
