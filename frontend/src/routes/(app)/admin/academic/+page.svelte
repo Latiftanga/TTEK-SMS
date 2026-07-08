@@ -25,7 +25,7 @@
 <div class="space-y-7">
   <div>
     <h1 class="text-xl font-bold text-[var(--fg)]">Academic</h1>
-    <p class="mt-0.5 text-sm text-[var(--fg-muted)]">Manage academic years, classes, and year-end activities.</p>
+    <p class="mt-0.5 text-sm text-[var(--fg-muted)]">Manage years, terms, classes, subjects, programmes, and year-end activities.</p>
   </div>
 
   <!-- Current academic context -->
@@ -132,6 +132,42 @@
       <p class="font-semibold text-[var(--fg)]">Classes</p>
       <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
         Create and manage classes, assign class teachers, and view enrolled students.
+      </p>
+      <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
+        Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+      </p>
+    </a>
+
+    <!-- Subjects -->
+    <a href="/admin/academic/subjects"
+      class="group flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5
+             transition hover:border-[var(--brand)]/40 hover:shadow-sm">
+      <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
+        </svg>
+      </div>
+      <p class="font-semibold text-[var(--fg)]">Subjects</p>
+      <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
+        Define the subject catalogue available across all classes. Assign subjects to classes from the class detail page.
+      </p>
+      <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
+        Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+      </p>
+    </a>
+
+    <!-- Programmes -->
+    <a href="/admin/academic/programmes"
+      class="group flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5
+             transition hover:border-[var(--brand)]/40 hover:shadow-sm">
+      <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600 text-white">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>
+        </svg>
+      </div>
+      <p class="font-semibold text-[var(--fg)]">Programmes</p>
+      <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
+        Configure SHS programmes — Science, Arts, Business, etc. Used when placing students into specialised tracks.
       </p>
       <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
         Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
