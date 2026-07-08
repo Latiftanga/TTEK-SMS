@@ -33,7 +33,7 @@
   // ── Selected student ───────────────────────────────────────────────────────────
   let selected = $state<StudentSummary | null>(null);
 
-  function pick(s: StudentSummary) { selected = s; searchText = ''; showResults = false; }
+  function pick(s: StudentSummary) { selected = s; searchText = ''; }
   function clear() { selected = null; searchText = ''; }
   function initials(s: StudentSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }
 
