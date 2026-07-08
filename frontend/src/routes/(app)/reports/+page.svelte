@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { listClasses, listYears } from '$lib/api/academic';
   import {
     listClassEnrollments, getReportCardBlob, queueBulkReport, downloadBulkReport,
@@ -32,24 +32,12 @@
   const canApprove = $derived($userRole === 'admin' || $userRole === 'approver');
 
   // ── Enrollment list ───────────────────────────────────────────────────────────
-  const enrollOpts = writable({
+  const enrollQ = reactiveQuery(() => ({
     queryKey: ['report-enrollments', classId, termId] as const,
-    queryFn: () => listClassEnrollments(classId, termId),
-    enabled: !!(classId && termId),
+    queryFn:  () => listClassEnrollments(classId, termId),
+    enabled:  !!(classId && termId),
     staleTime: 60_000,
-  });
-
-  $effect(() => {
-    const cid = classId, tid = termId;
-    enrollOpts.set({
-      queryKey: ['report-enrollments', cid, tid] as const,
-      queryFn: () => listClassEnrollments(cid, tid),
-      enabled: !!(cid && tid),
-      staleTime: 60_000,
-    });
-  });
-
-  const enrollQ = createQuery(enrollOpts);
+  }));
   const students = $derived<EnrollmentForReport[]>($enrollQ.data ?? []);
 
   // ── Per-student PDF ───────────────────────────────────────────────────────────

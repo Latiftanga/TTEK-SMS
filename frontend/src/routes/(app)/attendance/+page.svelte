@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { listClasses, listYears } from '$lib/api/academic';
   import { listStudents } from '$lib/api/students';
   import {
@@ -27,36 +27,41 @@
   const currentTermId = $derived(allTerms.find(t => t.is_current)?.id ?? '');
 
   // ── Calendar for current term ──────────────────────────────────────────────────
-  const calOpts = writable({ queryKey: ['calendar', ''] as const, queryFn: () => listCalendar(''), enabled: false, staleTime: 10 * 60_000 });
-  $effect(() => { if (currentTermId) calOpts.set({ queryKey: ['calendar', currentTermId] as const, queryFn: () => listCalendar(currentTermId), enabled: true, staleTime: 10 * 60_000 }); });
-  const calendarQ = createQuery(calOpts);
+  const calendarQ = reactiveQuery(() => ({
+    queryKey: ['calendar', currentTermId] as const,
+    queryFn:  () => listCalendar(currentTermId),
+    enabled:  !!currentTermId,
+    staleTime: 10 * 60_000,
+  }));
 
   const calByDate  = $derived(new Map<string, CalendarDay>(($calendarQ.data ?? []).map(d => [d.date, d])));
   const calDay     = $derived(calByDate.get(selectedDate) ?? null);
   const MARKABLE   = new Set(['SCHOOL_DAY', 'EXAM_DAY', 'HALF_DAY']);
   const isMarkable = $derived(!!calDay && MARKABLE.has(calDay.day_type));
 
-  // ── Students ──────────────────────────────────────────────────────────────────
-  const studentsOpts = writable({ queryKey: ['students-for-class', ''] as const, queryFn: () => listStudents({}), enabled: false, staleTime: 60_000 });
-  $effect(() => { if (classId) studentsOpts.set({ queryKey: ['students-for-class', classId] as const, queryFn: () => listStudents({ class_id: classId }), enabled: true, staleTime: 60_000 }); });
-  const studentsQ = createQuery(studentsOpts);
+  // ── Students for selected class ────────────────────────────────────────────────
+  const studentsQ = reactiveQuery(() => ({
+    queryKey: ['students-for-class', classId] as const,
+    queryFn:  () => listStudents({ class_id: classId }),
+    enabled:  !!classId,
+    staleTime: 60_000,
+  }));
 
   // ── Existing records for this day + class ──────────────────────────────────────
-  const recOpts = writable({ queryKey: ['att-records', '', ''] as const, queryFn: () => listAttendanceRecords('', ''), enabled: false, staleTime: 30_000 });
-  $effect(() => {
-    if (classId && calDay) {
-      const cid = classId, did = calDay.id;
-      recOpts.set({ queryKey: ['att-records', did, cid] as const, queryFn: () => listAttendanceRecords(did, cid), enabled: true, staleTime: 30_000 });
-    }
-  });
-  const recordsQ = createQuery(recOpts);
+  const recordsQ = reactiveQuery(() => ({
+    queryKey: ['att-records', calDay?.id ?? '', classId] as const,
+    queryFn:  () => listAttendanceRecords(calDay!.id, classId),
+    enabled:  !!classId && !!calDay,
+    staleTime: 30_000,
+  }));
 
-  // ── Class absence summaries (bulk, for inline display) ─────────────────────────
-  const summOpts = writable({ queryKey: ['att-summaries', '', ''] as const, queryFn: () => getClassSummaries('', ''), enabled: false, staleTime: 5 * 60_000 });
-  $effect(() => {
-    if (classId && currentTermId) summOpts.set({ queryKey: ['att-summaries', classId, currentTermId] as const, queryFn: () => getClassSummaries(classId, currentTermId), enabled: true, staleTime: 5 * 60_000 });
-  });
-  const classSummariesQ = createQuery(summOpts);
+  // ── Class absence summaries (for inline per-student display) ───────────────────
+  const classSummariesQ = reactiveQuery(() => ({
+    queryKey: ['att-summaries', classId, currentTermId] as const,
+    queryFn:  () => getClassSummaries(classId, currentTermId),
+    enabled:  !!classId && !!currentTermId,
+    staleTime: 5 * 60_000,
+  }));
 
   // ── Derived counts ─────────────────────────────────────────────────────────────
   const summaryMap   = $derived(new Map<string, StudentAbsenceSummary>(($classSummariesQ.data ?? []).map(s => [s.student_id, s])));

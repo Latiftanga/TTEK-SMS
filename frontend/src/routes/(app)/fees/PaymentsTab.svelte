@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { useQueryClient } from '@tanstack/svelte-query';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { listStudents, type StudentSummary } from '$lib/api/students';
   import {
     listStudentFeeRecords, getFeeSummary, listPayments, listDiscounts,
@@ -17,30 +17,17 @@
   const qc = useQueryClient();
 
   // ── Student search ─────────────────────────────────────────────────────────────
-  // writable store because createQuery needs a Readable<QueryOptions>; the key
-  // must change reactively as the user types.
-  let searchText  = $state('');
-  let showResults = $state(false);
+  let searchText   = $state('');
+  let searchFocused = $state(false);
+  // Dropdown visible only while the input is focused AND 2+ chars are typed.
+  const showResults = $derived(searchFocused && searchText.trim().length >= 2);
 
-  const searchOpts = writable({
-    queryKey: ['student-search', ''] as const,
-    queryFn:  () => listStudents({ search: '', limit: 8, active_only: true }),
-    enabled:  false,
+  const searchQ       = reactiveQuery(() => ({
+    queryKey: ['student-search', searchText.trim()] as const,
+    queryFn:  () => listStudents({ search: searchText.trim(), limit: 8, active_only: true }),
+    enabled:  searchText.trim().length >= 2,
     staleTime: 10_000,
-  });
-
-  $effect(() => {
-    const q = searchText.trim();
-    searchOpts.set({
-      queryKey: ['student-search', q] as const,
-      queryFn:  () => listStudents({ search: q, limit: 8, active_only: true }),
-      enabled:  q.length >= 2,
-      staleTime: 10_000,
-    });
-    showResults = q.length >= 2;
-  });
-
-  const searchQ       = createQuery(searchOpts);
+  }));
   const searchResults = $derived<StudentSummary[]>($searchQ.data ?? []);
 
   // ── Selected student ───────────────────────────────────────────────────────────
@@ -77,25 +64,12 @@
 
   // 30s staleTime: reflects payments by colleagues on other terminals promptly
   // while avoiding redundant refetches when toggling between students.
-  const feeOpts = writable({
-    queryKey: ['student-fees', '', ''] as const,
-    queryFn:  () => Promise.resolve<FeeData>({ records: [], payments: [], summary: null, discounts: [] }),
-    enabled:  false,
+  const feeQ = reactiveQuery(() => ({
+    queryKey: ['student-fees', selected?.id ?? '', termId] as const,
+    queryFn:  () => fetchFeeData(selected?.id ?? '', termId),
+    enabled:  !!selected?.id && !!termId,
     staleTime: 30_000,
-  });
-
-  $effect(() => {
-    const sid = selected?.id ?? '';
-    const tid = termId;
-    feeOpts.set({
-      queryKey: ['student-fees', sid, tid] as const,
-      queryFn:  () => fetchFeeData(sid, tid),
-      enabled:  !!sid && !!tid,
-      staleTime: 30_000,
-    });
-  });
-
-  const feeQ     = createQuery(feeOpts);
+  }));
   const records   = $derived<FeeRecord[]>($feeQ.data?.records   ?? []);
   const payments  = $derived<FeePayment[]>($feeQ.data?.payments  ?? []);
   const summary   = $derived<FeeSummary | null>($feeQ.data?.summary ?? null);
@@ -149,8 +123,8 @@
       <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/>
     </svg>
     <input bind:value={searchText}
-      onfocus={() => { if (searchText.length >= 2) showResults = true; }}
-      onblur={() => setTimeout(() => { showResults = false; }, 150)}
+      onfocus={() => searchFocused = true}
+      onblur={() => setTimeout(() => searchFocused = false, 150)}
       placeholder="Search student by name or admission number…"
       class="min-w-0 flex-1 bg-transparent text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:outline-none" />
     {#if selected}

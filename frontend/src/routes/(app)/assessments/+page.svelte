@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { goto } from '$app/navigation';
   import {
     listAssessments, listAssessmentTypes, createAssessment,
@@ -40,17 +40,12 @@
     if (classes.length === 1 && !classId) classId = classes[0].id;
   });
 
-  const listOpts = writable({
+  const assessmentsQ = reactiveQuery(() => ({
     queryKey: ['assessments', classId, termId] as const,
-    queryFn: () => listAssessments(classId, termId),
-    enabled: !!(classId && termId),
+    queryFn:  () => listAssessments(classId, termId),
+    enabled:  !!(classId && termId),
     staleTime: 30_000,
-  });
-  $effect(() => {
-    const cid = classId, tid = termId;
-    listOpts.set({ queryKey: ['assessments', cid, tid] as const, queryFn: () => listAssessments(cid, tid), enabled: !!(cid && tid), staleTime: 30_000 });
-  });
-  const assessmentsQ = createQuery(listOpts);
+  }));
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   const typeName    = (id: string) => ($typesQ.data    ?? []).find(t => t.id === id)?.name ?? '—';
