@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { createMutation } from '@tanstack/svelte-query';
   import { portal } from '$lib/actions/portal';
   import { toast } from '$lib/stores/toast';
   import {
@@ -16,8 +16,6 @@
     onSuccess: () => void;
   }
   const { record, studentId, termId, remainingBalance, onClose, onSuccess }: Props = $props();
-
-  const qc = useQueryClient();
 
   const today = new Date().toISOString().slice(0, 10);
   let amount       = $state(remainingBalance.toFixed(2));
@@ -40,7 +38,6 @@
       notes: notes.trim() || undefined,
     }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['fee-data', studentId, termId] });
       toast.success('Payment recorded.');
       onSuccess();
     },
