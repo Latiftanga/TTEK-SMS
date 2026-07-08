@@ -20,15 +20,13 @@
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
   const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
 
-  // Label shown in the chip: "Term 1 · 2025/2026" or "No active term · 2025/2026" or "No academic year"
-  const termLabel = $derived.by(() => {
-    if ($yearQ.isPending) return null;
-    if (!$yearQ.data) return { term: 'No academic year', year: '' };
-    return {
-      term: currentTerm?.name ?? 'No active term',
-      year: $yearQ.data.name,
-    };
-  });
+  const daysLeft = $derived(
+    currentTerm
+      ? Math.ceil((new Date(currentTerm.end_date).getTime() - Date.now()) / 86_400_000)
+      : null
+  );
+
+  const termUrgent = $derived(daysLeft !== null && daysLeft <= 14);
 </script>
 
 <header class="sticky top-0 z-40 flex h-14 items-center gap-3
@@ -60,24 +58,77 @@
     </p>
   </div>
 
-  <!-- Academic year + term chip — all screen sizes -->
-  {#if termLabel}
-    <a href="/admin/academic"
-       class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)]
-              px-2.5 py-1.5 transition hover:border-[var(--brand)]/40 hover:bg-[var(--hover)]">
-      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2"
-           viewBox="0 0 24 24" style="color: var(--brand)">
-        <path stroke-linecap="round" stroke-linejoin="round"
-          d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25
-             2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0
-             0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
-      </svg>
-      <span class="text-xs font-semibold text-[var(--fg)]">{termLabel.term}</span>
-      {#if termLabel.year}
-        <span class="hidden text-[var(--fg-subtle)] sm:inline">·</span>
-        <span class="hidden text-xs text-[var(--fg-muted)] sm:inline">{termLabel.year}</span>
-      {/if}
-    </a>
+  <!-- ── Academic context pills ───────────────────────────────────────────────── -->
+  {#if !$yearQ.isPending}
+    {#if !$yearQ.data}
+      <!-- No year set — amber CTA -->
+      <a href="/admin/academic/years"
+         class="flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
+                transition hover:opacity-80
+                border-amber-300 bg-amber-50 text-amber-700
+                dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400">
+        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/>
+        </svg>
+        Set up academic year
+      </a>
+
+    {:else if !currentTerm}
+      <!-- Year OK, no active term -->
+      <div class="flex shrink-0 items-center gap-1.5">
+        <a href="/admin/academic/years"
+           class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
+                  transition hover:opacity-80"
+           style="border-color: color-mix(in oklab, var(--brand) 30%, transparent);
+                  background: color-mix(in oklab, var(--brand) 10%, transparent);
+                  color: var(--brand)">
+          <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5"/>
+          </svg>
+          {$yearQ.data.name}
+        </a>
+        <a href="/admin/academic/years"
+           class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
+                  transition hover:opacity-80
+                  border-amber-300 bg-amber-50 text-amber-700
+                  dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400">
+          No active term
+        </a>
+      </div>
+
+    {:else}
+      <!-- Year + term both active -->
+      <div class="flex shrink-0 items-center gap-1.5">
+        <!-- Year pill -->
+        <a href="/admin/academic/years"
+           class="hidden sm:flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5
+                  text-xs font-semibold transition hover:opacity-80"
+           style="border-color: color-mix(in oklab, var(--brand) 30%, transparent);
+                  background: color-mix(in oklab, var(--brand) 10%, transparent);
+                  color: var(--brand)">
+          <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5"/>
+          </svg>
+          {$yearQ.data.name}
+        </a>
+        <!-- Term pill -->
+        <a href="/admin/academic/years"
+           class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5
+                  text-xs font-semibold transition hover:opacity-80
+                  {termUrgent
+                    ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400'
+                    : 'border-[var(--border)] bg-[var(--hover)] text-[var(--fg)]'}">
+          {currentTerm.name}
+          {#if daysLeft !== null && daysLeft >= 0}
+            <span class="font-normal {termUrgent ? 'text-amber-600 dark:text-amber-500' : 'text-[var(--fg-muted)]'}">
+              · {daysLeft}d
+            </span>
+          {:else if daysLeft !== null && daysLeft < 0}
+            <span class="font-normal text-red-500">· ended</span>
+          {/if}
+        </a>
+      </div>
+    {/if}
   {/if}
 
   <!-- Desktop: date -->
