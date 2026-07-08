@@ -195,6 +195,14 @@
           <div class="h-16 animate-pulse rounded-xl bg-[var(--hover)]"></div>
         {/each}
       </div>
+    {:else if $feeQ.isError}
+      <div class="mt-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950/30">
+        <p class="text-sm text-red-700 dark:text-red-400">Could not load fee data.</p>
+        <button onclick={() => $feeQ.refetch()}
+          class="ml-3 shrink-0 text-xs font-semibold text-red-700 underline hover:no-underline dark:text-red-400">
+          Retry
+        </button>
+      </div>
     {:else if summary}
       {@const bal = Number(summary.balance)}
       <div class="mt-4 grid grid-cols-3 gap-3 border-t border-[var(--border)] pt-4">
@@ -223,14 +231,14 @@
                style="width: {paidPct}%; {paidPct < 100 ? 'background: var(--brand)' : ''}"></div>
         </div>
       </div>
-    {:else if !$feeQ.isPending && records.length === 0}
+    {:else if records.length === 0}
       <p class="mt-4 text-sm text-[var(--fg-muted)]">
         No fee records for {termName}. Use <strong>Fee Setup → Bulk Assign</strong> to create them.
       </p>
     {/if}
   </div>
 
-  {#if !$feeQ.isPending}
+  {#if !$feeQ.isPending && !$feeQ.isError}
     <FeeLedger
       {records} {sortedPayments} {discountsByRecord} {paidByRecord}
       {termName} {isAdmin} {remaining}
