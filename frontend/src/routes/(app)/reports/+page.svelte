@@ -9,6 +9,7 @@
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import PageHeader from '$lib/components/PageHeader.svelte';
   setPageTitle('Report Cards');
 
   // ── Selectors ─────────────────────────────────────────────────────────────────
@@ -114,6 +115,8 @@
   });
 </script>
 
+
+<PageHeader title="Report Cards" description="Generate and download PDF report cards by class and term." />
 
 <!-- Filters row -->
 <div class="mb-5 flex flex-wrap items-end gap-3">

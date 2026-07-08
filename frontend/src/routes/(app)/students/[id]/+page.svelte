@@ -10,6 +10,7 @@
   import EnrollmentTab from './EnrollmentTab.svelte';
   import MedicalTab    from './MedicalTab.svelte';
   import FeesTab       from './FeesTab.svelte';
+  import TabBar        from '$lib/components/TabBar.svelte';
 
   const qc = useQueryClient();
   const studentId = $derived($page.params.id);
@@ -21,15 +22,15 @@
   });
 
   type Tab = 'profile' | 'guardians' | 'enrollment' | 'medical' | 'fees';
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'profile',    label: 'Profile'    },
-    { key: 'guardians',  label: 'Guardians'  },
-    { key: 'enrollment', label: 'Enrollment' },
-    { key: 'fees',       label: 'Fees'       },
-    { key: 'medical',    label: 'Medical'    },
+  const TABS = [
+    { id: 'profile',    label: 'Profile'    },
+    { id: 'guardians',  label: 'Guardians'  },
+    { id: 'enrollment', label: 'Enrollment' },
+    { id: 'fees',       label: 'Fees'       },
+    { id: 'medical',    label: 'Medical'    },
   ];
   const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
-  function setTab(t: Tab) { goto(`?tab=${t}`, { replaceState: true, noScroll: true }); }
+  function setTab(id: string) { goto(`?tab=${id}`, { replaceState: true, noScroll: true }); }
 
   let confirmDeactivate = $state(false);
 
@@ -148,19 +149,8 @@
     </div>
   </div>
 
-  <!-- Tabs -->
-  <div class="mb-5 border-b border-[var(--border)]">
-    <nav class="-mb-px flex gap-1">
-      {#each TABS as tab}
-        <button onclick={() => setTab(tab.key)}
-          class="relative px-4 pb-3 pt-1 text-sm font-medium transition-colors
-                 {activeTab === tab.key ? 'text-[var(--brand)]' : 'text-[var(--fg-muted)] hover:text-[var(--fg)]'}">
-          {tab.label}
-          <span class="pointer-events-none absolute bottom-0 left-0 right-0 h-0.5 rounded-t-sm
-                       {activeTab === tab.key ? 'bg-[var(--brand)]' : 'bg-transparent'}"></span>
-        </button>
-      {/each}
-    </nav>
+  <div class="mb-5">
+    <TabBar tabs={TABS} active={activeTab} onchange={setTab} />
   </div>
 
   {#if activeTab === 'profile'}
