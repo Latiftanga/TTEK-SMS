@@ -3,6 +3,8 @@
   import ThemeToggle from './ThemeToggle.svelte';
   import UserMenu from './UserMenu.svelte';
   import { school } from '$lib/stores/school';
+  import { currentUser } from '$lib/stores/auth';
+  import { userRole } from '$lib/stores/permissions';
   import { getCurrentYear } from '$lib/api/academic';
 
   interface Props { toggleSidebar: () => void; }
@@ -17,6 +19,11 @@
     const words = n.split(' ').filter((w: string) => w.length > 1);
     return (words.length >= 2 ? words[0][0] + words[1][0] : n.slice(0, 2)).toUpperCase();
   });
+
+  // Only admins and superadmins can navigate to academic year setup.
+  const isAdmin = $derived($userRole === 'admin' || ($currentUser?.is_superadmin ?? false));
+  const pillTag  = $derived(isAdmin ? 'a' : 'div');
+  const setupHref = '/admin/academic/years';
 
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
   const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
@@ -62,24 +69,27 @@
   <!-- ── Academic context pills ───────────────────────────────────────────────── -->
   {#if !$yearQ.isPending}
     {#if !$yearQ.data}
-      <!-- No year set — amber CTA -->
-      <a href="/admin/academic/years"
-         class="flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
-                transition hover:opacity-80
-                border-amber-300 bg-amber-50 text-amber-700
-                dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400">
-        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/>
-        </svg>
-        Set up academic year
-      </a>
+      <!-- No year set — admin-only CTA; non-admins can't fix this -->
+      {#if isAdmin}
+        <a href={setupHref}
+           class="flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
+                  transition hover:opacity-80
+                  border-amber-300 bg-amber-50 text-amber-700
+                  dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400">
+          <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"/>
+          </svg>
+          Set up academic year
+        </a>
+      {/if}
 
     {:else if !currentTerm}
       <!-- Year OK, no active term -->
       <div class="flex shrink-0 items-center gap-1.5">
-        <a href="/admin/academic/years"
+        <!-- Year pill: clickable for admins, plain for others -->
+        <svelte:element this={pillTag} href={isAdmin ? setupHref : undefined}
            class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
-                  transition hover:opacity-80"
+                  {isAdmin ? 'transition hover:opacity-80' : ''}"
            style="border-color: color-mix(in oklab, var(--brand) 30%, transparent);
                   background: color-mix(in oklab, var(--brand) 10%, transparent);
                   color: var(--brand)">
@@ -87,23 +97,24 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5"/>
           </svg>
           {$yearQ.data.name}
-        </a>
-        <a href="/admin/academic/years"
+        </svelte:element>
+        <!-- "No active term" amber pill: clickable for admins, plain for others -->
+        <svelte:element this={pillTag} href={isAdmin ? setupHref : undefined}
            class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold
-                  transition hover:opacity-80
                   border-amber-300 bg-amber-50 text-amber-700
-                  dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400">
+                  dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400
+                  {isAdmin ? 'transition hover:opacity-80' : ''}">
           No active term
-        </a>
+        </svelte:element>
       </div>
 
     {:else}
       <!-- Year + term both active -->
       <div class="flex shrink-0 items-center gap-1.5">
         <!-- Year pill -->
-        <a href="/admin/academic/years"
+        <svelte:element this={pillTag} href={isAdmin ? setupHref : undefined}
            class="hidden sm:flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5
-                  text-xs font-semibold transition hover:opacity-80"
+                  text-xs font-semibold {isAdmin ? 'transition hover:opacity-80' : ''}"
            style="border-color: color-mix(in oklab, var(--brand) 30%, transparent);
                   background: color-mix(in oklab, var(--brand) 10%, transparent);
                   color: var(--brand)">
@@ -111,11 +122,11 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5"/>
           </svg>
           {$yearQ.data.name}
-        </a>
+        </svelte:element>
         <!-- Term pill -->
-        <a href="/admin/academic/years"
+        <svelte:element this={pillTag} href={isAdmin ? setupHref : undefined}
            class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5
-                  text-xs font-semibold transition hover:opacity-80
+                  text-xs font-semibold {isAdmin ? 'transition hover:opacity-80' : ''}
                   {termUrgent
                     ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400'
                     : 'border-[var(--border)] bg-[var(--hover)] text-[var(--fg)]'}">
@@ -127,7 +138,7 @@
           {:else if daysLeft !== null && daysLeft < 0}
             <span class="font-normal text-red-500">· ended</span>
           {/if}
-        </a>
+        </svelte:element>
       </div>
     {/if}
   {/if}
