@@ -1,63 +1,83 @@
 <script lang="ts">
-  import { createQuery } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import {
-    listStudents, exportStudentsCsv,
-    type StudentSummary, type StudentListParams,
-  } from '$lib/api/students';
+  import { createQuery } from '@tanstack/svelte-query';
+  import { reactiveQuery } from '$lib/query.svelte';
+  import { listStudents, exportStudentsCsv, type StudentSummary, type StudentListParams } from '$lib/api/students';
   import { listClasses } from '$lib/api/academic';
-  import StudentForm          from './StudentForm.svelte';
-  import StudentImportDrawer  from './StudentImportDrawer.svelte';
-  import BulkActionModal      from './BulkActionModal.svelte';
-  import { setPageTitle } from '$lib/stores/title';
+  import { school } from '$lib/stores/school';
   import { isSchoolAdmin } from '$lib/stores/permissions';
+  import { setPageTitle } from '$lib/stores/title';
+  import StudentForm         from './StudentForm.svelte';
+  import StudentImportDrawer from './StudentImportDrawer.svelte';
+  import StudentTable        from './StudentTable.svelte';
+  import BulkActionModal     from './BulkActionModal.svelte';
+  import EmptyState          from '$lib/components/EmptyState.svelte';
+  import PageHeader          from '$lib/components/PageHeader.svelte';
+  import CustomExportModal   from '$lib/components/CustomExportModal.svelte';
   setPageTitle('Students');
-  import EmptyState           from '$lib/components/EmptyState.svelte';
-  import PageHeader           from '$lib/components/PageHeader.svelte';
-  import CustomExportModal    from '$lib/components/CustomExportModal.svelte';
 
-  // ── Filter state ────────────────────────────────────────────────────────────
-  let search     = $state('');
-  let activeOnly = $state(true);
-  let gender     = $state<'MALE' | 'FEMALE' | ''>('');
-  let classId    = $state('');
-  let level      = $state('');
+  // ── URL-based filter state ──────────────────────────────────────────────────
+  // class, level, gender, active are persisted in the URL so users can bookmark
+  // and share filtered views. Search is local (debounced to URL).
+  const sp       = $derived($page.url.searchParams);
+  const classId  = $derived(sp.get('class')  ?? '');
+  const level    = $derived(sp.get('level')  ?? '');
+  const gender   = $derived((sp.get('gender') ?? '') as 'MALE' | 'FEMALE' | '');
+  const activeOnly = $derived(sp.get('active') !== 'false');
 
-  // Debounce search so each keystroke doesn't fire a new API request
-  let searchDebounced = $state('');
+  function setFilter(key: string, value: string) {
+    const url = new URL($page.url);
+    if (value) url.searchParams.set(key, value);
+    else       url.searchParams.delete(key);
+    goto(url.toString(), { replaceState: true, noScroll: true });
+  }
+
+  // Search: local state for responsive input; synced to URL with 300ms debounce
+  let searchInput = $state(sp.get('q') ?? '');
   $effect(() => {
-    const val = search;
-    const t = setTimeout(() => { searchDebounced = val; }, 300);
+    const fromUrl = $page.url.searchParams.get('q') ?? '';
+    if (fromUrl !== searchInput) searchInput = fromUrl;   // back/forward sync
+  });
+  $effect(() => {
+    const val = searchInput;
+    const t = setTimeout(() => setFilter('q', val), 300);
     return () => clearTimeout(t);
   });
 
-  // Derive query params reactively
+  const hasFilters = $derived(!!(searchInput || gender || classId || level));
+
+  function clearFilters() {
+    searchInput = '';
+    const url = new URL($page.url);
+    ['q', 'class', 'level', 'gender'].forEach(k => url.searchParams.delete(k));
+    goto(url.toString(), { replaceState: true, noScroll: true });
+  }
+
+  // ── Queries ─────────────────────────────────────────────────────────────────
   const params = $derived<StudentListParams>({
     active_only: activeOnly,
-    limit: 200,
-    search: searchDebounced.trim() || undefined,
-    gender: gender || undefined,
-    class_id: classId || undefined,
-    level: level || undefined,
+    limit:       200,
+    search:      ($page.url.searchParams.get('q') ?? '').trim() || undefined,
+    gender:      gender   || undefined,
+    class_id:    classId  || undefined,
+    level:       level    || undefined,
   });
 
-  // @tanstack/svelte-query v5 requires a Svelte store for reactive query options
-  const queryOpts = writable({ queryKey: ['students', params] as const, queryFn: () => listStudents(params), staleTime: 60_000 });
-  $effect(() => {
-    const p = params;
-    queryOpts.set({ queryKey: ['students', p] as const, queryFn: () => listStudents(p), staleTime: 60_000 });
-  });
-  const query = createQuery(queryOpts);
+  const studentsQ = reactiveQuery(() => ({
+    queryKey: ['students', params] as const,
+    queryFn:  () => listStudents(params),
+    staleTime: 60_000,
+  }));
 
-  const classesQ = createQuery({
-    queryKey: ['classes'],
-    queryFn:  listClasses,
-    staleTime: 5 * 60_000,
-  });
+  const classesQ = createQuery({ queryKey: ['classes'], queryFn: listClasses, staleTime: 5 * 60_000 });
 
-  // ── Derived stats ────────────────────────────────────────────────────────────
-  const students = $derived.by(() => ($query.data ?? []) as StudentSummary[]);
+  // ── Derived data ─────────────────────────────────────────────────────────────
+  const students = $derived<StudentSummary[]>($studentsQ.data ?? []);
+  const levels   = $derived([...new Set(($classesQ.data ?? []).map(c => c.level))].sort());
+
+  // Boarding stat only meaningful for boarding school types
+  const showBoardingStat = $derived(['SHS', 'TECHNICAL', 'VOCATIONAL'].includes($school?.schoolType ?? ''));
   const stats = $derived.by(() => ({
     total:    students.length,
     male:     students.filter(s => s.gender === 'MALE').length,
@@ -65,42 +85,41 @@
     boarding: students.filter(s => s.is_boarding).length,
   }));
 
-  // Unique levels from classes list
-  const levels = $derived(
-    [...new Set(($classesQ.data ?? []).map(c => c.level))].sort()
-  );
+  // ── Client-side sort ─────────────────────────────────────────────────────────
+  let sortCol = $state<'name' | 'admission' | 'class'>('name');
+  let sortDir = $state<'asc' | 'desc'>('asc');
 
-  // ── UI state ─────────────────────────────────────────────────────────────────
-  let formOpen   = $state(false);
-  let importOpen = $state(false);
-  let exporting        = $state(false);
-  let customExportOpen = $state(false);
-  let exportMenuOpen   = $state(false);
+  function toggleSort(col: typeof sortCol) {
+    if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortCol = col; sortDir = 'asc'; }
+  }
+
+  const sorted = $derived.by(() => {
+    const arr = [...students];
+    return arr.sort((a, b) => {
+      const va = sortCol === 'name'      ? (a.display_name       ?? '')
+               : sortCol === 'admission' ? (a.admission_number   ?? '')
+               :                          (a.current_class_name  ?? '');
+      const vb = sortCol === 'name'      ? (b.display_name       ?? '')
+               : sortCol === 'admission' ? (b.admission_number   ?? '')
+               :                          (b.current_class_name  ?? '');
+      return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+  });
 
   // ── Selection ────────────────────────────────────────────────────────────────
-  let selected   = $state(new Set<string>());
-
+  let selected = $state(new Set<string>());
   const allSelected = $derived(students.length > 0 && selected.size === students.length);
-  function toggleAll() { selected = allSelected ? new Set() : new Set(students.map(s => s.id)); }
+  function toggleAll()        { selected = allSelected ? new Set() : new Set(students.map(s => s.id)); }
   function toggle(id: string) { const n = new Set(selected); n.has(id) ? n.delete(id) : n.add(id); selected = n; }
   $effect(() => { params; selected = new Set(); });
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  function initials(s: StudentSummary) {
-    return (s.first_name[0] + s.last_name[0]).toUpperCase();
-  }
-
-  function genderBadge(g: string | null) {
-    if (g === 'MALE')   return 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300';
-    if (g === 'FEMALE') return 'bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300';
-    return 'hidden';
-  }
-
-  function clearFilters() {
-    search = ''; searchDebounced = ''; gender = ''; classId = ''; level = '';
-  }
-
-  const hasFilters = $derived(!!(search || gender || classId || level));
+  // ── Export ───────────────────────────────────────────────────────────────────
+  let formOpen         = $state(false);
+  let importOpen       = $state(false);
+  let exporting        = $state(false);
+  let customExportOpen = $state(false);
+  let exportMenuOpen   = $state(false);
 
   async function handleExport() {
     exporting = true;
@@ -112,8 +131,9 @@
       a.click(); URL.revokeObjectURL(url);
     } finally { exporting = false; }
   }
-</script>
 
+  const selClass = 'rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition';
+</script>
 
 <PageHeader
   title="Students"
@@ -131,7 +151,7 @@
       </button>
       {#if exportMenuOpen}
         <button class="fixed inset-0 z-[5] cursor-default" onclick={() => exportMenuOpen = false} tabindex="-1" aria-hidden="true"></button>
-        <div class="absolute right-0 top-full z-10 mt-1 w-40 rounded-xl border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg">
+        <div class="absolute right-0 top-full z-10 mt-1 w-44 rounded-xl border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg">
           <button onclick={() => { exportMenuOpen = false; handleExport(); }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Full export (CSV)</button>
           <button onclick={() => { exportMenuOpen = false; customExportOpen = true; }} class="w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-[var(--hover)]">Custom export…</button>
         </div>
@@ -144,48 +164,47 @@
   {/if}
 </PageHeader>
 
-<!-- Stats row -->
-<div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+<!-- Stats row — boarding only for boarding-school types -->
+<div class="mb-5 grid grid-cols-2 gap-3 {showBoardingStat ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
   {#each [
-    { label: 'Total', value: stats.total, color: 'text-[var(--fg)]' },
-    { label: 'Male',  value: stats.male,  color: 'text-blue-600 dark:text-blue-400' },
-    { label: 'Female',value: stats.female,color: 'text-pink-600 dark:text-pink-400' },
-    { label: 'Boarding',value: stats.boarding, color: 'text-amber-600 dark:text-amber-400' },
+    { label: 'Total',    value: stats.total,    color: 'text-[var(--fg)]' },
+    { label: 'Male',     value: stats.male,     color: 'text-blue-600 dark:text-blue-400' },
+    { label: 'Female',   value: stats.female,   color: 'text-pink-600 dark:text-pink-400' },
+    ...(showBoardingStat ? [{ label: 'Boarding', value: stats.boarding, color: 'text-amber-600 dark:text-amber-400' }] : []),
   ] as stat}
     <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
       <p class="text-xs font-medium text-[var(--fg-muted)]">{stat.label}</p>
-      <p class="mt-1 text-2xl font-bold {stat.color}">{$query.isPending ? '—' : stat.value}</p>
+      <p class="mt-1 text-2xl font-bold {stat.color}">{$studentsQ.isPending ? '—' : stat.value}</p>
     </div>
   {/each}
 </div>
 
-<!-- Filters -->
+<!-- Filters + result count -->
 <div class="mb-4 flex flex-wrap items-center gap-2">
   <div class="relative min-w-48 flex-1">
     <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--fg-muted)]"
          fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z"/>
     </svg>
-    <input bind:value={search} placeholder="Search name or admission no…"
-      class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2 pl-9 pr-4 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none transition" />
+    <input bind:value={searchInput} placeholder="Search name or admission no…"
+      class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2 pl-9 pr-4
+             text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)]
+             focus:border-[var(--brand)] focus:outline-none transition" />
   </div>
 
-  <select bind:value={classId}
-    class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition">
+  <select value={classId} onchange={(e) => setFilter('class', e.currentTarget.value)} class={selClass}>
     <option value="">All classes</option>
     {#each $classesQ.data ?? [] as c}<option value={c.id}>{c.display_name}</option>{/each}
   </select>
 
-  <select bind:value={level}
-    class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition">
+  <select value={level} onchange={(e) => setFilter('level', e.currentTarget.value)} class={selClass}>
     <option value="">All levels</option>
     {#each levels as l}<option value={l}>{l}</option>{/each}
   </select>
 
-  <!-- Gender pills -->
   <div class="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--card)] p-1">
     {#each [['', 'All'], ['MALE', 'Boys'], ['FEMALE', 'Girls']] as [val, label]}
-      <button onclick={() => gender = val as typeof gender}
+      <button onclick={() => setFilter('gender', val === gender ? '' : val as string)}
         class="rounded-lg px-3 py-1 text-xs font-semibold transition
                {gender === val ? 'bg-[var(--brand)] text-white' : 'text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
         {label}
@@ -194,9 +213,16 @@
   </div>
 
   <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-    <input type="checkbox" bind:checked={activeOnly} class="accent-[var(--brand)]" />
+    <input type="checkbox" checked={activeOnly} onchange={(e) => setFilter('active', e.currentTarget.checked ? '' : 'false')} class="accent-[var(--brand)]" />
     Active only
   </label>
+
+  <!-- Result count — live, near filters so users see impact immediately -->
+  {#if !$studentsQ.isPending}
+    <span class="rounded-lg border border-[var(--border)] bg-[var(--hover)] px-2.5 py-1.5 text-xs font-semibold tabular-nums text-[var(--fg-muted)]">
+      {students.length} student{students.length !== 1 ? 's' : ''}
+    </span>
+  {/if}
 
   {#if hasFilters}
     <button onclick={clearFilters} class="text-xs text-[var(--fg-muted)] underline hover:text-[var(--fg)] transition">
@@ -205,18 +231,18 @@
   {/if}
 </div>
 
-<!-- Table -->
-{#if $query.isPending}
+<!-- Table states -->
+{#if $studentsQ.isPending}
   <div class="space-y-2">
     {#each [1,2,3,4,5] as _}
       <div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>
     {/each}
   </div>
-{:else if $query.isError}
+{:else if $studentsQ.isError}
   <div class="rounded-xl border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-4 text-sm text-red-600 dark:text-red-400">
-    Could not load students. Check your connection and refresh.
+    Could not load students. <button onclick={() => $studentsQ.refetch()} class="ml-1 underline">Retry</button>
   </div>
-{:else if students.length === 0}
+{:else if sorted.length === 0}
   <EmptyState
     iconPath="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
     title={hasFilters ? 'No students match your filters' : 'No students yet'}
@@ -225,84 +251,19 @@
     action={!hasFilters ? () => formOpen = true : undefined}
   />
 {:else}
-  <div class="overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="border-b border-[var(--border)] bg-[var(--hover)]">
-          {#if $isSchoolAdmin}
-            <th class="w-10 px-4 py-3">
-              <input type="checkbox" checked={allSelected} onchange={toggleAll} class="rounded accent-[var(--brand)]" />
-            </th>
-          {/if}
-          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Student</th>
-          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden sm:table-cell">Admission No.</th>
-          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden md:table-cell">Class</th>
-          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)] hidden lg:table-cell">Gender</th>
-          <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Status</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-[var(--border)]">
-        {#each students as s (s.id)}
-          <tr onclick={() => goto(`/students/${s.id}`)}
-            class="cursor-pointer transition hover:bg-[var(--hover)] {selected.has(s.id) ? '!bg-[color-mix(in_srgb,var(--brand)_5%,transparent)]' : ''}">
-            {#if $isSchoolAdmin}
-              <td class="w-10 px-4 py-3" onclick={(e) => { e.stopPropagation(); toggle(s.id); }}>
-                <input type="checkbox" checked={selected.has(s.id)} onchange={() => toggle(s.id)} class="rounded accent-[var(--brand)]" />
-              </td>
-            {/if}
-            <td class="px-4 py-3">
-              <div class="flex items-center gap-3">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                     style="background: var(--brand)">{initials(s)}</div>
-                <div>
-                  <p class="font-medium text-[var(--fg)]">{s.display_name}</p>
-                  <div class="flex flex-wrap items-center gap-1 sm:hidden">
-                    <span class="font-mono text-xs text-[var(--fg-muted)]">{s.admission_number}</span>
-                    {#if s.current_class_name}<span class="text-xs text-[var(--fg-subtle)]">· {s.current_class_name}</span>{/if}
-                  </div>
-                </div>
-              </div>
-            </td>
-            <td class="px-4 py-3 font-mono text-xs text-[var(--fg-muted)] hidden sm:table-cell">{s.admission_number}</td>
-            <td class="px-4 py-3 hidden md:table-cell">
-              {#if s.current_class_name}
-                <span class="rounded-lg bg-[var(--hover)] px-2 py-0.5 text-xs font-medium text-[var(--fg)]">{s.current_class_name}</span>
-              {:else}
-                <span class="text-xs text-[var(--fg-subtle)]">Not enrolled</span>
-              {/if}
-            </td>
-            <td class="px-4 py-3 hidden lg:table-cell">
-              {#if s.gender}
-                <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase {genderBadge(s.gender)}">{s.gender}</span>
-              {:else}<span class="text-xs text-[var(--fg-subtle)]">—</span>{/if}
-            </td>
-            <td class="px-4 py-3">
-              <div class="flex flex-wrap gap-1">
-                {#if s.is_active}
-                  <span class="inline-flex items-center gap-1 text-[10px] font-bold text-green-600 dark:text-green-500"><svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Active</span>
-                {:else}
-                  <span class="rounded-full bg-[var(--hover)] px-2 py-0.5 text-[10px] font-medium text-[var(--fg-muted)]">Inactive</span>
-                {/if}
-                {#if s.is_boarding}
-                  <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400">Boarding</span>
-                {/if}
-              </div>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    <div class="border-t border-[var(--border)] px-4 py-2.5 text-xs text-[var(--fg-muted)]">
-      Showing {students.length} student{students.length !== 1 ? 's' : ''}
-    </div>
-  </div>
+  <StudentTable
+    students={sorted}
+    {selected} {allSelected}
+    isAdmin={$isSchoolAdmin}
+    {sortCol} {sortDir}
+    onSort={toggleSort}
+    onToggle={toggle}
+    onToggleAll={toggleAll}
+  />
 {/if}
 
 {#if $isSchoolAdmin}
   <BulkActionModal {selected} classes={$classesQ.data ?? []} onClear={() => selected = new Set()} />
-{/if}
-
-{#if $isSchoolAdmin}
   <StudentForm open={formOpen} onClose={() => formOpen = false} />
   <StudentImportDrawer open={importOpen} onClose={() => importOpen = false} />
   {#if customExportOpen}
