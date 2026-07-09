@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import ThemeToggle from './ThemeToggle.svelte';
+  import UserMenu from './UserMenu.svelte';
   import { school } from '$lib/stores/school';
   import { getCurrentYear } from '$lib/api/academic';
 
@@ -134,8 +135,9 @@
   <!-- Desktop: date -->
   <span class="hidden text-sm text-[var(--fg-muted)] lg:block">{today}</span>
 
-  <!-- Right: theme toggle -->
-  <div class="ml-auto flex items-center">
+  <!-- Right: theme + user menu -->
+  <div class="ml-auto flex items-center gap-2">
     <ThemeToggle />
+    <UserMenu />
   </div>
 </header>
