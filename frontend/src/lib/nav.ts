@@ -83,14 +83,9 @@ export const NAV_GROUPS: NavGroup[] = [
           { href: '/assessments/types',         label: 'Assessment Types', roles: ['admin', 'approver'] },
         ],
       },
-      {
-        href: '/students', label: 'Students', icon: IC.students, roles: ['teacher', 'admin'],
-        children: [
-          { href: '/students',         label: 'Directory',  roles: ['admin'] },
-          { href: '/admin/transfers',  label: 'Transfers',  roles: ['admin'] },
-        ],
-      },
-      { href: '/admin/staff', label: 'Staff', icon: IC.staff, roles: ['admin'] },
+      { href: '/students',        label: 'Students',   icon: IC.students,  roles: ['teacher', 'admin'] },
+      { href: '/admin/transfers', label: 'Transfers',  icon: IC.transfers, roles: ['admin'] },
+      { href: '/admin/staff',     label: 'Staff',      icon: IC.staff,     roles: ['admin'] },
     ],
   },
 ];
