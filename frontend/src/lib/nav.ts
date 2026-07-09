@@ -59,17 +59,10 @@ export const NAV_GROUPS: NavGroup[] = [
     // Daily work — no heading
     items: [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
-      { href: '/attendance',  label: 'Attendance',   icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
-      {
-        href: '/assessments', label: 'Assessments', icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
-        children: [
-          { href: '/assessments',        label: 'Score Entry',       roles: ['teacher', 'admin', 'approver'] },
-          { href: '/reports',            label: 'Report Cards',      roles: ['teacher', 'admin', 'approver'] },
-          { href: '/assessments/scales', label: 'Grading Scales',    roles: ['admin', 'approver'] },
-          { href: '/assessments/types',  label: 'Assessment Types',  roles: ['admin', 'approver'] },
-        ],
-      },
-      { href: '/fees',    label: 'Fees',    icon: IC.fees,    roles: ['finance', 'admin'] },
+      { href: '/attendance',  label: 'Attendance',    icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
+      { href: '/assessments', label: 'Assessments',   icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
+      { href: '/reports',     label: 'Report Cards',  icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
+      { href: '/fees',        label: 'Fees',          icon: IC.fees,        roles: ['finance', 'admin'] },
       { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
         schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
     ],
@@ -79,13 +72,15 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/setup', label: 'School Setup', icon: IC.setup,     roles: ['admin'] },
       {
-        href: '/admin/academic', label: 'Academic', icon: IC.academic, roles: ['admin'],
+        href: '/admin/academic', label: 'Academic', icon: IC.academic, roles: ['admin', 'approver'],
         children: [
-          { href: '/admin/academic/years',      label: 'Years & Terms', roles: ['admin'] },
-          { href: '/admin/academic/classes',    label: 'Classes',       roles: ['admin'] },
-          { href: '/admin/academic/subjects',   label: 'Subjects',      roles: ['admin'] },
-          { href: '/admin/academic/programmes', label: 'Programmes',    roles: ['admin'],
+          { href: '/admin/academic/years',      label: 'Years & Terms',    roles: ['admin'] },
+          { href: '/admin/academic/classes',    label: 'Classes',          roles: ['admin'] },
+          { href: '/admin/academic/subjects',   label: 'Subjects',         roles: ['admin'] },
+          { href: '/admin/academic/programmes', label: 'Programmes',       roles: ['admin'],
             schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
+          { href: '/assessments/scales',        label: 'Grading Scales',   roles: ['admin', 'approver'] },
+          { href: '/assessments/types',         label: 'Assessment Types', roles: ['admin', 'approver'] },
         ],
       },
       {
