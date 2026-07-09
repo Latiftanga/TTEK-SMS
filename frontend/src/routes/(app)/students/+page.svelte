@@ -5,7 +5,6 @@
   import { reactiveQuery } from '$lib/query.svelte';
   import { listStudents, exportStudentsCsv, type StudentSummary, type StudentListParams } from '$lib/api/students';
   import { listClasses } from '$lib/api/academic';
-  import { school } from '$lib/stores/school';
   import { isSchoolAdmin } from '$lib/stores/permissions';
   import { setPageTitle } from '$lib/stores/title';
   import StudentForm         from './StudentForm.svelte';
@@ -18,18 +17,26 @@
   setPageTitle('Students');
 
   // ── URL-based filter state ──────────────────────────────────────────────────
-  // class, level, gender, active are persisted in the URL so users can bookmark
-  // and share filtered views. Search is local (debounced to URL).
-  const sp       = $derived($page.url.searchParams);
-  const classId  = $derived(sp.get('class')  ?? '');
-  const level    = $derived(sp.get('level')  ?? '');
-  const gender   = $derived((sp.get('gender') ?? '') as 'MALE' | 'FEMALE' | '');
+  // class, year, gender, active are persisted in the URL.
+  // year encodes "level::year_group" e.g. "B::3" or "KG::1".
+  const sp      = $derived($page.url.searchParams);
+  const classId = $derived(sp.get('class')  ?? '');
+  const yearKey = $derived(sp.get('year')   ?? '');   // e.g. "B::3"
+  const gender  = $derived((sp.get('gender') ?? '') as 'MALE' | 'FEMALE' | '');
   const activeOnly = $derived(sp.get('active') !== 'false');
+
+  // Parse yearKey → { level, year_group } for the API
+  const yearFilter = $derived.by(() => {
+    if (!yearKey) return { level: undefined, year_group: undefined };
+    const [lvl, yg] = yearKey.split('::');
+    return { level: lvl || undefined, year_group: yg ? Number(yg) : undefined };
+  });
 
   function setFilter(key: string, value: string) {
     const url = new URL($page.url);
     if (value) url.searchParams.set(key, value);
     else       url.searchParams.delete(key);
+    if (key === 'year') url.searchParams.delete('class'); // year change resets class drill-down
     goto(url.toString(), { replaceState: true, noScroll: true });
   }
 
@@ -45,12 +52,12 @@
     return () => clearTimeout(t);
   });
 
-  const hasFilters = $derived(!!(searchInput || gender || classId || level));
+  const hasFilters = $derived(!!(searchInput || gender || classId || yearKey));
 
   function clearFilters() {
     searchInput = '';
     const url = new URL($page.url);
-    ['q', 'class', 'level', 'gender'].forEach(k => url.searchParams.delete(k));
+    ['q', 'class', 'year', 'gender'].forEach(k => url.searchParams.delete(k));
     goto(url.toString(), { replaceState: true, noScroll: true });
   }
 
@@ -59,9 +66,11 @@
     active_only: activeOnly,
     limit:       200,
     search:      ($page.url.searchParams.get('q') ?? '').trim() || undefined,
-    gender:      gender   || undefined,
-    class_id:    classId  || undefined,
-    level:       level    || undefined,
+    gender:      gender    || undefined,
+    class_id:    classId   || undefined,
+    // When a specific class is chosen it already implies the year — skip the broader filter
+    level:       classId ? undefined : yearFilter.level,
+    year_group:  classId ? undefined : yearFilter.year_group,
   });
 
   const studentsQ = reactiveQuery(() => ({
@@ -74,16 +83,29 @@
 
   // ── Derived data ─────────────────────────────────────────────────────────────
   const students = $derived<StudentSummary[]>($studentsQ.data ?? []);
-  const levels   = $derived([...new Set(($classesQ.data ?? []).map(c => c.level))].sort());
 
-  // Boarding stat only meaningful for boarding school types
-  const showBoardingStat = $derived(['SHS', 'TECHNICAL', 'VOCATIONAL'].includes($school?.schoolType ?? ''));
-  const stats = $derived.by(() => ({
-    total:    students.length,
-    male:     students.filter(s => s.gender === 'MALE').length,
-    female:   students.filter(s => s.gender === 'FEMALE').length,
-    boarding: students.filter(s => s.is_boarding).length,
-  }));
+  // Unique (level, year_group) pairs — the year dropdown options.
+  const yearOptions = $derived.by(() => {
+    const seen = new Set<string>();
+    const opts: { key: string; label: string }[] = [];
+    for (const c of ($classesQ.data ?? [])) {
+      const key = `${c.level}::${c.year_group}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        opts.push({ key, label: `${c.level} ${c.year_group}` });
+      }
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  });
+
+  // Class dropdown narrows to the selected year when one is active.
+  const filteredClasses = $derived.by(() => {
+    const all = $classesQ.data ?? [];
+    if (!yearKey) return all;
+    const [lvl, yg] = yearKey.split('::');
+    return all.filter(c => c.level === lvl && c.year_group === Number(yg));
+  });
+
 
   // ── Client-side sort ─────────────────────────────────────────────────────────
   let sortCol = $state<'name' | 'admission' | 'class'>('name');
@@ -132,7 +154,7 @@
     } finally { exporting = false; }
   }
 
-  const selClass = 'rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition';
+  const selClass = 'min-w-[7rem] rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition';
 </script>
 
 <PageHeader
@@ -164,21 +186,6 @@
   {/if}
 </PageHeader>
 
-<!-- Stats row — boarding only for boarding-school types -->
-<div class="mb-5 grid grid-cols-2 gap-3 {showBoardingStat ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
-  {#each [
-    { label: 'Total',    value: stats.total,    color: 'text-[var(--fg)]' },
-    { label: 'Male',     value: stats.male,     color: 'text-blue-600 dark:text-blue-400' },
-    { label: 'Female',   value: stats.female,   color: 'text-pink-600 dark:text-pink-400' },
-    ...(showBoardingStat ? [{ label: 'Boarding', value: stats.boarding, color: 'text-amber-600 dark:text-amber-400' }] : []),
-  ] as stat}
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
-      <p class="text-xs font-medium text-[var(--fg-muted)]">{stat.label}</p>
-      <p class="mt-1 text-2xl font-bold {stat.color}">{$studentsQ.isPending ? '—' : stat.value}</p>
-    </div>
-  {/each}
-</div>
-
 <!-- Filters + result count -->
 <div class="mb-4 flex flex-wrap items-center gap-2">
   <div class="relative min-w-48 flex-1">
@@ -192,14 +199,14 @@
              focus:border-[var(--brand)] focus:outline-none transition" />
   </div>
 
-  <select value={classId} onchange={(e) => setFilter('class', e.currentTarget.value)} class={selClass}>
-    <option value="">All classes</option>
-    {#each $classesQ.data ?? [] as c}<option value={c.id}>{c.display_name}</option>{/each}
+  <select value={yearKey} onchange={(e) => setFilter('year', e.currentTarget.value)} class={selClass}>
+    <option value="">All years</option>
+    {#each yearOptions as opt}<option value={opt.key}>{opt.label}</option>{/each}
   </select>
 
-  <select value={level} onchange={(e) => setFilter('level', e.currentTarget.value)} class={selClass}>
-    <option value="">All levels</option>
-    {#each levels as l}<option value={l}>{l}</option>{/each}
+  <select value={classId} onchange={(e) => setFilter('class', e.currentTarget.value)} class={selClass}>
+    <option value="">{yearKey ? 'All streams' : 'All classes'}</option>
+    {#each filteredClasses as c}<option value={c.id}>{c.display_name}</option>{/each}
   </select>
 
   <div class="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--card)] p-1">

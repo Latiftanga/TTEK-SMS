@@ -84,6 +84,7 @@ async def list_students(
     term_id: uuid.UUID | None = Query(None),
     gender: str | None = Query(None),
     level: str | None = Query(None),
+    year_group: int | None = Query(None),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -102,7 +103,7 @@ async def list_students(
         school_id, db,
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
-        gender=gender, level=level,
+        gender=gender, level=level, year_group=year_group,
         staff_member_id=staff_member_id,
     )
 
@@ -114,6 +115,7 @@ async def export_students(
     term_id: uuid.UUID | None = Query(None),
     gender: str | None = Query(None),
     level: str | None = Query(None),
+    year_group: int | None = Query(None),
     search: str | None = Query(None),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
@@ -124,7 +126,7 @@ async def export_students(
     csv_bytes = await export_students_csv(
         school_id, db,
         active_only=active_only, class_id=class_id, term_id=term_id,
-        gender=gender, level=level, search=search,
+        gender=gender, level=level, year_group=year_group, search=search,
     )
     return StreamingResponse(
         iter([csv_bytes]),
@@ -142,6 +144,7 @@ async def export_students_custom(
     term_id: uuid.UUID | None = Query(None),
     gender: str | None = Query(None),
     level: str | None = Query(None),
+    year_group: int | None = Query(None),
     search: str | None = Query(None),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
@@ -154,7 +157,7 @@ async def export_students_custom(
         school_id, db,
         fields=field_list, fmt=fmt,
         active_only=active_only, class_id=class_id, term_id=term_id,
-        gender=gender, level=level, search=search,
+        gender=gender, level=level, year_group=year_group, search=search,
     )
     if fmt == "excel":
         return StreamingResponse(

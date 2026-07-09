@@ -10,7 +10,7 @@
   const { title, description, children }: Props = $props();
 </script>
 
-<div class="mb-6 flex items-start justify-between gap-4">
+<div class="mb-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
   <div>
     <h1 class="text-xl font-bold tracking-tight text-[var(--fg)]">{title}</h1>
     {#if description}
@@ -18,6 +18,8 @@
     {/if}
   </div>
   {#if children}
-    <div class="flex shrink-0 items-center gap-2">{@render children()}</div>
+    <div class="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+      {@render children()}
+    </div>
   {/if}
 </div>

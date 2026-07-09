@@ -146,6 +146,7 @@ export interface StudentListParams {
   term_id?: string;
   gender?: string;
   level?: string;
+  year_group?: number;
 }
 
 export const listStudents = (params: StudentListParams = {}): Promise<StudentSummary[]> =>

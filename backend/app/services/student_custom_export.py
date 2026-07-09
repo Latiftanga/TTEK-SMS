@@ -61,6 +61,7 @@ async def export_students_custom(
     gender: str | None = None,
     search: str | None = None,
     level: str | None = None,
+    year_group: int | None = None,
 ) -> bytes:
     # Resolve requested field keys against registry (preserve order, skip unknown)
     resolved = [(k, STUDENT_FIELDS[k]) for k in fields if k in STUDENT_FIELDS]
@@ -73,14 +74,18 @@ async def export_students_custom(
         q = q.where(Student.is_active == True)  # noqa: E712
     if gender:
         q = q.where(Student.gender == gender)
-    if class_id or level:
+    if class_id or level or year_group:
         q = q.join(StudentClassAssignment, StudentClassAssignment.student_id == Student.id).where(
             StudentClassAssignment.is_active == True,  # noqa: E712
         )
         if class_id:
             q = q.where(StudentClassAssignment.class_id == class_id)
-        if level:
-            q = q.join(Class, Class.id == StudentClassAssignment.class_id).where(Class.level == level)
+        if level or year_group:
+            q = q.join(Class, Class.id == StudentClassAssignment.class_id)
+            if level:
+                q = q.where(Class.level == level)
+            if year_group:
+                q = q.where(Class.year_group == year_group)
     if term_id:
         q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
             TermEnrollment.is_active == True,  # noqa: E712

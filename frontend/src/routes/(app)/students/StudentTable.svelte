@@ -41,7 +41,7 @@
   </svg>
 {/snippet}
 
-<div class="overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+<div class="overflow-x-clip rounded-2xl border border-[var(--border)] bg-[var(--card)]">
   <table class="w-full text-sm">
     <thead class="sticky top-0 z-10">
       <tr class="border-b border-[var(--border)] bg-[var(--hover)]">
