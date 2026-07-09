@@ -1,8 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { currentUser } from '$lib/stores/auth';
+  import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
-  import { IC, type NavRole } from '$lib/nav';
+  import { IC, type NavRole, type SchoolType } from '$lib/nav';
 
   interface Props { onmore: () => void; }
   const { onmore }: Props = $props();
@@ -13,6 +14,7 @@
     icon:  string;
     exact?: boolean;
     roles?: NavRole[];
+    schoolTypes?: SchoolType[];
   }
 
   const ALL_TABS: Tab[] = [
@@ -20,7 +22,8 @@
     { href: '/attendance',  label: 'Attendance', icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
     { href: '/assessments', label: 'Scores',     icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
     { href: '/fees',        label: 'Fees',       icon: IC.fees,        roles: ['finance', 'admin'] },
-    { href: '/housing',     label: 'Housing',    icon: IC.housing,     roles: ['admin', 'housemaster'] },
+    { href: '/housing',     label: 'Housing',    icon: IC.housing,     roles: ['admin', 'housemaster'],
+      schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
     { href: '/reports',     label: 'Reports',    icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
     { href: '/students',    label: 'Students',   icon: IC.students,    roles: ['admin'] },
   ];
@@ -41,9 +44,14 @@
   }
 
   const eligible = $derived.by(() => {
-    const role = $userRole as NavRole | null;
+    const role       = $userRole as NavRole | null;
     const isSuperadmin = $currentUser?.is_superadmin ?? false;
-    return ALL_TABS.filter(t => isSuperadmin || !t.roles || (role !== null && t.roles.includes(role)));
+    const sType      = $school?.schoolType as SchoolType | undefined;
+    return ALL_TABS.filter(t => {
+      const roleOk = isSuperadmin || !t.roles || (role !== null && t.roles.includes(role));
+      const typeOk = !t.schoolTypes || !sType || t.schoolTypes.includes(sType);
+      return roleOk && typeOk;
+    });
   });
 
   const tabs = $derived.by(() => {

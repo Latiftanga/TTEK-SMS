@@ -1,15 +1,18 @@
 /**
  * Sidebar navigation configuration.
- * Each item's `roles` array controls visibility; undefined = visible to all authenticated users.
- * Superadmins always see everything regardless of roles.
+ * `roles`      — if set, item is only visible to those roles (superadmins always see all).
+ * `schoolTypes`— if set, item is only visible to those school types.
+ *                Omit to show for every school type.
  */
 
-export type NavRole = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster';
+export type NavRole    = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster';
+export type SchoolType = 'BASIC' | 'SHS' | 'TECHNICAL' | 'VOCATIONAL' | 'PRIVATE';
 
 export interface ChildNavItem {
   href: string;
   label: string;
   roles?: NavRole[];
+  schoolTypes?: SchoolType[];
 }
 
 export interface NavItem {
@@ -18,6 +21,7 @@ export interface NavItem {
   icon: string;        // SVG inner path(s) — rendered via {@html}
   exact?: boolean;
   roles?: NavRole[];
+  schoolTypes?: SchoolType[];
   children?: ChildNavItem[];
 }
 
@@ -66,7 +70,8 @@ export const NAV_GROUPS: NavGroup[] = [
         ],
       },
       { href: '/fees',    label: 'Fees',    icon: IC.fees,    roles: ['finance', 'admin'] },
-      { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'] },
+      { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
+        schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
     ],
   },
   {
@@ -79,7 +84,8 @@ export const NAV_GROUPS: NavGroup[] = [
           { href: '/admin/academic/years',      label: 'Years & Terms', roles: ['admin'] },
           { href: '/admin/academic/classes',    label: 'Classes',       roles: ['admin'] },
           { href: '/admin/academic/subjects',   label: 'Subjects',      roles: ['admin'] },
-          { href: '/admin/academic/programmes', label: 'Programmes',    roles: ['admin'] },
+          { href: '/admin/academic/programmes', label: 'Programmes',    roles: ['admin'],
+            schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
         ],
       },
       {

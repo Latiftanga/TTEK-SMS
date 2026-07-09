@@ -5,7 +5,7 @@
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
-  import { NAV_GROUPS, IC, type NavRole, type NavItem, type ChildNavItem } from '$lib/nav';
+  import { NAV_GROUPS, IC, type NavRole, type SchoolType, type NavItem, type ChildNavItem } from '$lib/nav';
   import SidebarFooter from './SidebarFooter.svelte';
 
   interface Props { open: boolean; onclose: () => void; }
@@ -18,9 +18,10 @@
     if (browser) localStorage.setItem('sidebar_collapsed', String(collapsed));
   }
 
-  // ── Role resolution ──────────────────────────────────────────────────────────
+  // ── Role + school-type resolution ────────────────────────────────────────────
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
   const role         = $derived($userRole as NavRole | null);
+  const schoolType   = $derived($school?.schoolType as SchoolType | undefined);
 
   function canSee(roles: NavRole[] | undefined): boolean {
     if (isSuperadmin || !roles) return true;
@@ -28,13 +29,21 @@
     return roles.includes(role);
   }
 
+  function canSeeType(types: SchoolType[] | undefined): boolean {
+    if (!types || !schoolType) return true;   // no restriction, or type not yet known
+    return types.includes(schoolType);
+  }
+
   const visibleGroups = $derived(
     NAV_GROUPS
       .map(g => ({
         ...g,
         items: g.items
-          .filter(i => canSee(i.roles))
-          .map(i => ({ ...i, children: i.children?.filter(c => canSee(c.roles)) })),
+          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes))
+          .map(i => ({
+            ...i,
+            children: i.children?.filter(c => canSee(c.roles) && canSeeType(c.schoolTypes)),
+          })),
       }))
       .filter(g => g.items.length > 0)
   );
