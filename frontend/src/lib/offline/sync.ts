@@ -10,6 +10,8 @@ import { api } from '$lib/api/client';
 import { getPendingItems, getPendingCount, markSynced, markConflict } from './outbox';
 
 export const pendingOutboxCount = writable(0);
+export const isOnline  = writable(browser ? navigator.onLine : true);
+export const isSyncing = writable(false);
 
 let initialized = false;
 
@@ -24,6 +26,7 @@ export async function drainOutbox(): Promise<void> {
   const items = await getPendingItems();
   if (!items.length) return;
 
+  isSyncing.set(true);
   const payload = {
     items: items.map(item => ({
       outbox_id: String(item.id),
@@ -52,9 +55,10 @@ export async function drainOutbox(): Promise<void> {
     }
   } catch {
     // Network still unavailable — items stay pending, retry on next online event.
+  } finally {
+    isSyncing.set(false);
+    await refreshOutboxCount();
   }
-
-  await refreshOutboxCount();
 }
 
 export function initOfflineSync(): void {
@@ -63,8 +67,8 @@ export function initOfflineSync(): void {
 
   refreshOutboxCount();
 
-  // Drain any items left from a previous offline session.
   if (navigator.onLine) drainOutbox();
 
-  window.addEventListener('online', () => drainOutbox());
+  window.addEventListener('online',  () => { isOnline.set(true);  drainOutbox(); });
+  window.addEventListener('offline', () => { isOnline.set(false); });
 }

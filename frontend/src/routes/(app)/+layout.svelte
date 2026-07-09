@@ -5,7 +5,7 @@
   import BottomNav from '$lib/components/BottomNav.svelte';
   import Toast     from '$lib/components/Toast.svelte';
   import { documentTitle } from '$lib/stores/title';
-  import { initOfflineSync, pendingOutboxCount } from '$lib/offline/sync';
+  import { initOfflineSync, pendingOutboxCount, isOnline } from '$lib/offline/sync';
 
   const { children } = $props();
 
@@ -28,12 +28,18 @@
         <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 lg:px-8">
           <div class="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400">
             <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"></span>
-            {$pendingOutboxCount} score{$pendingOutboxCount === 1 ? '' : 's'} queued offline
+            {#if $isOnline}
+              {$pendingOutboxCount} score{$pendingOutboxCount === 1 ? '' : 's'} pending sync
+            {:else}
+              {$pendingOutboxCount} score{$pendingOutboxCount === 1 ? '' : 's'} will sync when reconnected
+            {/if}
           </div>
-          <a href="/sync"
-             class="text-xs font-semibold text-amber-700 underline hover:no-underline dark:text-amber-400">
-            Review →
-          </a>
+          {#if $isOnline}
+            <a href="/sync"
+               class="text-xs font-semibold text-amber-700 underline hover:no-underline dark:text-amber-400">
+              Review →
+            </a>
+          {/if}
         </div>
       </div>
     {/if}

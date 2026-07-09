@@ -64,9 +64,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/assessments', label: 'Assessments',   icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
       { href: '/reports',     label: 'Report Cards',  icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
       { href: '/fees',        label: 'Fees',          icon: IC.fees,        roles: ['finance', 'admin'] },
-      { href: '/housing', label: 'Housing',      icon: IC.housing, roles: ['admin', 'housemaster'],
+      { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
         schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
-      { href: '/sync',    label: 'Offline Sync', icon: IC.sync,    roles: ['teacher', 'admin', 'approver'] },
     ],
   },
   {

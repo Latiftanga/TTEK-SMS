@@ -5,7 +5,6 @@
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
-  import { pendingOutboxCount } from '$lib/offline/sync';
   import { NAV_GROUPS, IC, type NavRole, type SchoolType, type NavItem, type ChildNavItem } from '$lib/nav';
   import SidebarFooter from './SidebarFooter.svelte';
 
@@ -261,13 +260,6 @@
                 </svg>
                 {#if !collapsed}
                   <span class="truncate">{item.label}</span>
-                  {#if item.href === '/sync' && $pendingOutboxCount > 0}
-                    <span class="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full
-                                 bg-amber-100 px-1.5 text-[10px] font-bold tabular-nums text-amber-700
-                                 dark:bg-amber-950/60 dark:text-amber-400">
-                      {$pendingOutboxCount}
-                    </span>
-                  {/if}
                 {/if}
               </a>
             {/if}

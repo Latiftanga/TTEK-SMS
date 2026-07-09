@@ -6,6 +6,7 @@
   import { currentUser } from '$lib/stores/auth';
   import { userRole } from '$lib/stores/permissions';
   import { getCurrentYear } from '$lib/api/academic';
+  import { isOnline, isSyncing } from '$lib/offline/sync';
 
   interface Props { toggleSidebar: () => void; }
   const { toggleSidebar }: Props = $props();
@@ -145,6 +146,24 @@
 
   <!-- Desktop: date -->
   <span class="hidden text-sm text-[var(--fg-muted)] lg:block">{today}</span>
+
+  <!-- Connectivity status -->
+  {#if !$isOnline}
+    <div class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)]
+                bg-[var(--hover)] px-2 py-1 text-xs font-medium text-[var(--fg-muted)]">
+      <span class="h-2 w-2 shrink-0 rounded-full bg-slate-400 dark:bg-slate-500"></span>
+      Offline
+    </div>
+  {:else if $isSyncing}
+    <div class="flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300
+                bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700
+                dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-400">
+      <svg class="h-3 w-3 shrink-0 animate-spin" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+      </svg>
+      Syncing…
+    </div>
+  {/if}
 
   <!-- Right: theme + user menu -->
   <div class="ml-auto flex items-center gap-2">
