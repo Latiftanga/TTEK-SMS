@@ -7,7 +7,6 @@
     listHouses, getStudentAssignment, createAssignment, vacateAssignment,
   } from '$lib/api/housing';
   import { toast } from '$lib/stores/toast';
-  import PortalAccessCard from './PortalAccessCard.svelte';
   import ProfileView      from './ProfileView.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
@@ -227,8 +226,6 @@
       {houseMap}
     />
   {/if}
-
-  <PortalAccessCard {student} {studentId} />
 </div>
 
 <style>

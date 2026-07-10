@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { createQuery } from '@tanstack/svelte-query';
+import { createQuery, type CreateQueryOptions, type CreateQueryResult, type StoreOrVal } from '@tanstack/svelte-query';
 
 /**
  * Minimal query options accepted by reactiveQuery.
@@ -35,10 +35,15 @@ interface ReactiveOpts<T> {
  *   }));
  *   // subscribe as $q — $q.data, $q.isPending, $q.isError, $q.refetch()
  */
-export function reactiveQuery<T>(factory: () => ReactiveOpts<T>) {
+export function reactiveQuery<T>(factory: () => ReactiveOpts<T>): CreateQueryResult<T> {
   const store = writable(factory());
   $effect(() => { store.set(factory()); });
-  // ReactiveOpts<T> is structurally compatible with CreateQueryOptions<T>;
-  // the cast bridges the mismatch on queryFn's context-arg signature.
-  return createQuery<T>(store as Parameters<typeof createQuery>[0]);
+  // ReactiveOpts<T> is structurally compatible with CreateQueryOptions<T>; the cast
+  // bridges the mismatch on queryFn's context-arg signature. Casting through
+  // StoreOrVal<CreateQueryOptions<T>> (rather than the old `Parameters<typeof
+  // createQuery>[0]`, which resolves against createQuery's last overload with all
+  // generics defaulted to `unknown`) is what lets createQuery correctly infer
+  // TQueryFnData = T from the argument — without it, every caller's `.data` silently
+  // degraded to `unknown` regardless of T.
+  return createQuery(store as unknown as StoreOrVal<CreateQueryOptions<T>>);
 }

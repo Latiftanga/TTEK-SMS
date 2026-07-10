@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { getStudent, updateStudent } from '$lib/api/students';
+  import { getStudent, updateStudent, listTransfersForStudent } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import ProfileTab    from './ProfileTab.svelte';
@@ -33,6 +33,14 @@
   function setTab(id: string) { goto(`?tab=${id}`, { replaceState: true, noScroll: true }); }
 
   let confirmDeactivate = $state(false);
+  let confirmReactivate = $state(false);
+
+  const transfersQ = createQuery({
+    queryKey: ['student-transfers', studentId],
+    queryFn:  () => listTransfersForStudent(studentId),
+    staleTime: 30_000,
+  });
+  const hasApprovedTransfer = $derived(($transfersQ.data ?? []).some(t => t.status === 'APPROVED'));
 
   const toggleMut = createMutation({
     mutationFn: () => updateStudent(studentId, { is_active: !$query.data!.is_active }),
@@ -40,9 +48,10 @@
       qc.invalidateQueries({ queryKey: ['student', studentId] });
       qc.invalidateQueries({ queryKey: ['students'] });
       confirmDeactivate = false;
+      confirmReactivate = false;
       toast.success(d.is_active ? 'Student reactivated.' : 'Student deactivated.');
     },
-    onError: () => { confirmDeactivate = false; toast.error('Could not update status.'); },
+    onError: () => { confirmDeactivate = false; confirmReactivate = false; toast.error('Could not update status.'); },
   });
 
   function initials(first: string, last: string) {
@@ -119,6 +128,21 @@
               Deactivate
             </button>
           {/if}
+        {:else if hasApprovedTransfer && confirmReactivate}
+          <span class="text-xs text-amber-600 dark:text-amber-400">This student has an approved transfer on record — reactivating won't undo it. Continue?</span>
+          <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+            class="rounded-xl bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 transition hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
+            {$toggleMut.isPending ? '…' : 'Yes, reactivate'}
+          </button>
+          <button onclick={() => confirmReactivate = false}
+            class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
+            Cancel
+          </button>
+        {:else if hasApprovedTransfer}
+          <button onclick={() => confirmReactivate = true}
+            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+            Reactivate
+          </button>
         {:else}
           <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
             class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">

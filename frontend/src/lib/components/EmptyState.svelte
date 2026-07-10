@@ -5,9 +5,14 @@
     iconPath?: string;
     action?: () => void;
     actionLabel?: string;
+    secondaryAction?: () => void;
+    secondaryActionLabel?: string;
     compact?: boolean;
   }
-  const { title, description, iconPath, action, actionLabel, compact = false }: Props = $props();
+  const {
+    title, description, iconPath, action, actionLabel,
+    secondaryAction, secondaryActionLabel, compact = false,
+  }: Props = $props();
 </script>
 
 <!--
@@ -66,13 +71,24 @@
         <p class="mt-1.5 text-sm text-[var(--fg-muted)]">{description}</p>
       {/if}
 
-      {#if action && actionLabel}
-        <button onclick={action}
-          class="mt-5 inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
-                 text-white transition hover:opacity-90"
-          style="background-color: var(--brand)">
-          {actionLabel}
-        </button>
+      {#if (action && actionLabel) || (secondaryAction && secondaryActionLabel)}
+        <div class="mt-5 flex items-center justify-center gap-2">
+          {#if action && actionLabel}
+            <button onclick={action}
+              class="inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
+                     text-white transition hover:opacity-90"
+              style="background-color: var(--brand)">
+              {actionLabel}
+            </button>
+          {/if}
+          {#if secondaryAction && secondaryActionLabel}
+            <button onclick={secondaryAction}
+              class="inline-flex items-center rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium
+                     text-[var(--fg)] transition hover:bg-[var(--hover)]">
+              {secondaryActionLabel}
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
   </div>

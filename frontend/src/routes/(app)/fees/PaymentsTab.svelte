@@ -157,10 +157,13 @@
       <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style="background: var(--brand)">
         {initials(selected)}
       </div>
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <p class="font-semibold text-[var(--fg)]">{selected.display_name}</p>
         <p class="text-xs text-[var(--fg-muted)]">{selected.admission_number}{selected.current_class_name ? ' · ' + selected.current_class_name : ''}</p>
       </div>
+      <a href="/students/{selected.id}" class="shrink-0 text-xs font-medium text-[var(--brand)] hover:underline">
+        View full profile →
+      </a>
     </div>
 
     {#if $feeQ.isPending}

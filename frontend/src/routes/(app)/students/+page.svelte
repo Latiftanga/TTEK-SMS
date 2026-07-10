@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { createQuery } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
-  import { listStudents, exportStudentsCsv, type StudentSummary, type StudentListParams } from '$lib/api/students';
+  import { listStudentsPage, exportStudentsCsv, type StudentSummary, type StudentListParams, type StudentListPage } from '$lib/api/students';
   import { listClasses } from '$lib/api/academic';
   import { isSchoolAdmin } from '$lib/stores/permissions';
   import { setPageTitle } from '$lib/stores/title';
@@ -14,7 +14,10 @@
   import EmptyState          from '$lib/components/EmptyState.svelte';
   import PageHeader          from '$lib/components/PageHeader.svelte';
   import CustomExportModal   from '$lib/components/CustomExportModal.svelte';
+  import Pagination          from '$lib/components/Pagination.svelte';
   setPageTitle('Students');
+
+  const PAGE_SIZE = 50;
 
   // ── URL-based filter state ──────────────────────────────────────────────────
   // class, year, gender, active are persisted in the URL.
@@ -24,6 +27,7 @@
   const yearKey = $derived(sp.get('year')   ?? '');   // e.g. "B::3"
   const gender  = $derived((sp.get('gender') ?? '') as 'MALE' | 'FEMALE' | '');
   const activeOnly = $derived(sp.get('active') !== 'false');
+  const pageNum = $derived(Math.max(1, Number(sp.get('page')) || 1));
 
   // Parse yearKey → { level, year_group } for the API
   const yearFilter = $derived.by(() => {
@@ -37,8 +41,11 @@
     if (value) url.searchParams.set(key, value);
     else       url.searchParams.delete(key);
     if (key === 'year') url.searchParams.delete('class'); // year change resets class drill-down
+    if (key !== 'page') url.searchParams.delete('page');  // any filter change invalidates the current page
     goto(url.toString(), { replaceState: true, noScroll: true });
   }
+
+  function goToPage(p: number) { setFilter('page', p > 1 ? String(p) : ''); }
 
   // Search: local state for responsive input; synced to URL with 300ms debounce
   let searchInput = $state(sp.get('q') ?? '');
@@ -57,14 +64,27 @@
   function clearFilters() {
     searchInput = '';
     const url = new URL($page.url);
-    ['q', 'class', 'year', 'gender'].forEach(k => url.searchParams.delete(k));
+    ['q', 'class', 'year', 'gender', 'page'].forEach(k => url.searchParams.delete(k));
     goto(url.toString(), { replaceState: true, noScroll: true });
+  }
+
+  // ── Sort — server-side, feeds into `params` below ────────────────────────────
+  let sortCol = $state<'name' | 'admission' | 'class'>('name');
+  let sortDir = $state<'asc' | 'desc'>('asc');
+
+  function toggleSort(col: typeof sortCol) {
+    if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortCol = col; sortDir = 'asc'; }
+    goToPage(1); // new order — start back at the top
   }
 
   // ── Queries ─────────────────────────────────────────────────────────────────
   const params = $derived<StudentListParams>({
     active_only: activeOnly,
-    limit:       200,
+    skip:        (pageNum - 1) * PAGE_SIZE,
+    limit:       PAGE_SIZE,
+    sort_by:     sortCol,
+    sort_dir:    sortDir,
     search:      ($page.url.searchParams.get('q') ?? '').trim() || undefined,
     gender:      gender    || undefined,
     class_id:    classId   || undefined,
@@ -73,16 +93,17 @@
     year_group:  classId ? undefined : yearFilter.year_group,
   });
 
-  const studentsQ = reactiveQuery(() => ({
+  const studentsQ = reactiveQuery<StudentListPage>(() => ({
     queryKey: ['students', params] as const,
-    queryFn:  () => listStudents(params),
+    queryFn:  () => listStudentsPage(params),
     staleTime: 60_000,
   }));
 
   const classesQ = createQuery({ queryKey: ['classes'], queryFn: listClasses, staleTime: 5 * 60_000 });
 
   // ── Derived data ─────────────────────────────────────────────────────────────
-  const students = $derived<StudentSummary[]>($studentsQ.data ?? []);
+  const students = $derived<StudentSummary[]>($studentsQ.data?.items ?? []);
+  const total    = $derived<number>($studentsQ.data?.total ?? 0);
 
   // Unique (level, year_group) pairs — the year dropdown options.
   const yearOptions = $derived.by(() => {
@@ -106,28 +127,6 @@
     return all.filter(c => c.level === lvl && c.year_group === Number(yg));
   });
 
-
-  // ── Client-side sort ─────────────────────────────────────────────────────────
-  let sortCol = $state<'name' | 'admission' | 'class'>('name');
-  let sortDir = $state<'asc' | 'desc'>('asc');
-
-  function toggleSort(col: typeof sortCol) {
-    if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-    else { sortCol = col; sortDir = 'asc'; }
-  }
-
-  const sorted = $derived.by(() => {
-    const arr = [...students];
-    return arr.sort((a, b) => {
-      const va = sortCol === 'name'      ? (a.display_name       ?? '')
-               : sortCol === 'admission' ? (a.admission_number   ?? '')
-               :                          (a.current_class_name  ?? '');
-      const vb = sortCol === 'name'      ? (b.display_name       ?? '')
-               : sortCol === 'admission' ? (b.admission_number   ?? '')
-               :                          (b.current_class_name  ?? '');
-      return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-    });
-  });
 
   // ── Selection ────────────────────────────────────────────────────────────────
   let selected = $state(new Set<string>());
@@ -227,7 +226,7 @@
   <!-- Result count — live, near filters so users see impact immediately -->
   {#if !$studentsQ.isPending}
     <span class="rounded-lg border border-[var(--border)] bg-[var(--hover)] px-2.5 py-1.5 text-xs font-semibold tabular-nums text-[var(--fg-muted)]">
-      {students.length} student{students.length !== 1 ? 's' : ''}
+      {total} student{total !== 1 ? 's' : ''}
     </span>
   {/if}
 
@@ -249,17 +248,19 @@
   <div class="rounded-xl border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-4 text-sm text-red-600 dark:text-red-400">
     Could not load students. <button onclick={() => $studentsQ.refetch()} class="ml-1 underline">Retry</button>
   </div>
-{:else if sorted.length === 0}
+{:else if students.length === 0}
   <EmptyState
     iconPath="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
     title={hasFilters ? 'No students match your filters' : 'No students yet'}
     description={hasFilters ? 'Try adjusting or clearing the filters.' : 'Import from a spreadsheet or add students one by one.'}
     actionLabel={!hasFilters ? 'Add student' : undefined}
     action={!hasFilters ? () => formOpen = true : undefined}
+    secondaryActionLabel={!hasFilters ? 'Import' : undefined}
+    secondaryAction={!hasFilters ? () => importOpen = true : undefined}
   />
 {:else}
   <StudentTable
-    students={sorted}
+    {students}
     {selected} {allSelected}
     isAdmin={$isSchoolAdmin}
     {sortCol} {sortDir}
@@ -267,6 +268,9 @@
     onToggle={toggle}
     onToggleAll={toggleAll}
   />
+  <div class="mt-4">
+    <Pagination total={total} pageSize={PAGE_SIZE} page={pageNum} label="students" onPageChange={goToPage} />
+  </div>
 {/if}
 
 {#if $isSchoolAdmin}

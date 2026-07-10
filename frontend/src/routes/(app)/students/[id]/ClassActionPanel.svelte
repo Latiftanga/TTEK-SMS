@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { assignStudentToClass, createTransferRequest } from '$lib/api/students';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { assignStudentToClass, createTransferRequest, listTransfersForStudent } from '$lib/api/students';
   import { type SchoolClass } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
+  import { isSchoolAdmin } from '$lib/stores/permissions';
 
   interface Props {
     studentId: string;
@@ -14,6 +15,14 @@
   const { studentId, activeClass, classes, years, onDone }: Props = $props();
 
   const qc = useQueryClient();
+
+  const transfersQ = createQuery({
+    queryKey: ['student-transfers', studentId],
+    queryFn:  () => listTransfersForStudent(studentId),
+    staleTime: 30_000,
+  });
+  const pendingTransfer = $derived(($transfersQ.data ?? []).find(t => t.status === 'PENDING') ?? null);
+  const lastTransfer    = $derived(($transfersQ.data ?? [])[0] ?? null);
 
   type ActionMode = 'promote' | 'repeat' | 'demote' | 'first' | null;
   let actionMode     = $state<ActionMode>(null);
@@ -61,7 +70,10 @@
 
   const transferMut = createMutation({
     mutationFn: () => createTransferRequest(studentId, { reason: transferReason.trim() || undefined }),
-    onSuccess: () => { showTransfer = false; transferReason = ''; transferErr = ''; toast.success('Transfer request submitted for review.'); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['student-transfers', studentId] });
+      showTransfer = false; transferReason = ''; transferErr = ''; toast.success('Transfer request submitted for review.');
+    },
     onError: (e: unknown) => { transferErr = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not create transfer.'; },
   });
 
@@ -91,12 +103,39 @@
           <p class="mt-0.5 text-[10px] {meta.sub2}">{meta.sub}</p>
         </button>
       {/each}
+    </div>
+  </div>
+
+  <!-- Transfer — separate from year-end actions; can happen any time -->
+  <div class="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+    <p class="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Transfer to another school</p>
+    {#if pendingTransfer}
+      <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-800 dark:bg-amber-950/30">
+        <div>
+          <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">Transfer request pending review</p>
+          <p class="mt-0.5 text-[10px] text-amber-700 dark:text-amber-400">
+            Submitted {new Date(pendingTransfer.created_at).toLocaleDateString()}{pendingTransfer.reason ? ` — ${pendingTransfer.reason}` : ''}
+          </p>
+        </div>
+        {#if $isSchoolAdmin}
+          <a href="/admin/transfers" class="shrink-0 text-xs font-medium text-amber-800 underline hover:no-underline dark:text-amber-200">
+            View in transfer queue →
+          </a>
+        {/if}
+      </div>
+    {:else}
+      {#if lastTransfer && lastTransfer.status !== 'PENDING'}
+        <p class="mb-2 text-[10px] text-[var(--fg-muted)]">
+          Last request: {lastTransfer.status.charAt(0) + lastTransfer.status.slice(1).toLowerCase()}
+          {#if lastTransfer.reviewed_at} on {new Date(lastTransfer.reviewed_at).toLocaleDateString()}{/if}
+        </p>
+      {/if}
       <button onclick={() => showTransfer = true}
         class="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-left transition hover:border-[var(--fg-subtle)]">
         <p class="text-xs font-semibold text-[var(--fg)]">Transfer out</p>
         <p class="mt-0.5 text-[10px] text-[var(--fg-muted)]">Leave this school</p>
       </button>
-    </div>
+    {/if}
   </div>
 
 {:else if actionMode}

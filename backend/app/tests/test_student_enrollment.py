@@ -248,6 +248,48 @@ async def test_submit_and_approve_transfer(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
+async def test_transfer_approval_deactivates_class_assignment(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+):
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+
+    tr_id = (await client.post(f"/students/{sid}/transfers", json={}, headers=auth)).json()["id"]
+    resp = await client.patch(f"/students/transfers/{tr_id}/review",
+        json={"status": "APPROVED"}, headers=auth)
+    assert resp.status_code == 200
+
+    assignments = (await client.get(f"/students/{sid}/class-assignments", headers=auth)).json()
+    assert all(a["is_active"] is False for a in assignments)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pending_transfer_rejected(client: AsyncClient, auth: dict):
+    sid = await _create_student(client, auth)
+    first = await client.post(f"/students/{sid}/transfers", json={}, headers=auth)
+    assert first.status_code == 201
+
+    second = await client.post(f"/students/{sid}/transfers", json={}, headers=auth)
+    assert second.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_list_transfers_for_student(client: AsyncClient, auth: dict):
+    sid = await _create_student(client, auth)
+    tr_id = (await client.post(f"/students/{sid}/transfers", json={
+        "reason": "Moving abroad",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.get(f"/students/{sid}/transfers", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == tr_id
+    assert data[0]["status"] == "PENDING"
+
+
+@pytest.mark.asyncio
 async def test_double_review_rejected(client: AsyncClient, auth: dict):
     sid = await _create_student(client, auth)
     tr_id = (await client.post(f"/students/{sid}/transfers", json={}, headers=auth)).json()["id"]

@@ -9,6 +9,7 @@ NOTIFICATION TYPES
   notify_fee_receipt       → guardian after a fee payment is recorded
   notify_attendance_absent → guardian when a student is marked ABSENT
   notify_report_published  → guardian when an assessment is published
+  notify_transfer_decision → guardian when a transfer request is approved/rejected
   send_manual              → admin-initiated message to specified phones
 
 RECIPIENT RESOLUTION
@@ -183,6 +184,31 @@ async def notify_report_published(
             f"Log in to view at {school_code.lower()}.ttek-sms.com. -{school_short}"
         )
         await _deliver(driver, phone, msg[:160], school_id, "REPORT_CARD", entity_id, db)
+    except Exception:
+        pass
+
+
+async def notify_transfer_decision(
+    student_id: uuid.UUID,
+    school_id: uuid.UUID,
+    school_short: str,
+    approved: bool,
+    entity_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """SMS to primary guardian when a transfer request is approved or rejected."""
+    try:
+        driver = await _get_active_driver(school_id, db)
+        if not driver:
+            return
+        phone = await _primary_guardian_phone(student_id, school_id, db)
+        if not phone:
+            return
+        student = await db.get(Student, student_id)
+        name = f"{student.first_name} {student.last_name}" if student else "Your ward"
+        outcome = "approved" if approved else "not approved"
+        msg = f"The transfer request for {name} was {outcome}. -{school_short}"
+        await _deliver(driver, phone, msg[:160], school_id, "TRANSFER", entity_id, db)
     except Exception:
         pass
 

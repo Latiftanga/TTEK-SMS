@@ -25,7 +25,8 @@ parameter.
 """
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends, Query
+from typing import Literal
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -76,6 +77,7 @@ async def create_student(
 
 @router.get("", response_model=list[StudentSummary])
 async def list_students(
+    response: Response,
     active_only: bool = Query(True),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
@@ -85,6 +87,8 @@ async def list_students(
     gender: str | None = Query(None),
     level: str | None = Query(None),
     year_group: int | None = Query(None),
+    sort_by: Literal["name", "admission", "class"] = Query("name"),
+    sort_dir: Literal["asc", "desc"] = Query("asc"),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -99,13 +103,16 @@ async def list_students(
         if not perms.get("students.edit", False):
             staff_member_id = user.staff_member_id
 
-    return await svc.list_students(
+    items, total = await svc.list_students(
         school_id, db,
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
         gender=gender, level=level, year_group=year_group,
         staff_member_id=staff_member_id,
+        sort_by=sort_by, sort_dir=sort_dir,
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get("/export")
@@ -448,6 +455,19 @@ async def create_transfer_request(
 ):
     _, school_id = ids
     return await transfer_svc.create_transfer_request(student_id, req, school_id, db)
+
+
+@router.get("/{student_id}/transfers", response_model=list[TransferRequestRead])
+async def list_transfers_for_student(
+    student_id: uuid.UUID,
+    ids=Depends(require_permission("students", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """A student's own transfer request history/status — visible to anyone who can
+    view the student, independent of the higher `students.delete` bar required to
+    review the school-wide pending queue (see /transfers/pending)."""
+    _, school_id = ids
+    return await transfer_svc.list_transfers_for_student(student_id, school_id, db)
 
 
 @router.post("/{student_id}/grant-portal-access", response_model=PortalAccessResult, status_code=201)

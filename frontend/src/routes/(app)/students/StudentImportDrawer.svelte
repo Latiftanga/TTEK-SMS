@@ -129,33 +129,89 @@
         </div>
 
       {:else if stage === 'done' && result}
-        <div class="rounded-xl border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30 p-4 space-y-3">
+        {@const allOk = result.failed === 0 && result.warnings.length === 0}
+        <div class="rounded-xl border p-4 space-y-3
+                    {allOk ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30'
+                           : 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30'}">
           <div class="flex items-center gap-2">
-            <svg class="h-5 w-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            <svg class="h-5 w-5 {allOk ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}"
+                 fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              {#if allOk}
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              {:else}
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+              {/if}
             </svg>
-            <p class="text-sm font-semibold text-green-700 dark:text-green-400">Import complete</p>
+            <div>
+              <p class="text-sm font-semibold {allOk ? 'text-green-700 dark:text-green-400' : 'text-amber-800 dark:text-amber-200'}">
+                {result.created} of {result.total_rows} student{result.total_rows !== 1 ? 's' : ''} imported
+              </p>
+              {#if result.failed > 0}
+                <p class="mt-0.5 text-xs text-red-600 dark:text-red-400">
+                  {result.failed} row{result.failed !== 1 ? 's' : ''} failed — see errors below
+                </p>
+              {/if}
+              {#if result.warnings.length > 0}
+                <p class="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                  {result.warnings.length} imported with a warning — see below
+                </p>
+              {/if}
+            </div>
           </div>
-          <div class="grid grid-cols-3 gap-2 text-center text-xs">
-            <div class="rounded-lg bg-white dark:bg-green-950/50 px-2 py-2">
-              <p class="text-lg font-bold text-green-700 dark:text-green-300">{result.created}</p>
-              <p class="text-[10px] font-medium text-green-600 dark:text-green-500">Created</p>
+
+          {#if result.warnings.length > 0}
+            <div>
+              <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                Warnings — imported but needs attention
+              </p>
+              <div class="max-h-40 overflow-y-auto rounded-xl border border-amber-200 dark:border-amber-800">
+                <table class="w-full text-xs">
+                  <thead class="sticky top-0 bg-amber-100 dark:bg-amber-950/40">
+                    <tr class="border-b border-amber-200 dark:border-amber-800">
+                      <th class="w-12 px-3 py-2 text-left font-semibold text-amber-700 dark:text-amber-300">Row</th>
+                      <th class="px-3 py-2 text-left font-semibold text-amber-700 dark:text-amber-300">Admission No.</th>
+                      <th class="px-3 py-2 text-left font-semibold text-amber-700 dark:text-amber-300">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-amber-100 dark:divide-amber-900">
+                    {#each result.warnings as w}
+                      <tr class="bg-[var(--card)]">
+                        <td class="px-3 py-2 font-mono text-[var(--fg-muted)]">{w.row}</td>
+                        <td class="px-3 py-2 text-[var(--fg-muted)]">{w.ref ?? '—'}</td>
+                        <td class="px-3 py-2 text-amber-700 dark:text-amber-300">{w.warning}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div class="rounded-lg bg-white dark:bg-green-950/50 px-2 py-2">
-              <p class="text-lg font-bold text-amber-600 dark:text-amber-400">{result.skipped}</p>
-              <p class="text-[10px] font-medium text-amber-500">Skipped</p>
-            </div>
-            <div class="rounded-lg bg-white dark:bg-green-950/50 px-2 py-2">
-              <p class="text-lg font-bold text-[var(--fg)]">{result.total_rows}</p>
-              <p class="text-[10px] font-medium text-[var(--fg-muted)]">Total rows</p>
-            </div>
-          </div>
+          {/if}
+
           {#if result.errors.length > 0}
-            <div class="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 max-h-40 overflow-y-auto">
-              <p class="mb-1 text-[10px] font-bold uppercase tracking-wide text-red-600 dark:text-red-400">Errors</p>
-              {#each result.errors as err}
-                <p class="text-xs text-red-600 dark:text-red-400">Row {err.row}: {err.reason}</p>
-              {/each}
+            <div>
+              <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
+                Errors — rows not imported
+              </p>
+              <div class="max-h-40 overflow-y-auto rounded-xl border border-[var(--border)]">
+                <table class="w-full text-xs">
+                  <thead class="sticky top-0 bg-[var(--bg)]">
+                    <tr class="border-b border-[var(--border)]">
+                      <th class="w-12 px-3 py-2 text-left font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Row</th>
+                      <th class="px-3 py-2 text-left font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Admission No.</th>
+                      <th class="px-3 py-2 text-left font-semibold uppercase tracking-wide text-[var(--fg-muted)]">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-[var(--border)]">
+                    {#each result.errors as err}
+                      <tr class="bg-[var(--card)]">
+                        <td class="px-3 py-2 font-mono text-[var(--fg-muted)]">{err.row}</td>
+                        <td class="px-3 py-2 text-[var(--fg-muted)]">{err.ref ?? '—'}</td>
+                        <td class="px-3 py-2 text-red-600 dark:text-red-400">{err.error ?? 'Unknown error'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
             </div>
           {/if}
         </div>
@@ -169,10 +225,16 @@
 
     <div class="shrink-0 border-t border-[var(--border)] px-6 py-4">
       {#if stage === 'done'}
-        <button onclick={close}
-          class="w-full rounded-xl py-2.5 text-sm font-semibold text-white hover:opacity-90 transition" style="background: var(--brand)">
-          Done
-        </button>
+        <div class="flex items-center justify-between gap-2">
+          <button onclick={() => { stage = 'idle'; result = null; errMsg = ''; fileInput && (fileInput.value = ''); }}
+            class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
+            Import another
+          </button>
+          <button onclick={close}
+            class="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition" style="background: var(--brand)">
+            Done
+          </button>
+        </div>
       {:else}
         <button onclick={() => { stage = 'idle'; errMsg = ''; result = null; fileInput && (fileInput.value = ''); }}
           disabled={stage === 'uploading'}

@@ -101,6 +101,7 @@ async def process_import(
     await db.flush()
 
     results: list[ImportRowResult] = []
+    warnings: list[ImportRowResult] = []
     created = failed = 0
 
     for row_num in range(DATA_START, (ws.max_row or DATA_START) + 1):
@@ -120,6 +121,10 @@ async def process_import(
 
         category_name = raw.pop("job_class_name", None)
         raw["category_id"] = category_map.get(category_name.lower()) if category_name else None
+        category_warning = (
+            f"Category '{category_name}' not found — imported with no position assigned."
+            if category_name and raw["category_id"] is None else None
+        )
         raw["position_ids"] = []
 
         try:
@@ -157,6 +162,11 @@ async def process_import(
             _log_row(db, batch.id, school_id, row_num, raw, "success", None, member.id)
             results.append(ImportRowResult(row=row_num, ref=req.staff_number, status="created", error=None))
             created += 1
+            if category_warning:
+                warnings.append(ImportRowResult(
+                    row=row_num, ref=req.staff_number, status="created",
+                    error=None, warning=category_warning,
+                ))
         except IntegrityError:
             try:
                 db.expunge(member)
@@ -184,7 +194,7 @@ async def process_import(
         created=created,
         failed=failed,
         errors=[r for r in results if r.status == "failed"],
-        warnings=[],
+        warnings=warnings,
     )
 
 

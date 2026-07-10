@@ -6,6 +6,7 @@
   } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import PortalAccessCard from './PortalAccessCard.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
   const { student, studentId }: Props = $props();
@@ -243,6 +244,8 @@
       {/each}
     </div>
   {/if}
+
+  <PortalAccessCard {student} {studentId} />
 </div>
 
 <ConfirmModal

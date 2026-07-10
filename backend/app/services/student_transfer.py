@@ -7,8 +7,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.students import Student, TransferRequest, TransferStatus
+from app.models.school import School
+from app.models.students import Student, StudentClassAssignment, TransferRequest, TransferStatus
 from app.schemas.students import TransferRequestCreate, TransferRequestRead, TransferRequestReview
+from app.services import sms_notifications as sms_svc
 
 
 def _utcnow() -> datetime:
@@ -24,6 +26,19 @@ async def create_transfer_request(
     student = await db.get(Student, student_id)
     if not student or student.school_id != school_id:
         raise HTTPException(status_code=404, detail="Student not found.")
+
+    existing_pending = await db.scalar(
+        select(TransferRequest).where(
+            TransferRequest.student_id == student_id,
+            TransferRequest.school_id == school_id,
+            TransferRequest.status == TransferStatus.PENDING,
+        )
+    )
+    if existing_pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A transfer request is already pending for this student.",
+        )
 
     tr = TransferRequest(
         school_id=school_id,
@@ -68,6 +83,20 @@ async def list_pending_transfers(
     return result
 
 
+async def list_transfers_for_student(
+    student_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> list[TransferRequestRead]:
+    transfers = list(await db.scalars(
+        select(TransferRequest).where(
+            TransferRequest.student_id == student_id,
+            TransferRequest.school_id == school_id,
+        ).order_by(TransferRequest.created_at.desc())
+    ))
+    return [TransferRequestRead.model_validate(t) for t in transfers]
+
+
 async def review_transfer(
     tr_id: uuid.UUID,
     req: TransferRequestReview,
@@ -96,6 +125,29 @@ async def review_transfer(
         student = await db.get(Student, tr.student_id)
         if student:
             student.is_active = False
+        # Leaving the school entirely — deactivate every active class assignment,
+        # not just the current year's (mirrors services/graduation.py's cascade).
+        assignments = await db.scalars(
+            select(StudentClassAssignment).where(
+                StudentClassAssignment.student_id == tr.student_id,
+                StudentClassAssignment.school_id == school_id,
+                StudentClassAssignment.is_active == True,  # noqa: E712
+            )
+        )
+        for a in assignments:
+            a.is_active = False
 
     await db.flush()
+
+    if req.status in (TransferStatus.APPROVED, TransferStatus.REJECTED):
+        school = await db.get(School, school_id)
+        await sms_svc.notify_transfer_decision(
+            student_id=tr.student_id,
+            school_id=school_id,
+            school_short=(school.short_name or school.name) if school else "",
+            approved=req.status == TransferStatus.APPROVED,
+            entity_id=tr.id,
+            db=db,
+        )
+
     return TransferRequestRead.model_validate(tr)

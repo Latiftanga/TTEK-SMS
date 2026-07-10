@@ -2,8 +2,15 @@
 Student profile integration tests (CRUD, guardians, medical record).
 Run inside Docker: docker compose exec api pytest app/tests/test_students.py -v
 """
+from datetime import date
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.academic import AcademicYear, Class
+from app.models.school import School
+from app.models.students import StudentClassAssignment
 
 
 def _student(num: str = "ADM001", **kw) -> dict:
@@ -44,6 +51,16 @@ async def test_list_students(client: AsyncClient, auth: dict):
     resp = await client.get("/students", headers=auth)
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+    assert resp.headers["x-total-count"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_list_students_total_count_exceeds_page(client: AsyncClient, auth: dict):
+    for i in range(3):
+        await client.post("/students", json=_student(f"ADM00{i}"), headers=auth)
+    resp = await client.get("/students?limit=2", headers=auth)
+    assert len(resp.json()) == 2
+    assert resp.headers["x-total-count"] == "3"
 
 
 @pytest.mark.asyncio
@@ -53,6 +70,101 @@ async def test_list_students_search(client: AsyncClient, auth: dict):
     resp = await client.get("/students?search=mensah", headers=auth)
     assert len(resp.json()) == 1
     assert resp.json()[0]["last_name"] == "Mensah"
+    assert resp.headers["x-total-count"] == "1"
+
+
+# ── Sort ──────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_students_sort_by_name(client: AsyncClient, auth: dict):
+    await client.post("/students", json=_student("ADM001", last_name="Zulu"), headers=auth)
+    await client.post("/students", json=_student("ADM002", last_name="Asante"), headers=auth)
+    resp = await client.get("/students?sort_by=name&sort_dir=asc", headers=auth)
+    names = [s["last_name"] for s in resp.json()]
+    assert names == ["Asante", "Zulu"]
+
+    resp = await client.get("/students?sort_by=name&sort_dir=desc", headers=auth)
+    names = [s["last_name"] for s in resp.json()]
+    assert names == ["Zulu", "Asante"]
+
+
+@pytest.mark.asyncio
+async def test_list_students_sort_by_admission(client: AsyncClient, auth: dict):
+    await client.post("/students", json=_student("ADM009"), headers=auth)
+    await client.post("/students", json=_student("ADM001"), headers=auth)
+    resp = await client.get("/students?sort_by=admission&sort_dir=asc", headers=auth)
+    numbers = [s["admission_number"] for s in resp.json()]
+    assert numbers == ["ADM001", "ADM009"]
+
+
+@pytest.mark.asyncio
+async def test_list_students_sort_by_class(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_year: AcademicYear, db_session: AsyncSession, school: School,
+):
+    # school_class fixture is SHS year_group=2; give it a lower-ranked Basic class to sort before it.
+    basic_class = Class(school_id=school.id, level="Basic", year_group=6, is_active=True)
+    db_session.add(basic_class)
+    await db_session.flush()
+
+    sid_shs = (await client.post("/students", json=_student("ADM001"), headers=auth)).json()["id"]
+    sid_basic = (await client.post("/students", json=_student("ADM002"), headers=auth)).json()["id"]
+    sid_none = (await client.post("/students", json=_student("ADM003"), headers=auth)).json()["id"]
+
+    await client.post("/students/class-assignments", json={
+        "student_id": sid_shs, "class_id": str(school_class.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    await client.post("/students/class-assignments", json={
+        "student_id": sid_basic, "class_id": str(basic_class.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    resp = await client.get("/students?sort_by=class&sort_dir=asc", headers=auth)
+    assert resp.status_code == 200
+    ids = [s["id"] for s in resp.json()]
+    # Basic (pedagogically before SHS) first, then SHS, then no-class student last (nulls_last).
+    assert ids == [sid_basic, sid_shs, sid_none]
+
+
+# ── Multi-active class assignment (promoted, not graduated) ───────────────────
+
+@pytest.mark.asyncio
+async def test_list_students_promoted_student_not_double_counted(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_year: AcademicYear, db_session: AsyncSession, school: School,
+):
+    """A promoted (non-graduated) student can hold 2+ is_active StudentClassAssignment
+    rows across academic years — the list/count must dedup to the most recent one."""
+    sid = (await client.post("/students", json=_student("ADM001"), headers=auth)).json()["id"]
+
+    next_year = AcademicYear(
+        school_id=school.id, name="2025/2026",
+        start_date=date(2025, 9, 1), end_date=date(2026, 7, 31), is_current=False,
+    )
+    db_session.add(next_year)
+    await db_session.flush()
+    next_class = Class(school_id=school.id, level="SHS", year_group=3, stream="A", is_active=True)
+    db_session.add(next_class)
+    await db_session.flush()
+
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=sid, class_id=school_class.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=sid, class_id=next_class.id,
+        academic_year_id=next_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get("/students", headers=auth)
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "1"
+    assert len(resp.json()) == 1
+    # Most-recently-created assignment (next_class, SHS year_group=3) wins.
+    assert resp.json()[0]["current_class_id"] == str(next_class.id)
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -154,33 +154,52 @@ async def create_student(
     return _to_detail(student)
 
 
+def _active_class_assignment_subquery():
+    """Most-recent active StudentClassAssignment per student.
+
+    A promoted (not graduated/withdrawn) student is never deactivated from their
+    prior year's assignment, so 2+ is_active=True rows can coexist for one student.
+    DISTINCT ON collapses that to exactly one row per student, keeping this join
+    provably 1:1 wherever it's used (list_students' count/sort, and here).
+    """
+    return (
+        select(StudentClassAssignment.student_id, StudentClassAssignment.class_id)
+        .where(StudentClassAssignment.is_active == True)  # noqa: E712
+        .distinct(StudentClassAssignment.student_id)
+        .order_by(StudentClassAssignment.student_id, StudentClassAssignment.created_at.desc())
+        .subquery()
+    )
+
+
 async def _get_class_map(
     student_ids: list[uuid.UUID],
     db: AsyncSession,
 ) -> dict[uuid.UUID, tuple[str, int, str | None, str | None, uuid.UUID]]:
     if not student_ids:
         return {}
+    active_sca = _active_class_assignment_subquery()
     rows = await db.execute(
         select(
-            StudentClassAssignment.student_id,
+            active_sca.c.student_id,
             Class.level,
             Class.year_group,
             Class.stream,
             SHSProgramme.name.label("programme_name"),
             Class.id.label("class_id"),
         )
-        .join(Class, Class.id == StudentClassAssignment.class_id)
+        .join(Class, Class.id == active_sca.c.class_id)
         .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
-        .where(
-            StudentClassAssignment.student_id.in_(student_ids),
-            StudentClassAssignment.is_active == True,  # noqa: E712
-        )
+        .where(active_sca.c.student_id.in_(student_ids))
     )
-    result: dict[uuid.UUID, tuple] = {}
-    for r in rows:
-        if r.student_id not in result:
-            result[r.student_id] = (r.level, r.year_group, r.programme_name, r.stream, r.class_id)
-    return result
+    return {
+        r.student_id: (r.level, r.year_group, r.programme_name, r.stream, r.class_id)
+        for r in rows
+    }
+
+
+# Pedagogical order — Class.level is a free-text column, not a DB-enforced enum,
+# so plain alphabetical ORDER BY would put "Basic" before "Creche".
+_CLASS_LEVEL_ORDER = ["Creche", "Nursery", "KG", "Basic", "SHS"]
 
 
 async def list_students(
@@ -197,7 +216,9 @@ async def list_students(
     level: str | None = None,
     year_group: int | None = None,
     staff_member_id: uuid.UUID | None = None,
-) -> list[StudentSummary]:
+    sort_by: str = "name",
+    sort_dir: str = "asc",
+) -> tuple[list[StudentSummary], int]:
     q = select(Student).where(Student.school_id == school_id)
 
     if staff_member_id is not None:
@@ -233,18 +254,29 @@ async def list_students(
         q = q.where(Student.is_active == True)  # noqa: E712
     if gender:
         q = q.where(Student.gender == gender)
-    if class_id or level or year_group:
-        q = q.join(StudentClassAssignment, StudentClassAssignment.student_id == Student.id).where(
-            StudentClassAssignment.is_active == True,  # noqa: E712
-        )
+
+    # Class filter/sort share one dedup'd active-assignment join so a student with
+    # 2+ active StudentClassAssignment rows (promoted, not graduated) can't fan out
+    # the result — see _active_class_assignment_subquery().
+    class_filtered = bool(class_id or level or year_group)
+    class_sorted = sort_by == "class"
+    active_sca = _active_class_assignment_subquery()
+    if class_filtered:
+        q = q.join(active_sca, active_sca.c.student_id == Student.id)
         if class_id:
-            q = q.where(StudentClassAssignment.class_id == class_id)
-        if level or year_group:
-            q = q.join(Class, Class.id == StudentClassAssignment.class_id)
+            q = q.where(active_sca.c.class_id == class_id)
+        if level or year_group or class_sorted:
+            q = q.join(Class, Class.id == active_sca.c.class_id)
             if level:
                 q = q.where(Class.level == level)
             if year_group:
                 q = q.where(Class.year_group == year_group)
+    elif class_sorted:
+        # No class filter active — outer join so students with no current class
+        # assignment still appear in an otherwise-unfiltered list.
+        q = q.outerjoin(active_sca, active_sca.c.student_id == Student.id)
+        q = q.outerjoin(Class, Class.id == active_sca.c.class_id)
+
     if term_id:
         q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
             TermEnrollment.is_active == True,  # noqa: E712
@@ -257,10 +289,33 @@ async def list_students(
             Student.last_name.ilike(s),
             Student.admission_number.ilike(s),
         ))
-    q = q.distinct().order_by(Student.last_name, Student.first_name).offset(skip).limit(limit)
+
+    total = await db.scalar(select(func.count()).select_from(q.subquery()))
+
+    desc = sort_dir == "desc"
+    if sort_by == "admission":
+        order_cols = [Student.admission_number.desc() if desc else Student.admission_number.asc()]
+    elif sort_by == "class":
+        level_rank = case(
+            {lvl: i for i, lvl in enumerate(_CLASS_LEVEL_ORDER)},
+            value=Class.level,
+            else_=len(_CLASS_LEVEL_ORDER),
+        )
+        order_cols = [
+            c.desc().nulls_last() if desc else c.asc().nulls_last()
+            for c in (level_rank, Class.year_group, Class.stream)
+        ]
+    else:
+        order_cols = (
+            [Student.last_name.desc(), Student.first_name.desc()] if desc
+            else [Student.last_name.asc(), Student.first_name.asc()]
+        )
+    order_cols.append(Student.id)  # deterministic tiebreaker — none of the above are unique keys
+
+    q = q.order_by(*order_cols).offset(skip).limit(limit)
     students = list(await db.scalars(q))
     class_map = await _get_class_map([s.id for s in students], db)
-    return [_to_summary(s, class_map.get(s.id)) for s in students]
+    return [_to_summary(s, class_map.get(s.id)) for s in students], total
 
 
 async def get_student(

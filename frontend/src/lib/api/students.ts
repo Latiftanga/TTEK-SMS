@@ -129,12 +129,21 @@ export interface MedicalRecordUpsert {
   emergency_notes?: string;
 }
 
+export interface ImportRowResult {
+  row: number;
+  ref: string | null;
+  status: string;
+  error: string | null;
+  warning: string | null;
+}
+
 export interface ImportBatchResult {
   batch_id: string;
   total_rows: number;
   created: number;
-  skipped: number;
-  errors: { row: number; reason: string }[];
+  failed: number;
+  errors: ImportRowResult[];
+  warnings: ImportRowResult[];
 }
 
 export interface StudentListParams {
@@ -147,10 +156,23 @@ export interface StudentListParams {
   gender?: string;
   level?: string;
   year_group?: number;
+  sort_by?: 'name' | 'admission' | 'class';
+  sort_dir?: 'asc' | 'desc';
 }
 
 export const listStudents = (params: StudentListParams = {}): Promise<StudentSummary[]> =>
   api.get('/students', { params }).then(r => r.data);
+
+export interface StudentListPage {
+  items: StudentSummary[];
+  total: number;
+}
+
+export const listStudentsPage = (params: StudentListParams = {}): Promise<StudentListPage> =>
+  api.get<StudentSummary[]>('/students', { params }).then(r => ({
+    items: r.data,
+    total: Number(r.headers['x-total-count'] ?? r.data.length),
+  }));
 
 export const getStudent = (id: string): Promise<StudentDetail> =>
   api.get(`/students/${id}`).then(r => r.data);
@@ -257,6 +279,9 @@ export const createTransferRequest = (
 
 export const listPendingTransfers = (): Promise<TransferRequest[]> =>
   api.get('/students/transfers/pending').then(r => r.data);
+
+export const listTransfersForStudent = (studentId: string): Promise<TransferRequest[]> =>
+  api.get(`/students/${studentId}/transfers`).then(r => r.data);
 
 export const reviewTransfer = (
   transferId: string,
