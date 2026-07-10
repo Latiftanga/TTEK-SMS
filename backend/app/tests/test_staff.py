@@ -10,7 +10,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 import pytest_asyncio
 
-from app.models.auth import StaffPosition
+from app.core.auth import hash_password
+from app.models.academic import AcademicYear, Class, ClassTeacher
+from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import School
 from app.models.staff import StaffCategory, StaffRank, StaffType
 from sqlalchemy import select
@@ -21,6 +23,13 @@ from sqlalchemy import select
 async def _get_position_id(db_session: AsyncSession) -> str:
     """Return the id of any seeded staff position."""
     pos = await db_session.scalar(select(StaffPosition).limit(1))
+    assert pos is not None, "Run seed_reference_data.py first"
+    return str(pos.id)
+
+
+async def _get_head_position_id(db_session: AsyncSession) -> str:
+    """Return the id of the seeded HEAD position (grants school.manage_users)."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == "HEAD"))
     assert pos is not None, "Run seed_reference_data.py first"
     return str(pos.id)
 
@@ -131,6 +140,62 @@ async def test_deactivate_staff(client: AsyncClient, auth: dict):
     # Should appear when including inactive
     all_list = (await client.get("/staff?active_only=false", headers=auth)).json()
     assert any(m["id"] == staff_id for m in all_list)
+
+
+@pytest.mark.asyncio
+async def test_deactivate_staff_disables_linked_user_login(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    user = User(
+        school_id=school.id, login_type=LoginType.EMAIL, email="deactivate-target@example.com",
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    resp = await client.patch(f"/staff/{staff_id}", json={"is_active": False}, headers=auth)
+    assert resp.status_code == 200
+    await db_session.refresh(user)
+    assert user.is_active is False
+
+    # Reactivating restores login access.
+    resp = await client.patch(f"/staff/{staff_id}", json={"is_active": True}, headers=auth)
+    assert resp.status_code == 200
+    await db_session.refresh(user)
+    assert user.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_deactivate_staff_cascades_to_class_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school_class: Class, academic_year: AcademicYear,
+):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    assign_resp = await client.post(f"/academic/classes/{school_class.id}/class-teacher", json={
+        "staff_member_id": staff_id, "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert assign_resp.status_code == 201
+
+    resp = await client.patch(f"/staff/{staff_id}", json={"is_active": False}, headers=auth)
+    assert resp.status_code == 200
+
+    ct = await db_session.scalar(
+        select(ClassTeacher).where(ClassTeacher.staff_member_id == staff_id)
+    )
+    assert ct.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_deactivate_last_admin_rejected(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    head_pos_id = await _get_head_position_id(db_session)
+    staff_id = (await client.post("/staff", json=_staff_payload(staff_number="TSTHEAD"), headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [head_pos_id]}, headers=auth)
+
+    resp = await client.patch(f"/staff/{staff_id}", json={"is_active": False}, headers=auth)
+    assert resp.status_code == 422
 
 
 # ── Emergency contacts ────────────────────────────────────────────────────────

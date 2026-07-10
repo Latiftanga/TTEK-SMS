@@ -5,7 +5,7 @@ Promotions and leave management live in services/staff_leave.py.
 from __future__ import annotations
 import uuid
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -153,23 +153,49 @@ async def get_staff(
     return _to_detail(member, has_account=has_account)
 
 
-async def _guard_last_admin(
-    staff_id: uuid.UUID,
-    school_id: uuid.UUID,
-    new_position_ids: list[uuid.UUID],
-    db: AsyncSession,
-) -> None:
-    """Raise 422 if this change would leave the school with no administrator."""
+async def _admin_position_ids(db: AsyncSession) -> set[uuid.UUID]:
+    """Positions that grant school.manage_users (the admin capability)."""
     from app.models.auth import PositionPermission
 
-    # Find every position that grants school.manage_users (the admin capability).
-    admin_pos_ids = set(await db.scalars(
+    return set(await db.scalars(
         select(PositionPermission.position_id).where(
             PositionPermission.module == "school",
             PositionPermission.action == "manage_users",
             PositionPermission.is_allowed == True,
         )
     ))
+
+
+async def _other_active_admins_exist(
+    staff_id: uuid.UUID,
+    school_id: uuid.UUID,
+    admin_pos_ids: set[uuid.UUID],
+    db: AsyncSession,
+) -> bool:
+    """Whether any OTHER active staff at this school still holds an admin position."""
+    count = await db.scalar(
+        select(func.count(StaffMember.id.distinct())).where(
+            StaffMember.school_id == school_id,
+            StaffMember.id != staff_id,
+            StaffMember.is_active == True,
+            StaffMember.id.in_(
+                select(staff_member_positions.c.staff_member_id).where(
+                    staff_member_positions.c.position_id.in_(admin_pos_ids)
+                )
+            ),
+        )
+    )
+    return bool(count)
+
+
+async def _guard_last_admin(
+    staff_id: uuid.UUID,
+    school_id: uuid.UUID,
+    new_position_ids: list[uuid.UUID],
+    db: AsyncSession,
+) -> None:
+    """Raise 422 if this position change would leave the school with no administrator."""
+    admin_pos_ids = await _admin_position_ids(db)
     if not admin_pos_ids:
         return  # no admin positions defined yet — nothing to protect
 
@@ -182,26 +208,41 @@ async def _guard_last_admin(
     if not losing_admin:
         return  # this staff member isn't losing admin — nothing to check
 
-    # Count OTHER active staff at this school who still hold an admin position.
-    other_admins = await db.scalar(
-        select(func.count(StaffMember.id.distinct())).where(
-            StaffMember.school_id == school_id,
-            StaffMember.id != staff_id,
-            StaffMember.is_active == True,
-            StaffMember.id.in_(
-                select(staff_member_positions.c.staff_member_id).where(
-                    staff_member_positions.c.position_id.in_(admin_pos_ids)
-                )
-            ),
-        )
-    )
-    if not other_admins:
+    if not await _other_active_admins_exist(staff_id, school_id, admin_pos_ids, db):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 "Cannot remove the administrator position: this is the only "
                 "active administrator. Assign the HEAD position to another "
                 "staff member first."
+            ),
+        )
+
+
+async def _guard_last_admin_deactivation(
+    staff_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Raise 422 if deactivating this staff member would leave the school with no administrator."""
+    admin_pos_ids = await _admin_position_ids(db)
+    if not admin_pos_ids:
+        return
+
+    current_pos_ids = set(await db.scalars(
+        select(staff_member_positions.c.position_id).where(
+            staff_member_positions.c.staff_member_id == staff_id
+        )
+    ))
+    if not (current_pos_ids & admin_pos_ids):
+        return  # this staff member isn't an admin — nothing to protect
+
+    if not await _other_active_admins_exist(staff_id, school_id, admin_pos_ids, db):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Cannot deactivate: this is the only active administrator. "
+                "Assign the HEAD position to another staff member first."
             ),
         )
 
@@ -228,6 +269,13 @@ async def update_staff(
     update_data = req.model_dump(exclude_unset=True)
     new_position_ids: list[uuid.UUID] | None = update_data.pop("position_ids", None)
 
+    was_active   = member.is_active
+    deactivating = was_active and update_data.get("is_active") is False
+    reactivating = (not was_active) and update_data.get("is_active") is True
+
+    if deactivating:
+        await _guard_last_admin_deactivation(staff_id, school_id, db)
+
     for field, val in update_data.items():
         setattr(member, field, val)
 
@@ -247,6 +295,32 @@ async def update_staff(
         await db.refresh(member, attribute_names=["positions"])
         from app.core.permissions import invalidate_permissions
         await invalidate_permissions(staff_id)
+
+    if deactivating or reactivating:
+        # StaffMember.is_active and User.is_active are separate fields — without this,
+        # a "deactivated" staff member keeps a fully working login and permission cache.
+        user = await db.scalar(select(User).where(User.staff_member_id == staff_id))
+        if user:
+            user.is_active = reactivating
+
+        from app.core.permissions import invalidate_permissions
+        await invalidate_permissions(staff_id)
+
+    if deactivating:
+        # A deactivated staff member shouldn't keep appearing as an active class
+        # teacher / subject teacher / house master — report cards, dashboards, and
+        # student-visibility scoping all key off these tables' own is_active flags,
+        # not the staff member's. Reactivating does NOT restore these: the class/
+        # house may already have a new assignee, so re-assignment is a manual step.
+        from app.models.academic import ClassTeacher, SubjectTeacher
+        from app.models.housing import HouseMaster
+
+        for model in (ClassTeacher, SubjectTeacher, HouseMaster):
+            await db.execute(
+                update(model)
+                .where(model.staff_member_id == staff_id, model.is_active == True)  # noqa: E712
+                .values(is_active=False)
+            )
 
     if "category_id" in update_data:
         await db.refresh(member, attribute_names=["category"])
