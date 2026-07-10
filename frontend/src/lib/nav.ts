@@ -80,6 +80,8 @@ export const NAV_GROUPS: NavGroup[] = [
           { href: '/admin/academic/subjects',   label: 'Subjects',         roles: ['admin'] },
           { href: '/admin/academic/programmes', label: 'Programmes',       roles: ['admin'],
             schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
+          { href: '/admin/academic/promote',    label: 'Promotions',       roles: ['admin'] },
+          { href: '/admin/academic/graduation', label: 'Graduation',       roles: ['admin'] },
           { href: '/assessments/scales',        label: 'Grading Scales',   roles: ['admin', 'approver'] },
           { href: '/assessments/types',         label: 'Assessment Types', roles: ['admin', 'approver'] },
         ],

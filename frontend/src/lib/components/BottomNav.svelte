@@ -3,34 +3,41 @@
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
-  import { IC, type NavRole, type SchoolType } from '$lib/nav';
+  import { NAV_GROUPS, type NavItem, type NavRole, type SchoolType } from '$lib/nav';
 
   interface Props { onmore: () => void; }
   const { onmore }: Props = $props();
 
-  interface Tab {
-    href:  string;
-    label: string;
-    icon:  string;
-    exact?: boolean;
-    roles?: NavRole[];
-    schoolTypes?: SchoolType[];
-  }
+  type Tab = Omit<NavItem, 'children'>;
 
-  const ALL_TABS: Tab[] = [
-    { href: '/dashboard',   label: 'Home',       icon: IC.dashboard,   exact: true },
-    { href: '/attendance',  label: 'Attendance', icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
-    { href: '/assessments', label: 'Scores',     icon: IC.assessments, roles: ['teacher', 'admin', 'approver'] },
-    { href: '/fees',        label: 'Fees',       icon: IC.fees,        roles: ['finance', 'admin'] },
-    { href: '/housing',     label: 'Housing',    icon: IC.housing,     roles: ['admin', 'housemaster'],
-      schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
-    { href: '/reports',     label: 'Reports',    icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
-    { href: '/students',    label: 'Students',   icon: IC.students,    roles: ['admin'] },
-  ];
+  // Shorter labels for the cramped mobile tab bar — falls back to the sidebar label.
+  const MOBILE_LABELS: Partial<Record<string, string>> = {
+    '/dashboard':   'Home',
+    '/assessments': 'Scores',
+    '/reports':     'Reports',
+  };
+
+  // Curated subset of NAV_GROUPS eligible for the mobile tab bar — deliberately excludes
+  // config-heavy admin pages (School Setup, Academic, Transfers, Staff) that only make
+  // sense from the full sidebar ("More"), not as a quick daily-work tab.
+  const MOBILE_HREFS = new Set([
+    '/dashboard', '/attendance', '/assessments', '/fees', '/housing', '/reports', '/students',
+  ]);
+
+  const ALL_TABS: Tab[] = NAV_GROUPS.flatMap(g => g.items)
+    .filter(i => MOBILE_HREFS.has(i.href))
+    .map(i => ({
+      href: i.href,
+      label: MOBILE_LABELS[i.href] ?? i.label,
+      icon: i.icon,
+      exact: i.exact,
+      roles: i.roles,
+      schoolTypes: i.schoolTypes,
+    }));
 
   // The 4 most useful tabs per role — in priority order.
   // Tabs not listed here bubble to the end and may end up behind "More".
-  const ROLE_ORDER: Partial<Record<NavRole, string[]>> = {
+  const MOBILE_ORDER: Partial<Record<NavRole, string[]>> = {
     teacher:     ['/dashboard', '/attendance', '/assessments', '/reports'],
     approver:    ['/dashboard', '/attendance', '/assessments', '/reports'],
     admin:       ['/dashboard', '/students',   '/attendance',  '/fees'],
@@ -56,7 +63,7 @@
 
   const tabs = $derived.by(() => {
     const role = $userRole as NavRole | null;
-    const order = role ? (ROLE_ORDER[role] ?? null) : null;
+    const order = role ? (MOBILE_ORDER[role] ?? null) : null;
     if (order) {
       const prioritised = order.flatMap(href => {
         const t = eligible.find(tab => tab.href === href);

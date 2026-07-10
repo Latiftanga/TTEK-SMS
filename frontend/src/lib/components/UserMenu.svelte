@@ -1,26 +1,9 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { currentUser, auth } from '$lib/stores/auth';
-  import { school } from '$lib/stores/school';
-  import { userRole } from '$lib/stores/permissions';
-  import { logout } from '$lib/api/auth';
-  import { IC, ROLE_LABELS, type NavRole } from '$lib/nav';
+  import { IC } from '$lib/nav';
+  import { userLabel, roleLabel, initials, avatarStyle, signOut } from '$lib/stores/identity';
 
   let menuOpen = $state(false);
   let menuEl   = $state<HTMLElement | undefined>();
-
-  const role         = $derived($userRole as NavRole | null);
-  const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
-  const userLabel    = $derived($currentUser?.display_name ?? $currentUser?.email ?? $currentUser?.phone ?? '—');
-  const roleLabel    = $derived(
-    isSuperadmin ? 'Platform Admin' : role ? (ROLE_LABELS[role] ?? 'Staff member') : 'Staff member'
-  );
-  const initials = $derived(
-    userLabel.split(' ').filter((w: string) => w).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
-    || userLabel.slice(0, 2).toUpperCase()
-  );
-
-  const avatarStyle = 'background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 60%, #7c3aed) 100%)';
 
   function handleOutsideClick(e: PointerEvent) {
     if (menuEl && !menuEl.contains(e.target as Node)) menuOpen = false;
@@ -35,12 +18,7 @@
 
   async function handleLogout() {
     menuOpen = false;
-    const rt = localStorage.getItem('refresh_token') ?? '';
-    await logout(rt);
-    auth.clearAuth();
-    school.clear();
-    userRole.reset();
-    goto('/login');
+    await signOut();
   }
 
   function close() { menuOpen = false; }
@@ -55,7 +33,7 @@
            ring-2 ring-transparent transition hover:opacity-90 focus-visible:ring-[var(--brand)]"
     style={avatarStyle}
   >
-    {initials}
+    {$initials}
   </button>
 
   {#if menuOpen}
@@ -66,8 +44,8 @@
     >
       <!-- Identity header -->
       <div class="border-b border-[var(--border)] px-4 py-3">
-        <p class="truncate text-sm font-semibold text-[var(--fg)]">{userLabel}</p>
-        <p class="text-[11px] text-[var(--fg-muted)]">{roleLabel}</p>
+        <p class="truncate text-sm font-semibold text-[var(--fg)]">{$userLabel}</p>
+        <p class="text-[11px] text-[var(--fg-muted)]">{$roleLabel}</p>
       </div>
 
       <!-- Actions -->
