@@ -329,3 +329,48 @@ async def test_double_review_rejected(client: AsyncClient, auth: dict):
     await client.patch(f"/staff/leave/{leave_id}/review", json={"status": "REJECTED"}, headers=auth)
     resp = await client.patch(f"/staff/leave/{leave_id}/review", json={"status": "APPROVED"}, headers=auth)
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_list_pending_leave_enriched_with_staff_name(client: AsyncClient, auth: dict):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    await client.post(f"/staff/{staff_id}/leave", json={
+        "leave_type": "Annual", "start_date": "2025-08-04",
+        "end_date": "2025-08-08", "days_count": 5,
+    }, headers=auth)
+
+    resp = await client.get("/staff/leave/pending", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["staff_member_id"] == staff_id
+    assert data[0]["staff_name"] == "Kwame Mensah"
+    assert data[0]["staff_number"] == "TST001"
+
+
+# ── List pagination ──────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_staff_total_count_and_search(client: AsyncClient, auth: dict):
+    await client.post("/staff", json=_staff_payload(staff_number="TST101", last_name="Mensah"), headers=auth)
+    await client.post("/staff", json=_staff_payload(staff_number="TST102", last_name="Asante"), headers=auth)
+    await client.post("/staff", json=_staff_payload(staff_number="TST103", last_name="Asante"), headers=auth)
+
+    resp = await client.get("/staff?limit=1", headers=auth)
+    assert len(resp.json()) == 1
+    assert resp.headers["x-total-count"] == "3"
+
+    resp = await client.get("/staff?search=asante", headers=auth)
+    assert resp.headers["x-total-count"] == "2"
+    assert all(m["last_name"] == "Asante" for m in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_list_staff_category_filter(client: AsyncClient, auth: dict, db_session: AsyncSession):
+    cat_id, _ = await _seed_rank(db_session)
+    await client.post("/staff", json=_staff_payload(staff_number="TST201", category_id=cat_id), headers=auth)
+    await client.post("/staff", json=_staff_payload(staff_number="TST202"), headers=auth)
+
+    resp = await client.get(f"/staff?category_id={cat_id}", headers=auth)
+    assert resp.headers["x-total-count"] == "1"
+    assert resp.json()[0]["staff_number"] == "TST201"

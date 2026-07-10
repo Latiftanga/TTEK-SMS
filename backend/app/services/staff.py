@@ -5,7 +5,7 @@ Promotions and leave management live in services/staff_leave.py.
 from __future__ import annotations
 import uuid
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -117,19 +117,36 @@ async def list_staff(
     active_only: bool = True,
     skip: int = 0,
     limit: int = 50,
-) -> list[StaffMemberSummary]:
+    search: str | None = None,
+    gender: str | None = None,
+    category_id: uuid.UUID | None = None,
+) -> tuple[list[StaffMemberSummary], int]:
+    base = select(StaffMember).where(StaffMember.school_id == school_id)
+    if active_only:
+        base = base.where(StaffMember.is_active == True)
+    if category_id:
+        base = base.where(StaffMember.category_id == category_id)
+    if gender:
+        base = base.where(StaffMember.gender == gender)
+    if search:
+        s = f"%{search}%"
+        base = base.where(or_(
+            StaffMember.first_name.ilike(s),
+            StaffMember.last_name.ilike(s),
+            StaffMember.staff_number.ilike(s),
+        ))
+
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
+
     q = (
-        select(StaffMember)
-        .where(StaffMember.school_id == school_id)
+        base
         .options(selectinload(StaffMember.positions), selectinload(StaffMember.category))
         .order_by(StaffMember.last_name, StaffMember.first_name)
         .offset(skip)
         .limit(limit)
     )
-    if active_only:
-        q = q.where(StaffMember.is_active == True)
     members = await db.scalars(q)
-    return [_to_summary(m) for m in members]
+    return [_to_summary(m) for m in members], total
 
 
 async def get_staff(

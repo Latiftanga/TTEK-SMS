@@ -11,12 +11,12 @@ POST/PATCH/DELETE /staff/{id}/promotions     staff.edit
 GET  /staff/{id}/promotions                  staff.view
 POST /staff/{id}/leave                 staff.edit
 GET  /staff/{id}/leave                 staff.view
-GET  /staff/leave/pending              staff.approve_leave
-PATCH /staff/leave/{id}/review         staff.approve_leave
+GET  /staff/leave/pending              staff.edit
+PATCH /staff/leave/{id}/review         staff.edit
 """
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -69,14 +69,23 @@ async def create_staff(
 
 @router.get("", response_model=list[StaffMemberSummary])
 async def list_staff(
+    response: Response,
     active_only: bool = Query(True),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    search: str | None = Query(None),
+    gender: str | None = Query(None),
+    category_id: uuid.UUID | None = Query(None),
     ids=Depends(require_permission("staff", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await staff_svc.list_staff(school_id, db, active_only=active_only, skip=skip, limit=limit)
+    items, total = await staff_svc.list_staff(
+        school_id, db, active_only=active_only, skip=skip, limit=limit,
+        search=search, gender=gender, category_id=category_id,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get("/import/template")
@@ -179,8 +188,7 @@ async def list_pending_leave(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    leaves = await leave_svc.list_pending_leave(school_id, db)
-    return [LeaveRead.model_validate(l) for l in leaves]
+    return await leave_svc.list_pending_leave(school_id, db)
 
 
 @router.patch("/leave/{leave_id}/review", response_model=LeaveRead)

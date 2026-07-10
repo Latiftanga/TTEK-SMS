@@ -95,6 +95,8 @@ export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export interface Leave {
   id: string;
   staff_member_id: string;
+  staff_name: string | null;
+  staff_number: string | null;
   leave_type: string;
   start_date: string;
   end_date: string;
@@ -107,13 +109,28 @@ export interface Leave {
   created_at: string;
 }
 
-export async function listStaff(params?: {
+export interface StaffListParams {
   active_only?: boolean;
   skip?: number;
   limit?: number;
-}): Promise<StaffSummary[]> {
+  search?: string;
+  gender?: string;
+  category_id?: string;
+}
+
+export async function listStaff(params?: StaffListParams): Promise<StaffSummary[]> {
   const { data } = await client.get<StaffSummary[]>('/staff', { params });
   return data;
+}
+
+export interface StaffListPage {
+  items: StaffSummary[];
+  total: number;
+}
+
+export async function listStaffPage(params: StaffListParams = {}): Promise<StaffListPage> {
+  const res = await client.get<StaffSummary[]>('/staff', { params });
+  return { items: res.data, total: Number(res.headers['x-total-count'] ?? res.data.length) };
 }
 
 export async function getStaff(id: string): Promise<StaffDetail> {

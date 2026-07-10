@@ -226,6 +226,8 @@ class LeaveCreate(BaseModel):
 class LeaveRead(BaseModel):
     id: uuid.UUID
     staff_member_id: uuid.UUID
+    staff_name: str | None = None
+    staff_number: str | None = None
     leave_type: str
     start_date: date
     end_date: date

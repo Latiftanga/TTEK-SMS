@@ -1,62 +1,69 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
-  import { listStaff, type StaffSummary } from '$lib/api/staff';
+  import { reactiveQuery } from '$lib/query.svelte';
+  import { listStaffPage, listCategories, type StaffSummary, type StaffListParams, type StaffListPage } from '$lib/api/staff';
   import StaffForm        from './StaffForm.svelte';
   import StaffImportModal from './StaffImportModal.svelte';
   import Badge            from '$lib/components/Badge.svelte';
   import EmptyState       from '$lib/components/EmptyState.svelte';
   import CustomExportModal from '$lib/components/CustomExportModal.svelte';
+  import Pagination        from '$lib/components/Pagination.svelte';
   import { setPageTitle } from '$lib/stores/title';
 
   setPageTitle('Staff');
+  const PAGE_SIZE = 50;
+
   let drawerOpen   = $state(false);
   let importOpen   = $state(false);
-  let search       = $state('');
   let activeOnly   = $state(true);
   let genderFilter = $state('');
-  let jobFilter    = $state('');
+  let jobFilter    = $state(''); // category_id
+  let page         = $state(1);
 
-  const query = createQuery({
-    queryKey: ['staff', activeOnly],
-    queryFn:  () => listStaff({ active_only: activeOnly }),
+  // Search: local state for responsive input; debounced into the backend query
+  let searchInput = $state('');
+  let search      = $state('');
+  $effect(() => {
+    const val = searchInput;
+    const t = setTimeout(() => { search = val; page = 1; }, 300);
+    return () => clearTimeout(t);
+  });
+
+  const hasFilters = $derived(!!(search || genderFilter || jobFilter));
+
+  const params = $derived<StaffListParams>({
+    active_only: activeOnly,
+    skip:        (page - 1) * PAGE_SIZE,
+    limit:       PAGE_SIZE,
+    search:      search || undefined,
+    gender:      genderFilter || undefined,
+    category_id: jobFilter || undefined,
+  });
+
+  const query = reactiveQuery<StaffListPage>(() => ({
+    queryKey: ['staff', params] as const,
+    queryFn:  () => listStaffPage(params),
     staleTime: 2 * 60_000,
-  });
+  }));
 
-  const stats = $derived.by(() => {
-    const all: StaffSummary[] = $query.data ?? [];
-    return { total: all.length, active: all.filter(s => s.is_active).length };
-  });
+  const staffList = $derived<StaffSummary[]>($query.data?.items ?? []);
+  const total     = $derived<number>($query.data?.total ?? 0);
 
-  const categoryOptions = $derived.by(() => {
-    const names = new Set(($query.data ?? []).map(s => s.category_name).filter(Boolean));
-    return [...names].sort() as string[];
-  });
+  // Reset to page 1 whenever a filter changes (deliberately NOT depending on
+  // `params`/`page` itself — that would reset page 1 on every page navigation too).
+  $effect(() => { activeOnly; genderFilter; jobFilter; search; page = 1; });
 
-  const filtered = $derived.by(() => {
-    let list: StaffSummary[] = $query.data ?? [];
-    const q = search.trim().toLowerCase();
-    if (q)           list = list.filter(s =>
-      s.display_name.toLowerCase().includes(q) ||
-      s.staff_number.toLowerCase().includes(q) ||
-      s.position_names.some(n => n.toLowerCase().includes(q)) ||
-      (s.category_name ?? '').toLowerCase().includes(q)
-    );
-    if (genderFilter) list = list.filter(s => s.gender === genderFilter);
-    if (jobFilter)    list = list.filter(s => s.category_name === jobFilter);
-    return list;
-  });
+  const categoriesQ = createQuery({ queryKey: ['staff-categories'], queryFn: listCategories, staleTime: 5 * 60_000 });
 
   let exportMenuOpen   = $state(false);
   let customExportOpen = $state(false);
 
   const exportFilterParams = $derived({
     active_only: activeOnly,
-    search:      search.trim() || undefined,
+    search:      search || undefined,
     gender:      genderFilter || undefined,
-    category_id: jobFilter
-      ? ($query.data ?? []).find(s => s.category_name === jobFilter)?.category_id ?? undefined
-      : undefined,
+    category_id: jobFilter || undefined,
   });
 
   async function doExport(type: 'excel' | 'pdf') {
@@ -85,11 +92,7 @@
     <div>
       <h1 class="text-2xl font-bold text-[var(--fg)]">Staff</h1>
       <p class="mt-0.5 text-sm text-[var(--fg-muted)]">
-        {#if filtered.length !== stats.total}
-          Showing {filtered.length} of {stats.total} member{stats.total !== 1 ? 's' : ''}
-        {:else}
-          {stats.total} member{stats.total !== 1 ? 's' : ''} on record
-        {/if}
+        {total} member{total !== 1 ? 's' : ''}{hasFilters ? ' matching filters' : ' on record'}
       </p>
     </div>
     <div class="flex gap-2">
@@ -138,18 +141,13 @@
   </div>
 
   <!-- Stats strip -->
-  {#if $query.isSuccess && stats.total > 0}
+  {#if $query.isSuccess && total > 0}
     <div class="flex flex-wrap gap-2">
-      {#each [
-        { label: 'Total',  value: stats.total,  cls: 'text-[var(--fg)]' },
-        { label: 'Active', value: stats.active, cls: 'text-green-600 dark:text-green-400' },
-      ] as chip}
-        <div class="flex items-baseline gap-1.5 rounded-xl border border-[var(--border)]
-                    bg-[var(--card)] px-3.5 py-2">
-          <span class="text-base font-bold {chip.cls}">{chip.value}</span>
-          <span class="text-xs text-[var(--fg-muted)]">{chip.label}</span>
-        </div>
-      {/each}
+      <div class="flex items-baseline gap-1.5 rounded-xl border border-[var(--border)]
+                  bg-[var(--card)] px-3.5 py-2">
+        <span class="text-base font-bold text-[var(--fg)]">{total}</span>
+        <span class="text-xs text-[var(--fg-muted)]">Total</span>
+      </div>
       <label class="flex cursor-pointer items-baseline gap-1.5 rounded-xl border border-[var(--border)]
                     bg-[var(--card)] px-3.5 py-2 transition hover:bg-[var(--hover)]">
         <input type="checkbox" bind:checked={activeOnly} class="accent-[var(--brand)] mr-0.5 h-3 w-3" />
@@ -165,7 +163,7 @@
            fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
         <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/>
       </svg>
-      <input bind:value={search} placeholder="Search name, ID, category, position…"
+      <input bind:value={searchInput} placeholder="Search name, ID, or position…"
         class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2.5 pl-9 pr-4
                text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)]
                focus:border-[var(--brand)] focus:outline-none" />
@@ -177,13 +175,13 @@
       <option value="MALE">Male</option>
       <option value="FEMALE">Female</option>
     </select>
-    {#if categoryOptions.length > 0}
+    {#if ($categoriesQ.data ?? []).length > 0}
       <select bind:value={jobFilter}
         class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm
                text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
         <option value="">All categories</option>
-        {#each (categoryOptions) as name}
-          <option value={name}>{name}</option>
+        {#each $categoriesQ.data ?? [] as cat}
+          <option value={cat.id}>{cat.name}</option>
         {/each}
       </select>
     {/if}
@@ -202,17 +200,17 @@
       Could not load staff list.
       <button onclick={() => $query.refetch()} class="ml-2 underline">Retry</button>
     </div>
-  {:else if filtered.length === 0}
+  {:else if staffList.length === 0}
     <EmptyState
       iconPath="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-      title={search || genderFilter || jobFilter ? 'No staff match your filters.' : 'No staff on record yet.'}
-      description={search || genderFilter || jobFilter
+      title={hasFilters ? 'No staff match your filters.' : 'No staff on record yet.'}
+      description={hasFilters
         ? 'Try adjusting or clearing your search and filters.'
         : 'Add your first staff member to get started.'}
-      action={search || genderFilter || jobFilter
-        ? () => { search = ''; genderFilter = ''; jobFilter = ''; }
+      action={hasFilters
+        ? () => { searchInput = ''; search = ''; genderFilter = ''; jobFilter = ''; }
         : () => { drawerOpen = true; }}
-      actionLabel={search || genderFilter || jobFilter ? 'Clear filters' : 'Add first staff member'}
+      actionLabel={hasFilters ? 'Clear filters' : 'Add first staff member'}
     />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
@@ -226,7 +224,7 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-[var(--border)]">
-          {#each filtered as s (s.id)}
+          {#each staffList as s (s.id)}
             <tr onclick={() => goto(`/admin/staff/${s.id}`)}
                 class="group cursor-pointer transition hover:bg-[var(--hover)]">
               <td class="px-4 py-3">
@@ -264,6 +262,9 @@
           {/each}
         </tbody>
       </table>
+    </div>
+    <div class="mt-4">
+      <Pagination total={total} pageSize={PAGE_SIZE} {page} label="staff" onPageChange={(p) => page = p} />
     </div>
   {/if}
 </div>

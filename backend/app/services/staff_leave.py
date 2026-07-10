@@ -185,13 +185,31 @@ async def list_leave(
     return list(rows)
 
 
-async def list_pending_leave(school_id: uuid.UUID, db: AsyncSession) -> list[StaffLeave]:
-    rows = await db.scalars(
+async def list_pending_leave(school_id: uuid.UUID, db: AsyncSession) -> list[LeaveRead]:
+    leaves = list(await db.scalars(
         select(StaffLeave)
         .where(StaffLeave.school_id == school_id, StaffLeave.status == LeaveStatus.PENDING)
         .order_by(StaffLeave.created_at)
-    )
-    return list(rows)
+    ))
+    if not leaves:
+        return []
+
+    staff_ids = list({l.staff_member_id for l in leaves})
+    members = {
+        m.id: m for m in await db.scalars(
+            select(StaffMember).where(StaffMember.id.in_(staff_ids))
+        )
+    }
+
+    result = []
+    for l in leaves:
+        data = LeaveRead.model_validate(l)
+        member = members.get(l.staff_member_id)
+        if member:
+            data.staff_name = f"{member.first_name} {member.last_name}"
+            data.staff_number = member.staff_number
+        result.append(data)
+    return result
 
 
 async def review_leave(
