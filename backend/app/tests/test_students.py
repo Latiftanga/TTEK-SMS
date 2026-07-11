@@ -6,15 +6,45 @@ from datetime import date
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class
+from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import School
 from app.models.students import StudentClassAssignment
 
 
 def _student(num: str = "ADM001", **kw) -> dict:
     return {"admission_number": num, "first_name": "Ama", "last_name": "Boateng", **kw}
+
+
+async def _login_as_position(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
+) -> dict:
+    """Create a staff member holding `position_code`, give them a login, and return
+    their bearer-token auth headers."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post("/staff", json={
+        "staff_number": f"TST-{position_code}", "first_name": "Test", "last_name": position_code.title(),
+    }, headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
+
+    email = f"{position_code.lower()}@presec-test.edu.gh"
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
 # ── Student CRUD ──────────────────────────────────────────────────────────────
@@ -165,6 +195,55 @@ async def test_list_students_promoted_student_not_double_counted(
     assert len(resp.json()) == 1
     # Most-recently-created assignment (next_class, SHS year_group=3) wins.
     assert resp.json()[0]["current_class_id"] == str(next_class.id)
+
+
+# ── Staff-scoped visibility ─────────────────────────────────────────────────────
+# Staff without students.edit are scoped to their own students UNLESS they hold a
+# broader administrative permission (fees, housing, score approval) that requires
+# seeing the full roster to do their job.
+
+@pytest.mark.asyncio
+async def test_list_students_bursar_sees_full_roster(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """A Bursar has students.view + fees.collect/manage but no students.edit and no
+    ClassTeacher/SubjectTeacher/HouseMaster row — they must still see every student
+    to record a payment against them."""
+    await client.post("/students", json=_student("ADM001"), headers=auth)
+    await client.post("/students", json=_student("ADM002"), headers=auth)
+
+    bursar_auth = await _login_as_position(client, auth, db_session, school, "BURSAR")
+    resp = await client.get("/students", headers=bursar_auth)
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_list_students_housemaster_sees_full_roster(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """A Housemaster has housing.assign/manage but no students.edit — they must
+    still see students outside their own house to assign a new one in."""
+    await client.post("/students", json=_student("ADM001"), headers=auth)
+
+    housemaster_auth = await _login_as_position(client, auth, db_session, school, "HOUSEMASTER")
+    resp = await client.get("/students", headers=housemaster_auth)
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_list_students_exam_officer_sees_full_roster(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """An Exam Officer has assessments.approve_scores but no students.edit — they
+    must still see rosters for classes they don't personally teach."""
+    await client.post("/students", json=_student("ADM001"), headers=auth)
+
+    exam_officer_auth = await _login_as_position(client, auth, db_session, school, "EXAM_OFFICER")
+    resp = await client.get("/students", headers=exam_officer_auth)
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "1"
 
 
 @pytest.mark.asyncio

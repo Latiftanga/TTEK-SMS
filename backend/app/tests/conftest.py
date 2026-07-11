@@ -18,6 +18,7 @@ from sqlalchemy.pool import NullPool
 
 from datetime import date
 
+from app.core import redis as redis_module
 from app.core.auth import hash_password
 from app.core.config import settings
 from app.core.database import get_db
@@ -66,6 +67,24 @@ async def client(db_session: AsyncSession):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest_asyncio.fixture
+async def redis_permissions():
+    """Initialise the real Redis pool for tests that need resolve_permissions()
+    to work for a non-superadmin login (ASGITransport skips app lifespan, so
+    Redis is otherwise never initialised in tests).
+
+    Torn down afterwards so Redis reverts to uninitialised for every other
+    test — the rate limiter deliberately treats that as "pass through, don't
+    limit" (see limiter.py's REDIS UNAVAILABLE note), which the rest of the
+    suite relies on.
+    """
+    await redis_module.init_redis()
+    try:
+        yield
+    finally:
+        await redis_module.close_redis()
     app.dependency_overrides.clear()
 
 
