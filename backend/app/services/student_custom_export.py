@@ -12,11 +12,11 @@ from typing import Callable
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import Class, SHSProgramme
+from app.models.academic import Class
 from app.models.students import (
     Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment,
 )
-from app.services.student import _class_display, _display_name
+from app.services.student import _class_display, _display_name, _get_class_map
 
 # Keys of fields that require the class or guardian lookup queries.
 _CLASS_FIELDS    = {"current_class", "level"}
@@ -103,21 +103,16 @@ async def export_students_custom(
 
     # ── Ancillary lookups (only when needed) ─────────────────────────────────
     requested_keys = {k for k, _ in resolved}
-    class_map: dict[uuid.UUID, tuple[str, str]] = {}   # id → (display, level)
+    # id → (display, level) — resolves to the most-recent active assignment (see
+    # _active_class_assignment_subquery's docstring for why a promoted student
+    # can have 2+ active rows and why "first row seen" would be non-deterministic).
+    class_map: dict[uuid.UUID, tuple[str, str]] = {}
     if sids and requested_keys & _CLASS_FIELDS:
-        rows = await db.execute(
-            select(
-                StudentClassAssignment.student_id,
-                Class.level, Class.year_group, Class.stream,
-                SHSProgramme.name.label("prog"),
-            )
-            .join(Class, Class.id == StudentClassAssignment.class_id)
-            .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
-            .where(StudentClassAssignment.student_id.in_(sids), StudentClassAssignment.is_active == True)  # noqa: E712
-        )
-        for r in rows:
-            if r.student_id not in class_map:
-                class_map[r.student_id] = (_class_display(r.level, r.year_group, r.prog, r.stream), r.level)
+        class_info_map = await _get_class_map(sids, db)
+        class_map = {
+            sid: (_class_display(level, year_group, programme, stream), level)
+            for sid, (level, year_group, programme, stream, _cls_id) in class_info_map.items()
+        }
 
     guardian_map: dict[uuid.UUID, tuple[str, str]] = {}
     if sids and requested_keys & _GUARDIAN_FIELDS:

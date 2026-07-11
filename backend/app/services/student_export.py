@@ -7,9 +7,9 @@ import uuid
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import Class, SHSProgramme
+from app.models.academic import Class
 from app.models.students import Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment
-from app.services.student import _class_display, _display_name
+from app.services.student import _class_display, _display_name, _get_class_map
 
 
 HEADERS = [
@@ -64,23 +64,15 @@ async def export_students_csv(
     q = q.distinct().order_by(Student.last_name, Student.first_name)
     students = list(await db.scalars(q))
 
-    # Class map
+    # Class map — resolves to the most-recent active assignment (see
+    # _active_class_assignment_subquery's docstring for why a promoted student
+    # can have 2+ active rows and why "first row seen" would be non-deterministic).
     sids = [s.id for s in students]
-    class_map: dict[uuid.UUID, str] = {}
-    if sids:
-        rows = await db.execute(
-            select(
-                StudentClassAssignment.student_id,
-                Class.level, Class.year_group, Class.stream,
-                SHSProgramme.name.label("programme_name"),
-            )
-            .join(Class, Class.id == StudentClassAssignment.class_id)
-            .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
-            .where(StudentClassAssignment.student_id.in_(sids), StudentClassAssignment.is_active == True)  # noqa: E712
-        )
-        for r in rows:
-            if r.student_id not in class_map:
-                class_map[r.student_id] = _class_display(r.level, r.year_group, r.programme_name, r.stream)
+    class_info_map = await _get_class_map(sids, db)
+    class_map = {
+        sid: _class_display(level, year_group, programme, stream)
+        for sid, (level, year_group, programme, stream, _cls_id) in class_info_map.items()
+    }
 
     # Primary guardian map
     guardian_map: dict[uuid.UUID, tuple[str, str]] = {}
