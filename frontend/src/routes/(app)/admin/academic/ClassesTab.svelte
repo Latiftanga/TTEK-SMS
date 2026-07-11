@@ -9,7 +9,7 @@
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
-  const { schoolType } = $props<{ schoolType: string }>();
+  const { schoolType }: { schoolType: string } = $props();
   const qc = useQueryClient();
 
   let showAddForm       = $state(false);

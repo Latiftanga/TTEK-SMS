@@ -1,11 +1,11 @@
 <script lang="ts">
-  const { total, pageSize, page, label = 'items', onPageChange } = $props<{
+  const { total, pageSize, page, label = 'items', onPageChange }: {
     total: number;
     pageSize: number;
     page: number;
     label?: string;
     onPageChange: (p: number) => void;
-  }>();
+  } = $props();
 
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
   const from       = $derived(total === 0 ? 0 : (page - 1) * pageSize + 1);

@@ -2,11 +2,11 @@
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { createClass, type Programme } from '$lib/api/academic';
 
-  const { schoolType, programmes, onClose } = $props<{
+  const { schoolType, programmes, onClose }: {
     schoolType: string;
     programmes: Programme[];
     onClose: () => void;
-  }>();
+  } = $props();
 
   const qc = useQueryClient();
 
