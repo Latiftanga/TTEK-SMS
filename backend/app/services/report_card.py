@@ -224,12 +224,12 @@ async def assemble(
         prog = await db.get(SHSProgramme, cls.programme_id)
         programme_name = prog.name if prog else None
 
-    # Class teacher
+    # Class teacher — ClassTeacher is a yearly assignment, not per-term
     ct = await db.scalar(
         select(ClassTeacher)
         .where(
             ClassTeacher.class_id == cls.id,
-            ClassTeacher.academic_term_id == te.academic_term_id,
+            ClassTeacher.academic_year_id == term.academic_year_id,
             ClassTeacher.is_active.is_(True),
         )
     )
