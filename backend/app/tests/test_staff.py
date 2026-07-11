@@ -366,6 +366,27 @@ async def test_list_staff_total_count_and_search(client: AsyncClient, auth: dict
 
 
 @pytest.mark.asyncio
+async def test_list_staff_search_matches_position_name(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """Search must match a staff member's position name, not just name/staff
+    number — the search box is advertised as 'Search name, ID, or position…'."""
+    bursar_pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == "BURSAR"))
+    assert bursar_pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post(
+        "/staff", json=_staff_payload(staff_number="TST201", last_name="Owusu"), headers=auth,
+    )).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(bursar_pos.id)]}, headers=auth)
+    await client.post("/staff", json=_staff_payload(staff_number="TST202", last_name="Boateng"), headers=auth)
+
+    resp = await client.get("/staff?search=bursar", headers=auth)
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "1"
+    assert resp.json()[0]["id"] == staff_id
+
+
+@pytest.mark.asyncio
 async def test_list_staff_category_filter(client: AsyncClient, auth: dict, db_session: AsyncSession):
     cat_id, _ = await _seed_rank(db_session)
     await client.post("/staff", json=_staff_payload(staff_number="TST201", category_id=cat_id), headers=auth)

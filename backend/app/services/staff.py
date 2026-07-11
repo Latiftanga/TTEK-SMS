@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from sqlalchemy import func
-from app.models.staff import StaffMember, staff_member_positions
-from app.models.auth import User
+from app.models.staff import StaffCategory, StaffMember, staff_member_positions
+from app.models.auth import StaffPosition, User
 from app.schemas.staff import (
     QualificationRead,
     EmergencyContactRead,
@@ -129,11 +129,17 @@ async def list_staff(
     if gender:
         base = base.where(StaffMember.gender == gender)
     if search:
+        # .has()/.any() compile to correlated EXISTS subqueries, not joins — a
+        # match on a position/category name can't fan out a staff member into
+        # duplicate rows the way a plain join against the many-to-many
+        # staff_member_positions table would.
         s = f"%{search}%"
         base = base.where(or_(
             StaffMember.first_name.ilike(s),
             StaffMember.last_name.ilike(s),
             StaffMember.staff_number.ilike(s),
+            StaffMember.category.has(StaffCategory.name.ilike(s)),
+            StaffMember.positions.any(StaffPosition.name.ilike(s)),
         ))
 
     total = await db.scalar(select(func.count()).select_from(base.subquery()))
