@@ -11,7 +11,7 @@
   import PromoteSection from './PromoteSection.svelte';
 
   const qc      = useQueryClient();
-  const classId = $derived($page.params.id);
+  const classId = $derived($page.params.id!);
 
   const classQ = createQuery({ queryKey: ['class', classId], queryFn: () => getClass(classId), staleTime: 60_000 });
 

@@ -10,7 +10,7 @@
 
   interface Props {
     entityType: EntityType;
-    filterParams: Record<string, string | boolean | undefined>;
+    filterParams: Record<string, string | number | boolean | undefined>;
     onClose: () => void;
   }
   const { entityType, filterParams, onClose }: Props = $props();

@@ -19,7 +19,7 @@
   import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
-  const staffId = $page.params.id;
+  const staffId = $page.params.id!;
   const isOwnProfile = $derived($auth.user?.staff_member_id === staffId);
 
   const query = createQuery({

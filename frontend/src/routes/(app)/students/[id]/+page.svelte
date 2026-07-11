@@ -13,7 +13,7 @@
   import TabBar        from '$lib/components/TabBar.svelte';
 
   const qc = useQueryClient();
-  const studentId = $derived($page.params.id);
+  const studentId = $derived($page.params.id!);
 
   const query = createQuery({
     queryKey: ['student', studentId],

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { getStaffResponsibilities, updateStaff, listPositions, type StaffDetail } from '$lib/api/staff';
-  import { listYears, listClasses, assignClassTeacher } from '$lib/api/academic';
-  import { listHouses, assignHouseMaster } from '$lib/api/housing';
+  import { listYears, listClasses, assignClassTeacher, type AcademicYear, type SchoolClass } from '$lib/api/academic';
+  import { listHouses, assignHouseMaster, type House } from '$lib/api/housing';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -21,9 +22,9 @@
 
   // Lazy — only fetch when the assign form is open
   let showForm = $state(false);
-  const yearsQ   = createQuery(() => ({ queryKey: ['years'],   queryFn: listYears,   enabled: admin && showForm, staleTime: 5 * 60_000 }));
-  const classesQ = createQuery(() => ({ queryKey: ['classes'], queryFn: listClasses, enabled: admin && showForm, staleTime: 5 * 60_000 }));
-  const housesQ  = createQuery(() => ({ queryKey: ['houses'],  queryFn: listHouses,  enabled: admin && showForm && boardingEnabled, staleTime: 5 * 60_000 }));
+  const yearsQ   = reactiveQuery<AcademicYear[]>(() => ({ queryKey: ['years'],   queryFn: listYears,   enabled: admin && showForm, staleTime: 5 * 60_000 }));
+  const classesQ = reactiveQuery<SchoolClass[]>(() => ({ queryKey: ['classes'], queryFn: listClasses, enabled: admin && showForm, staleTime: 5 * 60_000 }));
+  const housesQ  = reactiveQuery<House[]>(() => ({ queryKey: ['houses'],  queryFn: listHouses,  enabled: admin && showForm && boardingEnabled, staleTime: 5 * 60_000 }));
 
   // ── Form state ────────────────────────────────────────────────────────────────
   let assignType = $state('');   // 'pos:{id}' | 'class_teacher' | 'house_master'

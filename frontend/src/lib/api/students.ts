@@ -99,6 +99,26 @@ export interface StudentCreate {
   disability?: string;
 }
 
+// PATCH payload — every field nullable (null clears the field server-side,
+// undefined/omitted leaves it unchanged), mirrors backend schemas.students.StudentUpdate.
+export interface StudentUpdate {
+  first_name?: string;
+  middle_name?: string | null;
+  last_name?: string;
+  date_of_birth?: string | null;
+  gender?: Gender | null;
+  nationality?: string | null;
+  religion?: string | null;
+  hometown?: string | null;
+  residential_address?: string | null;
+  nhis_number?: string | null;
+  ghana_card_number?: string | null;
+  is_boarding?: boolean;
+  orphan_status?: OrphanStatus | null;
+  disability?: string | null;
+  is_active?: boolean;
+}
+
 export interface GuardianCreate {
   first_name: string;
   last_name: string;
@@ -180,7 +200,7 @@ export const getStudent = (id: string): Promise<StudentDetail> =>
 export const createStudent = (data: StudentCreate): Promise<StudentDetail> =>
   api.post('/students', data).then(r => r.data);
 
-export const updateStudent = (id: string, data: Partial<StudentCreate & { is_active: boolean }>): Promise<StudentDetail> =>
+export const updateStudent = (id: string, data: StudentUpdate): Promise<StudentDetail> =>
   api.patch(`/students/${id}`, data).then(r => r.data);
 
 export const addGuardian = (studentId: string, data: GuardianCreate): Promise<Guardian> =>

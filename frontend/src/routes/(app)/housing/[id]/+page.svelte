@@ -13,7 +13,7 @@
   import ExeatsTab   from './ExeatsTab.svelte';
 
   const qc = useQueryClient();
-  const houseId  = $derived($page.params.id);
+  const houseId  = $derived($page.params.id!);
   const activeTab = $derived(($page.url.searchParams.get('tab') ?? 'exeats') as 'rooms' | 'students' | 'rollcall' | 'exeats');
   const canAdmin   = $derived($userRole === 'admin');
   const canOperate = $derived($userRole === 'admin' || $userRole === 'housemaster');

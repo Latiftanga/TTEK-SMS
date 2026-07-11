@@ -225,7 +225,7 @@
             {devOtp}
             onSuccess={(token) => { resetToken = token; step = 'password'; }}
             onBack={() => step = 'identifier'}
-            {handleResend}
+            onResend={handleResend}
           />
 
         {:else if step === 'password'}

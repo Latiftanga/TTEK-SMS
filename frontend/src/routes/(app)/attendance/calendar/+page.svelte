@@ -27,7 +27,7 @@
   });
 
   // ── Calendar data ──────────────────────────────────────────────────────────────
-  const calOpts = writable({ queryKey: ['calendar', ''] as const, queryFn: () => listCalendar(''), enabled: false, staleTime: 5 * 60_000 });
+  const calOpts = writable({ queryKey: ['calendar', termId] as const, queryFn: () => listCalendar(termId), enabled: false, staleTime: 5 * 60_000 });
   $effect(() => {
     if (termId) calOpts.set({ queryKey: ['calendar', termId] as const, queryFn: () => listCalendar(termId), enabled: true, staleTime: 5 * 60_000 });
   });

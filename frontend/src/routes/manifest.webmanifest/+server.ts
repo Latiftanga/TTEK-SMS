@@ -6,6 +6,7 @@
  * the backend. Falls back to sensible defaults when the school is unknown or
  * the backend is unreachable.
  */
+import { env } from '$env/dynamic/public';
 import type { RequestHandler } from './$types';
 
 const FALLBACK = {
@@ -40,7 +41,7 @@ export const GET: RequestHandler = async ({ request }) => {
   const parts = host.split('.');
   const subdomain = parts.length >= 3 ? parts[0] : 'demo';
 
-  const backendUrl = process.env.PUBLIC_API_URL ?? 'http://localhost:8000';
+  const backendUrl = env.PUBLIC_API_URL ?? 'http://localhost:8000';
   const branding = await fetchBranding(subdomain, backendUrl);
 
   const manifest = {

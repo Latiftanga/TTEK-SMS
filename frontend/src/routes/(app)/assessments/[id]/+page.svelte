@@ -20,7 +20,7 @@
   import ScoreTable from './ScoreTable.svelte';
 
   const qc = useQueryClient();
-  const assessmentId   = $derived($page.params.id);
+  const assessmentId   = $derived($page.params.id!);
   const canManage      = $derived($userRole === 'admin' || $userRole === 'approver');
   const canEnterScores = $derived($userRole === 'teacher' || canManage);
 

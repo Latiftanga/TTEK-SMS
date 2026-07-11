@@ -23,8 +23,8 @@
   const yearsQ = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
 
   const searchOpts = writable({
-    queryKey: ['students', 'search', ''] as const,
-    queryFn: () => listStudents({ active_only: true, search: '', limit: 50 }),
+    queryKey: ['students', 'search', search] as const,
+    queryFn: () => listStudents({ active_only: true, search, limit: 50 }),
     enabled: false,
     staleTime: 30_000,
   });

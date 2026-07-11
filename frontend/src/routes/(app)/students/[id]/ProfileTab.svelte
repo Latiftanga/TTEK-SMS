@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
-  import { updateStudent, type StudentDetail, type Gender, type OrphanStatus } from '$lib/api/students';
+  import { updateStudent, type StudentDetail, type StudentUpdate, type Gender, type OrphanStatus } from '$lib/api/students';
   import { listYears } from '$lib/api/academic';
   import {
     listHouses, getStudentAssignment, createAssignment, vacateAssignment,
@@ -45,7 +45,7 @@
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const mut = createMutation({
-    mutationFn: (data: Partial<StudentDetail>) => updateStudent(studentId, data),
+    mutationFn: (data: StudentUpdate) => updateStudent(studentId, data),
     onError: (e: unknown) => {
       error = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not save.';
     },

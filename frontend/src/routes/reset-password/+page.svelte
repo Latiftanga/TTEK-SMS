@@ -9,7 +9,7 @@
   let newPassword  = $state('');
   let confirm      = $state('');
   let showPwd      = $state(false);
-  let state        = $state<'idle' | 'submitting' | 'done'>('idle');
+  let phase        = $state<'idle' | 'submitting' | 'done'>('idle');
   let error        = $state('');
 
   async function submit() {
@@ -17,15 +17,15 @@
     if (!token) { error = 'Reset link is invalid or has expired.'; return; }
     if (newPassword.length < 8) { error = 'Password must be at least 8 characters.'; return; }
     if (newPassword !== confirm) { error = 'Passwords do not match.'; return; }
-    state = 'submitting';
+    phase = 'submitting';
     try {
       await resetPassword({ token, new_password: newPassword });
-      state = 'done';
+      phase = 'done';
       setTimeout(() => goto('/login'), 2500);
     } catch (e: unknown) {
       error = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         ?? 'Link is invalid or has expired. Request a new one.';
-      state = 'idle';
+      phase = 'idle';
     }
   }
 </script>
@@ -46,7 +46,7 @@
           </a>
         </div>
 
-      {:else if state === 'done'}
+      {:else if phase === 'done'}
         <div class="text-center">
           <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
             <svg class="h-6 w-6 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -95,10 +95,10 @@
 
           {#if error}<p class="text-xs text-red-500">{error}</p>{/if}
 
-          <button onclick={submit} disabled={state === 'submitting'}
+          <button onclick={submit} disabled={phase === 'submitting'}
             class="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
             style="background-color: var(--brand)">
-            {state === 'submitting' ? 'Updating…' : 'Update password'}
+            {phase === 'submitting' ? 'Updating…' : 'Update password'}
           </button>
         </div>
       {/if}

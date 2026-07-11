@@ -278,6 +278,6 @@
   <StudentForm open={formOpen} onClose={() => formOpen = false} />
   <StudentImportDrawer open={importOpen} onClose={() => importOpen = false} />
   {#if customExportOpen}
-    <CustomExportModal entityType="students" filterParams={params} onClose={() => customExportOpen = false} />
+    <CustomExportModal entityType="students" filterParams={{ ...params }} onClose={() => customExportOpen = false} />
   {/if}
 {/if}

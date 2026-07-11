@@ -3,7 +3,7 @@
   import { createTerm, updateTerm, setCurrentTerm, type AcademicYear } from '$lib/api/academic';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
-  const { year } = $props<{ year: AcademicYear }>();
+  const { year }: { year: AcademicYear } = $props();
 
   const qc = useQueryClient();
 
