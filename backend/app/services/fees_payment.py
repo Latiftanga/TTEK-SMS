@@ -80,7 +80,10 @@ async def record_payment(
             StudentFeeSummary.school_id == school_id,
         )
     )
-    balance = float(summary.balance) if summary else max(0.0, float(rec.amount_due) - float(req.amount_paid))
+    balance = (
+        float(summary.total_due - summary.total_paid - summary.total_discounted)
+        if summary else max(0.0, float(rec.amount_due) - float(req.amount_paid))
+    )
 
     await sms_svc.notify_fee_receipt(
         student_id=rec.student_id,
