@@ -28,7 +28,7 @@ from __future__ import annotations
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Boolean, Integer, BigInteger, DateTime, ForeignKey, Text
+from sqlalchemy import String, Boolean, Integer, BigInteger, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -47,6 +47,7 @@ class GraduationType(str, enum.Enum):
     PROMOTED = "PROMOTED"
     GRADUATED = "GRADUATED"
     REPEATED = "REPEATED"
+    DEMOTED = "DEMOTED"
     WITHDRAWN = "WITHDRAWN"
     TRANSFERRED = "TRANSFERRED"
 
@@ -107,7 +108,12 @@ class ImportRow(Base, UUIDPrimaryKey, SchoolScopedMixin):
 
 
 class GraduationRecord(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """One row per student per academic year — the year-end outcome
+    (promoted/repeated/demoted/graduated/withdrawn/transferred)."""
     __tablename__ = "graduation_record"
+    __table_args__ = (
+        UniqueConstraint("school_id", "student_id", "academic_year_id", name="uq_graduation_record_student_year"),
+    )
 
     student_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True

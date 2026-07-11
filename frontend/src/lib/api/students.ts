@@ -291,7 +291,7 @@ export const reviewTransfer = (
 
 // ── Year-end graduation ───────────────────────────────────────────────────────
 
-export type GraduationType = 'GRADUATED' | 'WITHDRAWN' | 'TRANSFERRED' | 'PROMOTED' | 'REPEATED';
+export type GraduationType = 'GRADUATED' | 'WITHDRAWN' | 'TRANSFERRED' | 'PROMOTED' | 'REPEATED' | 'DEMOTED';
 
 export interface GraduationRecord {
   id: string;
@@ -324,3 +324,25 @@ export const bulkGraduate = (req: {
   deactivate_students?: boolean;
 }): Promise<BulkGraduateResult> =>
   api.post('/students/graduation/bulk', req).then(r => r.data);
+
+// ── Year-end promotion / repetition / demotion ────────────────────────────────
+
+export interface PromotionRecordCreate {
+  student_id: string;
+  graduation_type: 'PROMOTED' | 'REPEATED' | 'DEMOTED';
+  class_id: string;
+  notes?: string | null;
+}
+
+export interface BulkPromoteResult {
+  processed: number;
+  skipped: number;
+  records: GraduationRecord[];
+}
+
+export const bulkPromoteStudents = (req: {
+  academic_year_id: string;
+  academic_term_id?: string | null;
+  records: PromotionRecordCreate[];
+}): Promise<BulkPromoteResult> =>
+  api.post('/students/promotions/bulk', req).then(r => r.data);

@@ -2,7 +2,6 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, field_validator
-from app.models.documents import GraduationType
 from app.models.staff import Gender
 from app.models.students import EnrollmentType, TransferStatus
 
@@ -264,33 +263,5 @@ class TransferRequestRead(BaseModel):
 
 StudentDetail.model_rebuild()
 
-
-# ── Year-end graduation ───────────────────────────────────────────────────────
-
-class GraduationRecordCreate(BaseModel):
-    student_id: uuid.UUID
-    graduation_type: GraduationType
-    notes: str | None = None
-
-
-class BulkGraduateRequest(BaseModel):
-    academic_year_id: uuid.UUID
-    records: list[GraduationRecordCreate]
-    deactivate_students: bool = True
-
-
-class GraduationRecordRead(BaseModel):
-    id: uuid.UUID
-    student_id: uuid.UUID
-    academic_year_id: uuid.UUID
-    graduation_type: GraduationType
-    notes: str | None
-    processed_at: datetime
-    processed_by_id: uuid.UUID
-    model_config = {"from_attributes": True}
-
-
-class BulkGraduateResult(BaseModel):
-    processed: int
-    skipped: int
-    records: list[GraduationRecordRead]
+# Year-end outcome schemas (graduation/withdrawal/transfer, promotion/repetition/
+# demotion) live in app.schemas.student_lifecycle.

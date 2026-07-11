@@ -16,6 +16,8 @@ POST /students/term-enrollments/{id}/subjects     students.edit
 POST /students/{id}/transfers                     students.edit
 GET  /students/transfers/pending                  students.delete
 PATCH /students/transfers/{id}/review             students.delete
+POST /students/graduation/bulk                    students.edit
+POST /students/promotions/bulk                    students.edit
 
 ROUTE ORDER NOTE
 ----------------
@@ -36,11 +38,15 @@ from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.schemas.documents import ImportBatchResult
+from app.schemas.student_lifecycle import (
+    BulkGraduateRequest, BulkGraduateResult,
+    BulkPromoteRequest, BulkPromoteResult,
+    GraduationRecordRead,
+)
 from app.schemas.students import (
-    BulkEnrollResult, BulkGraduateRequest, BulkGraduateResult,
+    BulkEnrollResult,
     BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
     EnrollmentCreate, EnrollmentRead,
-    GraduationRecordRead,
     GuardianCreate, GuardianUpdate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
     PortalAccessResult,
@@ -51,6 +57,7 @@ from app.schemas.students import (
     TransferRequestCreate, TransferRequestRead, TransferRequestReview,
 )
 from app.services import graduation as graduation_svc
+from app.services import promotion as promotion_svc
 from app.services import student as svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
@@ -354,9 +361,20 @@ async def bulk_graduate(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Process year-end outcomes for a batch of students."""
+    """Process year-end exit outcomes (graduated/withdrawn/transferred) for a batch of students."""
     user_id, school_id = ids
     return await graduation_svc.process_bulk_graduation(req, user_id, school_id, db)
+
+
+@router.post("/promotions/bulk", response_model=BulkPromoteResult, status_code=201)
+async def bulk_promote(
+    req: BulkPromoteRequest,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Process year-end progression outcomes (promoted/repeated/demoted) for a batch of students."""
+    user_id, school_id = ids
+    return await promotion_svc.process_bulk_promotion(req, user_id, school_id, db)
 
 
 # ── Single-student endpoints ──────────────────────────────────────────────────

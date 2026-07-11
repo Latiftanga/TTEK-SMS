@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
-  import { listStudents, bulkAssignStudentsToClass, bulkEnrollStudents } from '$lib/api/students';
+  import { listStudents, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { writable } from 'svelte/store';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
@@ -88,31 +88,29 @@
 
   // ── Promote mutation ──────────────────────────────────────────────────────────
   type ActionType = 'promote' | 'repeat' | 'demote';
+  const ACTION_TO_TYPE: Record<ActionType, PromotionRecordCreate['graduation_type']> = {
+    promote: 'PROMOTED', repeat: 'REPEATED', demote: 'DEMOTED',
+  };
   let actionType: ActionType = $state('promote');
   let confirmOpen = $state(false);
   let promoteErr  = $state('');
 
   const promoteMut = createMutation({
-    mutationFn: async () => {
-      const items = [...selected].map(sid => ({
-        student_id: sid, class_id: toClassId, academic_year_id: toYearId,
+    mutationFn: () => {
+      const records: PromotionRecordCreate[] = [...selected].map(sid => ({
+        student_id: sid, class_id: toClassId, graduation_type: ACTION_TO_TYPE[actionType],
       }));
-      const result = await bulkAssignStudentsToClass(items);
-
-      if (alsoEnroll && firstTerm) {
-        const enrollItems = [...selected].map(sid => ({
-          student_id: sid, academic_term_id: firstTerm.id,
-        }));
-        await bulkEnrollStudents(enrollItems);
-      }
-
-      return result;
+      return bulkPromoteStudents({
+        academic_year_id: toYearId,
+        academic_term_id: alsoEnroll && firstTerm ? firstTerm.id : null,
+        records,
+      });
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['students', 'class', fromClassId] });
       qc.invalidateQueries({ queryKey: ['student-class-assignments'] });
       const label = actionType === 'promote' ? 'Promoted' : actionType === 'repeat' ? 'Re-enrolled' : 'Demoted';
-      toast.success(`${label}: ${res.enrolled} student(s). Skipped: ${res.skipped} (already assigned).`);
+      toast.success(`${label}: ${res.processed} student(s). Skipped: ${res.skipped} (already processed for this year).`);
       selected = new Set(); confirmOpen = false; promoteErr = '';
     },
     onError: (e: unknown) => {

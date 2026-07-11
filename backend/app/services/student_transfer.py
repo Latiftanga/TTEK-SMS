@@ -8,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.school import School
-from app.models.students import Student, StudentClassAssignment, TransferRequest, TransferStatus
+from app.models.students import Student, TransferRequest, TransferStatus
 from app.schemas.students import TransferRequestCreate, TransferRequestRead, TransferRequestReview
 from app.services import sms_notifications as sms_svc
+from app.services.student_lifecycle import deactivate_student
 
 
 def _utcnow() -> datetime:
@@ -122,20 +123,9 @@ async def review_transfer(
     tr.reviewed_at = _utcnow()
 
     if req.status == TransferStatus.APPROVED:
-        student = await db.get(Student, tr.student_id)
-        if student:
-            student.is_active = False
-        # Leaving the school entirely — deactivate every active class assignment,
-        # not just the current year's (mirrors services/graduation.py's cascade).
-        assignments = await db.scalars(
-            select(StudentClassAssignment).where(
-                StudentClassAssignment.student_id == tr.student_id,
-                StudentClassAssignment.school_id == school_id,
-                StudentClassAssignment.is_active == True,  # noqa: E712
-            )
-        )
-        for a in assignments:
-            a.is_active = False
+        # Leaving the school entirely — deactivate every active class assignment
+        # and term enrollment (not just the current year's), and revoke portal login.
+        await deactivate_student(tr.student_id, school_id, db)
 
     await db.flush()
 

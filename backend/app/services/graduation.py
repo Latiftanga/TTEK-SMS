@@ -4,13 +4,14 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.documents import GraduationRecord
-from app.models.students import Student, StudentClassAssignment
-from app.schemas.students import (
+from app.schemas.student_lifecycle import (
     BulkGraduateRequest, BulkGraduateResult, GraduationRecordRead,
 )
+from app.services.student_lifecycle import deactivate_student
 
 
 async def process_bulk_graduation(
@@ -25,9 +26,9 @@ async def process_bulk_graduation(
     Idempotent: if a record for (student, academic_year) already exists
     it is skipped (counted in `skipped`, not `processed`).
 
-    When req.deactivate_students is True:
-      - student.is_active is set to False
-      - The matching StudentClassAssignment row is deactivated
+    When req.deactivate_students is True, the student, their current-year class
+    assignment/term enrollment, and their portal login are all deactivated
+    (see student_lifecycle.deactivate_student).
     """
     now = datetime.now(timezone.utc)
     records: list[GraduationRecord] = []
@@ -55,25 +56,28 @@ async def process_bulk_graduation(
             processed_at=now,
             processed_by_id=user_id,
         )
-        db.add(record)
-
-        if req.deactivate_students:
-            student = await db.get(Student, item.student_id)
-            if student:
-                student.is_active = False
-
-            assignment = await db.scalar(
-                select(StudentClassAssignment).where(
-                    StudentClassAssignment.student_id == item.student_id,
-                    StudentClassAssignment.academic_year_id == req.academic_year_id,
-                    StudentClassAssignment.school_id == school_id,
-                    StudentClassAssignment.is_active == True,  # noqa: E712
+        try:
+            async with db.begin_nested():
+                db.add(record)
+                if req.deactivate_students:
+                    await deactivate_student(
+                        item.student_id, school_id, db, academic_year_id=req.academic_year_id,
+                    )
+                await db.flush()
+        except IntegrityError:
+            db.expunge(record)
+            skipped += 1
+            existing = await db.scalar(
+                select(GraduationRecord).where(
+                    GraduationRecord.student_id == item.student_id,
+                    GraduationRecord.academic_year_id == req.academic_year_id,
+                    GraduationRecord.school_id == school_id,
                 )
             )
-            if assignment:
-                assignment.is_active = False
+            if existing:
+                records.append(existing)
+            continue
 
-        await db.flush()
         records.append(record)
 
     return BulkGraduateResult(
