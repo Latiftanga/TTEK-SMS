@@ -1,7 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { userRole } from '$lib/stores/permissions';
@@ -118,8 +117,9 @@
     : 'group flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all duration-150 text-sm'
   );
 
-  function linkClass(active: boolean) {
-    return `${linkBase} ${active
+  function linkClass(active: boolean, full: boolean = true) {
+    const base = full ? linkBase : linkBase.replace('w-full', 'flex-1 min-w-0');
+    return `${base} ${active
       ? 'font-semibold'
       : 'font-medium text-[var(--fg-muted)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'}`;
   }
@@ -201,25 +201,44 @@
                     style="background: var(--brand)" aria-hidden="true"></span>
             {/if}
             {#if hasKids}
-              <!-- Parent with submenu -->
-              <button
-                onclick={() => collapsed ? goto(item.href) : toggleOpen(item.href)}
-                title={collapsed ? item.label : undefined}
-                class={linkClass(active)}
-                style={active ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);' : ''}>
-                <svg class={iconCls(active)} fill="none" stroke="currentColor"
-                     stroke-width={active ? '2.2' : '1.6'} viewBox="0 0 24 24" aria-hidden="true"
-                     style={active ? 'color: var(--brand)' : ''}>
-                  {@html item.icon}
-                </svg>
-                {#if !collapsed}
-                  <span class="flex-1 truncate text-left">{item.label}</span>
-                  <svg class="h-3.5 w-3.5 shrink-0 transition-transform duration-200 {expanded ? 'rotate-180' : ''}"
-                       fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                    {@html IC.chevronD}
+              <!-- Parent with submenu: link navigates, chevron toggles children -->
+              {#if collapsed}
+                <a href={item.href} onclick={onclose}
+                   title={item.label}
+                   aria-current={active ? 'page' : undefined}
+                   class={linkClass(active)}
+                   style={active ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);' : ''}>
+                  <svg class={iconCls(active)} fill="none" stroke="currentColor"
+                       stroke-width={active ? '2.2' : '1.6'} viewBox="0 0 24 24" aria-hidden="true"
+                       style={active ? 'color: var(--brand)' : ''}>
+                    {@html item.icon}
                   </svg>
-                {/if}
-              </button>
+                </a>
+              {:else}
+                <div class="flex items-center gap-0.5">
+                  <a href={item.href} onclick={onclose}
+                     aria-current={active ? 'page' : undefined}
+                     class={linkClass(active, false)}
+                     style={active ? 'background-color: color-mix(in oklab, var(--brand) 10%, transparent); color: var(--brand);' : ''}>
+                    <svg class={iconCls(active)} fill="none" stroke="currentColor"
+                         stroke-width={active ? '2.2' : '1.6'} viewBox="0 0 24 24" aria-hidden="true"
+                         style={active ? 'color: var(--brand)' : ''}>
+                      {@html item.icon}
+                    </svg>
+                    <span class="flex-1 truncate text-left">{item.label}</span>
+                  </a>
+                  <button type="button" onclick={() => toggleOpen(item.href)}
+                          aria-label="{expanded ? 'Collapse' : 'Expand'} {item.label} submenu"
+                          aria-expanded={expanded}
+                          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md
+                                 text-[var(--fg-subtle)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+                    <svg class="h-3.5 w-3.5 transition-transform duration-200 {expanded ? 'rotate-180' : ''}"
+                         fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                      {@html IC.chevronD}
+                    </svg>
+                  </button>
+                </div>
+              {/if}
               <!-- Children -->
               {#if expanded}
                 <ul class="mt-0.5 space-y-0.5 border-l border-[var(--border)] ml-[22px] pl-3">
