@@ -11,16 +11,33 @@ FLOW
 4. Teacher registers subjects (SubjectRegistration) against the TermEnrollment.
 
 Transfer requests live in student_transfer.py.
+
+FEE GATE
+--------
+When AcademicTerm.block_owing_students is True, create_term_enrollment blocks
+a student whose StudentFeeSummary balance (total_due - total_paid -
+total_discounted, computed live — never stored) is positive for that term. A
+student with no StudentFeeSummary row at all (no fees assigned yet) is never
+blocked. The block is bypassed only if the caller holds fees.manage AND
+supplies a non-blank fee_waiver_reason in the same request — a caller without
+that permission has any fee_waiver_reason they send silently ignored, they
+still get blocked. bulk_term_enrollment treats a fee-gate block the same way
+it treats a duplicate-enrollment conflict: skip and continue, so bulk-enrolling
+a class doesn't abort entirely because one student owes fees.
 """
 from __future__ import annotations
 import uuid
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import resolve_permissions
 from app.models.academic import AcademicTerm, Class, SHSProgramme
+from app.models.auth import User
+from app.models.fees import StudentFeeSummary
 from app.models.students import (
     Student,
     StudentClassAssignment,
@@ -36,6 +53,43 @@ from app.schemas.students import (
     TermEnrollmentCreate,
     TermEnrollmentRead,
 )
+
+
+class FeeGateBlockedError(HTTPException):
+    """Raised when a fee-owing student is blocked from term enrollment.
+
+    A distinct subclass (rather than a bare HTTPException) so
+    bulk_term_enrollment can skip-and-continue on this specific case while
+    still aborting the whole batch on other 422s (e.g. missing class
+    assignment) — see module docstring.
+    """
+    def __init__(self, detail: str):
+        super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+
+
+async def _outstanding_balance(student_id: uuid.UUID, term_id: uuid.UUID, db: AsyncSession) -> Decimal | None:
+    """None = no StudentFeeSummary row yet (nothing assigned — never blocks)."""
+    summary = await db.scalar(
+        select(StudentFeeSummary).where(
+            StudentFeeSummary.student_id == student_id,
+            StudentFeeSummary.academic_term_id == term_id,
+        )
+    )
+    if not summary:
+        return None
+    return summary.total_due - summary.total_paid - summary.total_discounted
+
+
+async def _can_waive_fee_gate(user_id: uuid.UUID, db: AsyncSession) -> bool:
+    user = await db.get(User, user_id)
+    if not user:
+        return False
+    if user.is_superadmin:
+        return True
+    if not user.staff_member_id:
+        return False
+    perms = await resolve_permissions(user.staff_member_id, db)
+    return perms.get("fees.manage", False)
 
 
 def _display_name(level: str, year_group: int, programme_name: str | None, stream: str | None) -> str:
@@ -87,6 +141,7 @@ def _to_te_read(row) -> TermEnrollmentRead:
         class_id=class_id,
         class_display_name=display,
         is_active=te.is_active,
+        fee_waived=te.fee_waived,
         created_at=te.created_at,
     )
 
@@ -144,12 +199,33 @@ async def create_term_enrollment(
                    "Assign the student to a class before creating a term enrollment.",
         )
 
+    fee_waived = False
+    fee_waived_by_id = None
+    fee_waiver_reason = None
+    if term.block_owing_students:
+        balance = await _outstanding_balance(req.student_id, req.academic_term_id, db)
+        if balance is not None and balance > 0:
+            waiver_reason = (req.fee_waiver_reason or "").strip()
+            if waiver_reason and await _can_waive_fee_gate(user_id, db):
+                fee_waived = True
+                fee_waived_by_id = user_id
+                fee_waiver_reason = waiver_reason
+            else:
+                raise FeeGateBlockedError(
+                    detail=f"{student.first_name} {student.last_name} owes {balance:.2f} for this term "
+                           "and cannot be enrolled while the fee gate is on. A user with fees.manage can "
+                           "push this through by supplying a waiver reason."
+                )
+
     te = TermEnrollment(
         school_id=school_id,
         student_id=req.student_id,
         academic_term_id=req.academic_term_id,
         enrolled_by_id=user_id,
         is_active=True,
+        fee_waived=fee_waived,
+        fee_waived_by_id=fee_waived_by_id,
+        fee_waiver_reason=fee_waiver_reason,
     )
     db.add(te)
     try:
@@ -184,11 +260,20 @@ async def bulk_term_enrollment(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> dict:
+    """Each item runs in its own SAVEPOINT (db.begin_nested()) — the whole
+    batch shares one outer transaction (one request = one session, committed
+    once at the end by get_db()), so a plain db.rollback() on a skipped item
+    would discard every earlier item's already-flushed success in the same
+    batch, not just the failed one. See register_subjects() in this file for
+    the same pattern."""
     enrolled = skipped = 0
     for item in items:
         try:
-            await create_term_enrollment(item, school_id, user_id, db)
+            async with db.begin_nested():
+                await create_term_enrollment(item, school_id, user_id, db)
             enrolled += 1
+        except FeeGateBlockedError:
+            skipped += 1
         except HTTPException as e:
             if e.status_code != 409:
                 raise

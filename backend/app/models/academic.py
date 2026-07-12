@@ -25,8 +25,8 @@ all class names everywhere, with no migration needed.
 from __future__ import annotations
 import uuid
 import enum
-from datetime import date
-from sqlalchemy import String, Boolean, Integer, Date, ForeignKey, UniqueConstraint, Text
+from datetime import date, datetime
+from sqlalchemy import String, Boolean, DateTime, Integer, Date, ForeignKey, UniqueConstraint, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -71,6 +71,15 @@ class AcademicTerm(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Fee gate — when True, create_term_enrollment blocks students with an
+    # outstanding StudentFeeSummary balance for this term unless a caller with
+    # fees.manage supplies a waiver reason. See services/student_enrollment.py.
+    block_owing_students: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    block_owing_students_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
+    )
+    block_owing_students_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     academic_year: Mapped[AcademicYear] = relationship(back_populates="terms")
 

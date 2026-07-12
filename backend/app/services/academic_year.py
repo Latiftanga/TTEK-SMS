@@ -11,6 +11,7 @@ same transaction so the "only one current" invariant is never broken mid-flight.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
@@ -185,6 +186,7 @@ async def update_term(
     term_id: uuid.UUID,
     req: AcademicTermUpdate,
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
 ) -> AcademicTerm:
     term = await get_term(term_id, school_id, db)
@@ -194,6 +196,10 @@ async def update_term(
         term.start_date = req.start_date
     if req.end_date is not None:
         term.end_date = req.end_date
+    if req.block_owing_students is not None and req.block_owing_students != term.block_owing_students:
+        term.block_owing_students = req.block_owing_students
+        term.block_owing_students_set_by = user_id
+        term.block_owing_students_set_at = datetime.now(timezone.utc)
     await db.flush()
     return term
 

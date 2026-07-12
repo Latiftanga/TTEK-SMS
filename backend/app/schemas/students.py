@@ -184,6 +184,10 @@ class StudentClassAssignmentRead(BaseModel):
 class TermEnrollmentCreate(BaseModel):
     student_id: uuid.UUID
     academic_term_id: uuid.UUID
+    # Only honoured if the caller has fees.manage — otherwise a fee-gate block
+    # is enforced regardless of what's supplied here. See
+    # services/student_enrollment.py::create_term_enrollment.
+    fee_waiver_reason: str | None = None
 
 
 class TermEnrollmentRead(BaseModel):
@@ -193,6 +197,7 @@ class TermEnrollmentRead(BaseModel):
     class_id: uuid.UUID | None = None
     class_display_name: str | None = None
     is_active: bool
+    fee_waived: bool = False
     created_at: datetime
 
 

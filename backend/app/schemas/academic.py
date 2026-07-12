@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, field_validator
 
@@ -29,6 +29,9 @@ class TermRead(BaseModel):
     start_date: date
     end_date: date
     is_current: bool
+    block_owing_students: bool
+    block_owing_students_set_by: uuid.UUID | None = None
+    block_owing_students_set_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -63,6 +66,7 @@ class AcademicTermUpdate(BaseModel):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    block_owing_students: bool | None = None
 
 
 class ProgrammeRead(BaseModel):

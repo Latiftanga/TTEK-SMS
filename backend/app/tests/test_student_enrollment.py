@@ -5,10 +5,15 @@ Run inside Docker: docker compose exec api pytest app/tests/test_student_enrollm
 """
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import hash_password
 from app.models.academic import AcademicTerm, Class
+from app.models.auth import LoginType, StaffPosition, User
+from app.models.fees import StudentFeeRecord
 from app.models.school import School
+from app.models.students import Student, TermEnrollment
 
 
 async def _assign_class(client, auth, student_id: str, school_class: Class, academic_term: AcademicTerm):
@@ -28,6 +33,33 @@ async def _create_student(client, auth, num="ADM001"):
     }, headers=auth)
     assert resp.status_code == 201
     return resp.json()["id"]
+
+
+async def _login_as_position(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
+) -> dict:
+    """Create a staff member holding `position_code`, give them a login, and return
+    their bearer-token auth headers."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post("/staff", json={
+        "staff_number": f"TST-{position_code}", "first_name": "Test", "last_name": position_code.title(),
+    }, headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
+
+    email = f"{position_code.lower()}@presec-test.edu.gh"
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
 # ── Initial enrollment ────────────────────────────────────────────────────────
@@ -296,3 +328,191 @@ async def test_double_review_rejected(client: AsyncClient, auth: dict):
     await client.patch(f"/students/transfers/{tr_id}/review", json={"status": "REJECTED"}, headers=auth)
     resp = await client.patch(f"/students/transfers/{tr_id}/review", json={"status": "APPROVED"}, headers=auth)
     assert resp.status_code == 409
+
+
+# ── Fee gate ─────────────────────────────────────────────────────────────────
+# AcademicTerm.block_owing_students, off by default, blocks term enrollment for
+# a student with a positive live-computed StudentFeeSummary balance unless a
+# caller with fees.manage supplies a fee_waiver_reason.
+
+async def _enable_fee_gate(client: AsyncClient, auth: dict, term_id) -> None:
+    resp = await client.patch(f"/academic/terms/{term_id}", json={
+        "block_owing_students": True,
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["block_owing_students"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_term_toggles_block_owing_students(
+    client: AsyncClient, auth: dict, academic_term: AcademicTerm,
+):
+    resp = await client.patch(f"/academic/terms/{academic_term.id}", json={
+        "block_owing_students": True,
+    }, headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["block_owing_students"] is True
+    assert data["block_owing_students_set_by"] is not None
+    assert data["block_owing_students_set_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_fee_gate_off_by_default_allows_owing_student(
+    client: AsyncClient, auth: dict,
+    student: Student, school_class: Class, academic_term: AcademicTerm, fee_record: StudentFeeRecord,
+):
+    await _assign_class(client, auth, str(student.id), school_class, academic_term)
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": str(student.id), "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["fee_waived"] is False
+
+
+@pytest.mark.asyncio
+async def test_fee_gate_blocks_owing_student(
+    client: AsyncClient, auth: dict,
+    student: Student, school_class: Class, academic_term: AcademicTerm, fee_record: StudentFeeRecord,
+):
+    await _assign_class(client, auth, str(student.id), school_class, academic_term)
+    await _enable_fee_gate(client, auth, academic_term.id)
+
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": str(student.id), "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "owes" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_fee_gate_not_applicable_without_fee_record(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+):
+    """A student with no StudentFeeSummary row at all (nothing assigned yet)
+    is never blocked, even with the gate on."""
+    await _enable_fee_gate(client, auth, academic_term.id)
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_fee_gate_waived_with_reason(
+    client: AsyncClient, auth: dict,
+    student: Student, school_class: Class, academic_term: AcademicTerm, fee_record: StudentFeeRecord,
+):
+    """auth is a superadmin, so fees.manage always resolves True for it —
+    supplying a waiver reason pushes the blocked enrollment through."""
+    await _assign_class(client, auth, str(student.id), school_class, academic_term)
+    await _enable_fee_gate(client, auth, academic_term.id)
+
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": str(student.id), "academic_term_id": str(academic_term.id),
+        "fee_waiver_reason": "Hardship case — approved by head.",
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["fee_waived"] is True
+
+
+@pytest.mark.asyncio
+async def test_fee_gate_waiver_ignored_without_fees_manage(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+    student: Student, school_class: Class, academic_term: AcademicTerm, fee_record: StudentFeeRecord,
+):
+    """CLASS_TEACHER has students.edit (can reach this endpoint) but not
+    fees.manage — a supplied waiver reason must be ignored, not trusted."""
+    await _assign_class(client, auth, str(student.id), school_class, academic_term)
+    await _enable_fee_gate(client, auth, academic_term.id)
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": str(student.id), "academic_term_id": str(academic_term.id),
+        "fee_waiver_reason": "trust me",
+    }, headers=teacher_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_fee_gate_cleared_by_payment(
+    client: AsyncClient, auth: dict,
+    student: Student, school_class: Class, academic_term: AcademicTerm, fee_record: StudentFeeRecord,
+):
+    await _assign_class(client, auth, str(student.id), school_class, academic_term)
+    await _enable_fee_gate(client, auth, academic_term.id)
+
+    await client.post("/fees/payments", json={
+        "student_id": str(student.id), "fee_record_id": str(fee_record.id),
+        "amount_paid": "500.00", "payment_method": "CASH", "payment_date": "2024-10-01",
+    }, headers=auth)
+
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": str(student.id), "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["fee_waived"] is False
+
+
+@pytest.mark.asyncio
+async def test_bulk_term_enrollment_skips_fee_blocked_and_duplicate(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    student: Student, school_class: Class, academic_term: AcademicTerm, fee_record: StudentFeeRecord,
+):
+    """Regression check for a session bug found and fixed alongside this
+    feature: bulk_term_enrollment shares ONE transaction across the whole
+    batch (one request = one session; the test harness's get_db override never
+    commits, so in tests this can even span the whole test function). A plain
+    db.rollback() on a skipped item discards every earlier flush since the
+    session's transaction began — not just the failed item, and in this test
+    harness not even just the current request; confirmed by direct db_session
+    checks showing the `student` fixture itself (created before any HTTP call
+    in this test) disappeared under the old code. Each item must run in its
+    own SAVEPOINT (db.begin_nested()) instead, matching register_subjects()
+    in this file.
+
+    A follow-up HTTP GET is NOT a reliable way to catch this — it passed even
+    against the buggy code in earlier manual testing (the auth/session
+    resolution path for the follow-up request didn't visibly break even
+    though the data was gone). Assert directly against db_session instead."""
+    await _assign_class(client, auth, str(student.id), school_class, academic_term)
+    await _enable_fee_gate(client, auth, academic_term.id)
+
+    new_sid = await _create_student(client, auth, "ADM-NEW")
+    await _assign_class(client, auth, new_sid, school_class, academic_term)
+
+    clear_sid = await _create_student(client, auth, "ADM-CLEAR")
+    await _assign_class(client, auth, clear_sid, school_class, academic_term)
+    await client.post("/students/term-enrollments", json={
+        "student_id": clear_sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+
+    resp = await client.post("/students/bulk-term-enrollments", json={
+        "items": [
+            {"student_id": new_sid, "academic_term_id": str(academic_term.id)},            # succeeds
+            {"student_id": str(student.id), "academic_term_id": str(academic_term.id)},    # fee-blocked
+            {"student_id": clear_sid, "academic_term_id": str(academic_term.id)},           # duplicate
+        ],
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json() == {"enrolled": 1, "skipped": 2}
+
+    # Direct DB check on the same session — the reliable way to catch this.
+    # The `student` fixture itself is the canary: under the old bug it (and
+    # everything else flushed earlier in the test) would be gone too.
+    still_there = await db_session.get(Student, student.id)
+    assert still_there is not None
+
+    new_rows = (await db_session.execute(
+        select(TermEnrollment).where(TermEnrollment.student_id == new_sid)
+    )).scalars().all()
+    assert len(new_rows) == 1
+
+    clear_rows = (await db_session.execute(
+        select(TermEnrollment).where(TermEnrollment.student_id == clear_sid)
+    )).scalars().all()
+    assert len(clear_rows) == 1

@@ -122,8 +122,8 @@ async def update_term(
     ids=Depends(require_permission("academic", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    term = await year_svc.update_term(term_id, req, school_id, db)
+    user_id, school_id = ids
+    term = await year_svc.update_term(term_id, req, school_id, user_id, db)
     return TermRead.model_validate(term)
 
 

@@ -189,6 +189,15 @@ class TermEnrollment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Fee gate waiver — set only when AcademicTerm.block_owing_students was ON,
+    # the student had an outstanding balance, and a caller with fees.manage
+    # pushed the enrollment through anyway. See services/student_enrollment.py.
+    fee_waived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    fee_waived_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
+    )
+    fee_waiver_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     student: Mapped[Student] = relationship(back_populates="term_enrollments")
     subject_registrations: Mapped[list[SubjectRegistration]] = relationship(
         back_populates="term_enrollment", cascade="all, delete-orphan"
