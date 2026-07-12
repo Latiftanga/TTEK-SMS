@@ -50,11 +50,44 @@
   }
 
   // ── Term registration ─────────────────────────────────────────────────────────
+  // A 422 here means the term's fee gate blocked this student (the other 422
+  // case — no class assignment — can't happen from this button, since we're
+  // already inside an assigned class's term list). Offer an inline waiver
+  // input instead of just showing the error; the waive attempt is only
+  // actually honoured server-side if the caller has fees.manage.
   let regError = $state('');
+  let blocked = $state<{ termId: string; message: string } | null>(null);
+  let waiverReason = $state('');
+  let waiverError = $state('');
+
   const registerMut = createMutation({
     mutationFn: (termId: string) => enrollStudent({ student_id: studentId, academic_term_id: termId }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['student-term-enrollments', studentId] }); regError = ''; toast.success('Registered for term.'); },
-    onError: (e: unknown) => { regError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not register.'; },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['student-term-enrollments', studentId] });
+      regError = ''; blocked = null; toast.success('Registered for term.');
+    },
+    onError: (e: unknown, termId) => {
+      const err = e as { response?: { status?: number; data?: { detail?: string } } };
+      const detail = err?.response?.data?.detail ?? 'Could not register.';
+      if (err?.response?.status === 422) {
+        blocked = { termId, message: detail }; waiverReason = ''; waiverError = '';
+      } else {
+        regError = detail;
+      }
+    },
+  });
+
+  const waiveMut = createMutation({
+    mutationFn: (termId: string) => enrollStudent({ student_id: studentId, academic_term_id: termId, fee_waiver_reason: waiverReason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['student-term-enrollments', studentId] });
+      blocked = null; waiverReason = ''; waiverError = '';
+      toast.success('Registered for term — fee gate waived.');
+    },
+    onError: (e: unknown) => {
+      waiverError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Could not push through — you may not have permission to waive the fee gate.';
+    },
   });
 
   // ── First assignment (no history) ─────────────────────────────────────────────
@@ -147,22 +180,44 @@
                   {#if termRegMap.has(term.id)}
                     <TermRegistrationRow enrollment={termRegMap.get(term.id)!} termLabel={term.name} inline={true} />
                   {:else}
-                    <div class="flex items-center justify-between py-2 pl-1 pr-3">
-                      <div class="flex items-center gap-2">
-                        <div class="h-1.5 w-1.5 rounded-full bg-[var(--border)]"></div>
-                        <span class="text-sm text-[var(--fg-muted)]">{term.name}</span>
+                    <div class="py-2 pl-1 pr-3">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <div class="h-1.5 w-1.5 rounded-full bg-[var(--border)]"></div>
+                          <span class="text-sm text-[var(--fg-muted)]">{term.name}</span>
+                        </div>
+                        <div class="flex flex-col items-end gap-0.5">
+                          <button onclick={() => { regError = ''; $registerMut.mutate(term.id); }}
+                            disabled={$registerMut.isPending && $registerMut.variables === term.id}
+                            class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
+                            style="background: var(--brand)">
+                            {$registerMut.isPending && $registerMut.variables === term.id ? 'Registering…' : 'Register'}
+                          </button>
+                          {#if regError && $registerMut.variables === term.id}
+                            <p class="text-[10px] text-red-500">{regError}</p>
+                          {/if}
+                        </div>
                       </div>
-                      <div class="flex flex-col items-end gap-0.5">
-                        <button onclick={() => { regError = ''; $registerMut.mutate(term.id); }}
-                          disabled={$registerMut.isPending && $registerMut.variables === term.id}
-                          class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
-                          style="background: var(--brand)">
-                          {$registerMut.isPending && $registerMut.variables === term.id ? 'Registering…' : 'Register'}
-                        </button>
-                        {#if regError && $registerMut.variables === term.id}
-                          <p class="text-[10px] text-red-500">{regError}</p>
-                        {/if}
-                      </div>
+                      {#if blocked?.termId === term.id}
+                        <div class="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 dark:border-amber-800 dark:bg-amber-950/20">
+                          <p class="text-xs text-amber-800 dark:text-amber-300">{blocked.message}</p>
+                          <div class="mt-2 flex items-center gap-2">
+                            <input bind:value={waiverReason} placeholder="Waiver reason (requires fees.manage)"
+                              class="flex-1 rounded-lg border border-amber-300 bg-white/70 px-2 py-1 text-xs text-amber-900 placeholder:text-amber-500/70 focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100" />
+                            <button
+                              onclick={() => { waiverError = ''; if (!waiverReason.trim()) { waiverError = 'Reason required.'; return; } $waiveMut.mutate(term.id); }}
+                              disabled={$waiveMut.isPending}
+                              class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50">
+                              {$waiveMut.isPending ? '…' : 'Push through'}
+                            </button>
+                            <button onclick={() => blocked = null}
+                              class="shrink-0 text-xs text-amber-700 transition hover:text-amber-900 dark:text-amber-400">
+                              Cancel
+                            </button>
+                          </div>
+                          {#if waiverError}<p class="mt-1 text-[10px] text-red-600">{waiverError}</p>{/if}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 {/each}

@@ -9,6 +9,9 @@ export interface AcademicTerm {
   start_date: string;
   end_date: string;
   is_current: boolean;
+  block_owing_students: boolean;
+  block_owing_students_set_by: string | null;
+  block_owing_students_set_at: string | null;
 }
 
 export interface AcademicYear {
@@ -123,7 +126,7 @@ export async function createTerm(
 }
 
 export async function updateTerm(termId: string, req: {
-  name?: string; start_date?: string; end_date?: string;
+  name?: string; start_date?: string; end_date?: string; block_owing_students?: boolean;
 }): Promise<AcademicTerm> {
   const { data } = await client.patch<AcademicTerm>(`/academic/terms/${termId}`, req);
   return data;

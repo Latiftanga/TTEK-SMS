@@ -44,7 +44,14 @@
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['students'] });
-      toast.success(`${(res as { enrolled?: number }).enrolled ?? count} student${count !== 1 ? 's' : ''} updated.`);
+      const r = res as { enrolled?: number; skipped?: number };
+      const enrolled = r.enrolled ?? count;
+      const skipped = r.skipped ?? 0;
+      if (skipped > 0) {
+        toast.success(`${enrolled} enrolled, ${skipped} skipped (already enrolled, or blocked by an outstanding fee balance).`);
+      } else {
+        toast.success(`${enrolled} student${enrolled !== 1 ? 's' : ''} updated.`);
+      }
       closeModal(); onClear();
     },
     onError: (e: unknown) => {

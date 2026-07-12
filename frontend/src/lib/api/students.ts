@@ -79,6 +79,7 @@ export interface TermEnrollmentRead {
   class_id: string | null;
   class_display_name: string | null;
   is_active: boolean;
+  fee_waived: boolean;
   created_at: string;
 }
 
@@ -249,7 +250,9 @@ export const bulkAssignStudentsToClass = (items: { student_id: string; class_id:
 export const listTermEnrollments = (studentId: string): Promise<TermEnrollmentRead[]> =>
   api.get(`/students/${studentId}/term-enrollments`).then(r => r.data);
 
-export const enrollStudent = (req: { student_id: string; academic_term_id: string }): Promise<TermEnrollmentRead> =>
+export const enrollStudent = (req: {
+  student_id: string; academic_term_id: string; fee_waiver_reason?: string;
+}): Promise<TermEnrollmentRead> =>
   api.post('/students/term-enrollments', req).then(r => r.data);
 
 export const listSubjectRegistrations = (teId: string): Promise<SubjectRegistrationRead[]> =>

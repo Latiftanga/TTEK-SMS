@@ -187,6 +187,11 @@
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         Registered
       </span>
+      {#if enrollment.fee_waived}
+        <span class="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400" title="Enrolled despite an outstanding fee balance">
+          Fee waived
+        </span>
+      {/if}
     </button>
 
     {#if expanded}
@@ -235,6 +240,11 @@
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         Registered
       </span>
+      {#if enrollment.fee_waived}
+        <span class="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400" title="Enrolled despite an outstanding fee balance">
+          Fee waived
+        </span>
+      {/if}
     </button>
 
     {#if expanded}
