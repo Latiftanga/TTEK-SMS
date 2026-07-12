@@ -171,3 +171,78 @@ async def test_portal_cannot_access_other_student_report(
 
     resp = await client.get(f"/portal/report-cards/{other_te.id}", headers=portal_auth)
     assert resp.status_code == 404
+
+
+# ── Self-service discovery (GET /portal/me, GET /portal/term-enrollments) ──────
+# Added alongside the frontend portal build: previously a logged-in student had
+# no way to discover their own name/class, or which enrollment_id to request a
+# report card for.
+
+@pytest.mark.asyncio
+async def test_portal_me_returns_own_profile(
+    client: AsyncClient,
+    db_session: AsyncSession, school: School, student: Student,
+    school_class: Class, academic_term: AcademicTerm, school_admin: User,
+):
+    await _make_student_user(db_session, school, student)
+    await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+    portal_auth = await _portal_login(client, school, student)
+
+    resp = await client.get("/portal/me", headers=portal_auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["admission_number"] == student.admission_number
+    assert data["display_name"] == f"{student.first_name} {student.last_name}"
+    assert data["current_class_name"]
+    assert data["school_name"] == school.name
+
+
+@pytest.mark.asyncio
+async def test_portal_me_rejects_staff_token(client: AsyncClient, auth: dict):
+    resp = await client.get("/portal/me", headers=auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_portal_list_term_enrollments_reflects_publish_state(
+    client: AsyncClient,
+    db_session: AsyncSession, school: School, student: Student,
+    school_class: Class, academic_term: AcademicTerm, school_admin: User,
+):
+    await _make_student_user(db_session, school, student)
+    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+    portal_auth = await _portal_login(client, school, student)
+
+    resp = await client.get("/portal/term-enrollments", headers=portal_auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == str(te.id)
+    assert data[0]["term_name"] == academic_term.name
+    assert data[0]["is_published"] is False
+
+    await _publish_assessment(db_session, school, school_class, academic_term)
+    resp2 = await client.get("/portal/term-enrollments", headers=portal_auth)
+    assert resp2.json()[0]["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_portal_list_term_enrollments_only_own(
+    client: AsyncClient,
+    db_session: AsyncSession, school: School, student: Student,
+    school_class: Class, academic_term: AcademicTerm, school_admin: User,
+):
+    other = Student(
+        school_id=school.id, admission_number="STU003",
+        first_name="Kofi", last_name="Owusu", is_active=True,
+    )
+    db_session.add(other)
+    await db_session.flush()
+    await _make_enrollment(db_session, school, other, school_class, academic_term, school_admin)
+
+    await _make_student_user(db_session, school, student)
+    portal_auth = await _portal_login(client, school, student)
+
+    resp = await client.get("/portal/term-enrollments", headers=portal_auth)
+    assert resp.status_code == 200
+    assert resp.json() == []
