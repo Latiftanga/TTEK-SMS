@@ -1,17 +1,27 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import Sidebar   from '$lib/components/Sidebar.svelte';
   import TopBar    from '$lib/components/TopBar.svelte';
   import BottomNav from '$lib/components/BottomNav.svelte';
   import Toast     from '$lib/components/Toast.svelte';
   import { documentTitle } from '$lib/stores/title';
   import { initOfflineSync, pendingOutboxCount, isOnline } from '$lib/offline/sync';
+  import { currentUser } from '$lib/stores/auth';
 
   const { children } = $props();
 
   let sidebarOpen = $state(false);
 
   $effect(() => { initOfflineSync(); });
+
+  // Student/parent (ADMISSION_ID) logins have no staff permissions and
+  // belong on /portal, not this staff app shell — without this a portal
+  // user landing here (e.g. a stale bookmark) sees a silently blank
+  // dashboard rather than being routed to the page that works for them.
+  $effect(() => {
+    if ($currentUser?.login_type === 'ADMISSION_ID') goto('/portal');
+  });
 </script>
 
 <svelte:head><title>{$documentTitle}</title></svelte:head>

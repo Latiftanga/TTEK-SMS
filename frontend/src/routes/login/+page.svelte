@@ -23,7 +23,14 @@
   let loadingLogin  = $state(false);
 
   onMount(async () => {
-    if (get(isAuthenticated)) goto('/dashboard');
+    if (get(isAuthenticated)) {
+      try {
+        const user = await getMe();
+        goto(user.login_type === 'ADMISSION_ID' ? '/portal' : '/dashboard');
+      } catch {
+        goto('/dashboard');
+      }
+    }
 
     const stored = get(school);
     if (stored) {
@@ -111,7 +118,7 @@
       auth.setToken(tokens.access_token);
       const user = await getMe();
       auth.setAuth(user, tokens.access_token, tokens.refresh_token);
-      goto('/dashboard');
+      goto(user.login_type === 'ADMISSION_ID' ? '/portal' : '/dashboard');
     } catch (e: any) {
       formError = e?.response?.data?.detail ?? 'Login failed. Check your credentials.';
     } finally {
