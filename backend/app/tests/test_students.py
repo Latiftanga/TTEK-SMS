@@ -2,6 +2,7 @@
 Student profile integration tests (CRUD, guardians, medical record).
 Run inside Docker: docker compose exec api pytest app/tests/test_students.py -v
 """
+import uuid
 from datetime import date
 
 import pytest
@@ -326,3 +327,122 @@ async def test_primary_guardian_demoted(client: AsyncClient, auth: dict):
     primaries = [g for g in detail["guardians"] if g["is_primary"]]
     assert len(primaries) == 1
     assert primaries[0]["first_name"] == "Abena"
+
+
+@pytest.mark.asyncio
+async def test_update_guardian(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    add_resp = await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": True,
+    }, headers=auth)
+    guardian_id = add_resp.json()["guardian_id"]
+
+    resp = await client.patch(f"/students/{sid}/guardians/{guardian_id}", json={
+        "phone": "0244999999", "occupation": "Teacher",
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["phone"] == "0244999999"
+    assert resp.json()["occupation"] == "Teacher"
+    assert resp.json()["first_name"] == "Kofi"   # untouched field preserved
+
+
+@pytest.mark.asyncio
+async def test_update_guardian_promotes_new_primary_demotes_old(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    first_id = (await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": True,
+    }, headers=auth)).json()["guardian_id"]
+    second_id = (await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Abena", "last_name": "Boateng",
+        "phone": "0244000002", "relation_type": "Mother", "is_primary": False,
+    }, headers=auth)).json()["guardian_id"]
+
+    resp = await client.patch(f"/students/{sid}/guardians/{second_id}", json={
+        "is_primary": True,
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["is_primary"] is True
+
+    detail = (await client.get(f"/students/{sid}", headers=auth)).json()
+    primaries = [g for g in detail["guardians"] if g["is_primary"]]
+    assert len(primaries) == 1
+    assert primaries[0]["guardian_id"] == second_id
+
+
+@pytest.mark.asyncio
+async def test_update_guardian_not_found(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    resp = await client.patch(
+        f"/students/{sid}/guardians/{uuid.uuid4()}", json={"phone": "0244000001"}, headers=auth,
+    )
+    assert resp.status_code == 404
+
+
+# ── Portal access ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_grant_portal_access(client: AsyncClient, auth: dict, school: School):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    resp = await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["has_portal_access"] is True
+    assert data["admission_number"] == "ADM001"
+    assert data["sms_sent"] is False   # no SMS provider configured in tests
+
+    login = await client.post("/auth/login", json={
+        "login_type": "ADMISSION_ID", "identifier": "ADM001",
+        "school_code": school.school_code, "password": "ADM001",
+    })
+    assert login.status_code == 200, login.text
+
+
+@pytest.mark.asyncio
+async def test_grant_portal_access_already_active_conflict(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+    resp = await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_revoke_portal_access(client: AsyncClient, auth: dict, school: School):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+
+    resp = await client.delete(f"/students/{sid}/revoke-portal-access", headers=auth)
+    assert resp.status_code == 204
+
+    login = await client.post("/auth/login", json={
+        "login_type": "ADMISSION_ID", "identifier": "ADM001",
+        "school_code": school.school_code, "password": "ADM001",
+    })
+    assert login.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_revoke_portal_access_without_grant_404(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    resp = await client.delete(f"/students/{sid}/revoke-portal-access", headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_grant_portal_access_reactivates_after_revoke(client: AsyncClient, auth: dict, school: School):
+    """Granting again after a revoke re-activates the same User row rather than
+    rejecting with a conflict."""
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+    await client.delete(f"/students/{sid}/revoke-portal-access", headers=auth)
+
+    resp = await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["has_portal_access"] is True
+
+    login = await client.post("/auth/login", json={
+        "login_type": "ADMISSION_ID", "identifier": "ADM001",
+        "school_code": school.school_code, "password": "ADM001",
+    })
+    assert login.status_code == 200, login.text
