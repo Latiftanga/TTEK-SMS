@@ -91,6 +91,7 @@ Started: 2026-06-13
 - 12e: Academic Setup (/admin/academic), Classes & Subjects (/admin/structure), Staff directory + detail (/admin/staff)
 - 12f: Class detail page with card header, tabs (students/subjects/teachers), academic sidebar nav
 - 12g: School Setup page (/admin/setup) — Profile, Subjects, Programmes, SMS, Email tabs; GET/PATCH /schools/me + /schools/me/logo backend endpoints; EmailConfig + EmailLog models + migration h6i7j8k9l0m1; email router; SMS Config moved from sidebar into Setup; Subjects/Programmes removed from Academic sub-nav
+- 12h: Students module hardening — students.py split into students.py/students_enrollment.py/students_lifecycle.py/students_detail.py (300-line rule, students_detail's /{student_id} registered last in main.py to avoid path capture); admission_number auto-generation ({SCHOOL_CODE}/{YEAR}/{SEQ}, resets yearly, optional on create); primary-guardian invariant enforced on add/update/remove guardian (first guardian forced primary, last guardian can't be removed, primary removal auto-promotes, sole-primary demotion blocked); student photo wired end-to-end (POST/DELETE /students/{id}/photo, image pipeline in storage.py shared with school logo upload, PhotoAvatar.svelte); test coverage added for update_guardian, portal access grant/revoke, and all of the above (269 backend tests passing)
 
 ## Phase 0 checklist
 - [x] Folder structure created
