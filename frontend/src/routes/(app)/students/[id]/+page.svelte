@@ -10,6 +10,7 @@
   import EnrollmentTab from './EnrollmentTab.svelte';
   import MedicalTab    from './MedicalTab.svelte';
   import FeesTab       from './FeesTab.svelte';
+  import PhotoAvatar   from './PhotoAvatar.svelte';
   import TabBar        from '$lib/components/TabBar.svelte';
 
   const qc = useQueryClient();
@@ -54,10 +55,6 @@
     onError: () => { confirmDeactivate = false; confirmReactivate = false; toast.error('Could not update status.'); },
   });
 
-  function initials(first: string, last: string) {
-    return (first[0] + last[0]).toUpperCase();
-  }
-
   $effect(() => setPageTitle($query.data?.display_name ?? 'Student'));
 </script>
 
@@ -87,10 +84,7 @@
   <div class="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="flex items-center gap-4">
-        <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white shadow"
-             style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 65%, #7c3aed) 100%)">
-          {initials(s.first_name, s.last_name)}
-        </div>
+        <PhotoAvatar studentId={studentId} firstName={s.first_name} lastName={s.last_name} photoUrl={s.photo_url} />
         <div>
           <h1 class="text-xl font-bold text-[var(--fg)]">{s.display_name}</h1>
           <p class="mt-0.5 font-mono text-sm text-[var(--fg-muted)]">{s.admission_number}</p>

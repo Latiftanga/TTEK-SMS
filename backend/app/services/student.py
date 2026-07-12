@@ -3,19 +3,30 @@ Student CRUD and medical record upsert.
 
 Guardian add/update/remove live in student_guardian.py.
 Enrollment (initial + term) and transfer logic live in student_enrollment.py.
+
+ADMISSION NUMBER AUTO-GENERATION
+---------------------------------
+StudentCreate.admission_number is optional. When omitted, _next_admission_number()
+generates {SCHOOL_CODE}/{YEAR}/{SEQ} (YEAR = calendar year at creation time, SEQ
+resets to 0001 each year, zero-padded to 4 digits). A caller-supplied value is
+always honoured as-is, so existing numbering schemes (bulk import, mid-year
+onboarding) keep working unchanged.
 """
 from __future__ import annotations
 import uuid
+from datetime import date
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.models.academic import Class, ClassTeacher, SHSProgramme, SubjectTeacher
 from app.models.auth import User
 from app.models.housing import HouseMaster, StudentHouseAssignment
+from app.models.school import School
 from app.models.students import (
     Guardian,
     Student,
@@ -52,6 +63,15 @@ def _class_display(level: str, year_group: int, programme: str | None, stream: s
     return " ".join(parts)
 
 
+def _photo_url(photo_path: str | None) -> str | None:
+    """Convert a stored photo path to an absolute URL the frontend can use."""
+    if not photo_path:
+        return None
+    if settings.storage_backend == "CLOUDFLARE_R2":
+        return f"{settings.r2_public_url.rstrip('/')}/{photo_path}"
+    return f"{settings.app_base_url.rstrip('/')}/uploads/{photo_path}"
+
+
 def _to_summary(
     s: Student,
     class_info: tuple[str, int, str | None, str | None, uuid.UUID] | None = None,
@@ -75,6 +95,7 @@ def _to_summary(
         is_boarding=s.is_boarding,
         current_class_name=current_class_name,
         current_class_id=current_class_id,
+        photo_url=_photo_url(s.photo_path),
     )
 
 
@@ -118,40 +139,116 @@ async def _portal_access(student_id: uuid.UUID, db: AsyncSession) -> bool:
     ) is not None
 
 
+async def _next_admission_number(school_id: uuid.UUID, school_code: str, db: AsyncSession) -> str:
+    """{SCHOOL_CODE}/{YEAR}/{SEQ} — SEQ resets to 0001 each calendar year.
+
+    Scans existing admission numbers under this year's prefix rather than
+    keeping a separate counter row, so it stays correct even if a school
+    also has manually-entered numbers that don't match the auto pattern
+    (those are simply ignored when computing the next sequence).
+    """
+    prefix = f"{school_code}/{date.today().year}/"
+    existing = await db.scalars(
+        select(Student.admission_number)
+        .where(Student.school_id == school_id, Student.admission_number.like(f"{prefix}%"))
+    )
+    max_seq = 0
+    for num in existing:
+        suffix = num[len(prefix):]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return f"{prefix}{max_seq + 1:04d}"
+
+
 async def create_student(
     req: StudentCreate,
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> StudentDetail:
-    student = Student(
-        school_id=school_id,
-        admission_number=req.admission_number.strip(),
-        first_name=req.first_name.strip(),
-        middle_name=req.middle_name.strip() if req.middle_name else None,
-        last_name=req.last_name.strip(),
-        date_of_birth=req.date_of_birth,
-        gender=req.gender,
-        nationality=req.nationality,
-        religion=req.religion,
-        hometown=req.hometown,
-        residential_address=req.residential_address,
-        nhis_number=req.nhis_number,
-        ghana_card_number=req.ghana_card_number,
-        is_boarding=req.is_boarding,
-        orphan_status=req.orphan_status,
-        disability=req.disability,
-        is_active=True,
-    )
-    db.add(student)
-    try:
-        await db.flush()
-    except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Admission number '{req.admission_number}' already exists at this school.",
+    auto_generate = req.admission_number is None
+    school_code = "SCHOOL"
+    if auto_generate:
+        school = await db.get(School, school_id)
+        school_code = school.school_code if school else "SCHOOL"
+
+    # Auto-generated numbers get a few retries in case of a concurrent-create
+    # race on the sequence; a caller-supplied number gets exactly one attempt
+    # so a genuine duplicate still surfaces as a 409 immediately.
+    max_attempts = 5 if auto_generate else 1
+    for attempt in range(max_attempts):
+        admission_number = (
+            await _next_admission_number(school_id, school_code, db)
+            if auto_generate else req.admission_number
         )
+        student = Student(
+            school_id=school_id,
+            admission_number=admission_number,
+            first_name=req.first_name.strip(),
+            middle_name=req.middle_name.strip() if req.middle_name else None,
+            last_name=req.last_name.strip(),
+            date_of_birth=req.date_of_birth,
+            gender=req.gender,
+            nationality=req.nationality,
+            religion=req.religion,
+            hometown=req.hometown,
+            residential_address=req.residential_address,
+            nhis_number=req.nhis_number,
+            ghana_card_number=req.ghana_card_number,
+            is_boarding=req.is_boarding,
+            orphan_status=req.orphan_status,
+            disability=req.disability,
+            is_active=True,
+        )
+        db.add(student)
+        try:
+            await db.flush()
+            break
+        except IntegrityError:
+            await db.rollback()
+            if not auto_generate or attempt == max_attempts - 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Admission number '{admission_number}' already exists at this school.",
+                )
     await db.refresh(student, attribute_names=["medical_record", "guardians"])
     return _to_detail(student)
+
+
+async def upload_student_photo(
+    student_id: uuid.UUID,
+    file: UploadFile,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> StudentDetail:
+    student = await db.scalar(
+        select(Student)
+        .where(Student.id == student_id, Student.school_id == school_id)
+        .options(
+            selectinload(Student.medical_record),
+            selectinload(Student.guardians).selectinload(StudentGuardian.guardian),
+        )
+    )
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
+    from app.services.storage import save_student_photo
+    student.photo_path = await save_student_photo(file, student.id)
+    await db.flush()
+    portal = await _portal_access(student_id, db)
+    return _to_detail(student, has_portal_access=portal)
+
+
+async def remove_student_photo(
+    student_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    student = await db.get(Student, student_id)
+    if not student or student.school_id != school_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
+    from app.services.storage import delete_student_photo
+    delete_student_photo(student.id)
+    student.photo_path = None
+    await db.flush()
 
 
 def _active_class_assignment_subquery():

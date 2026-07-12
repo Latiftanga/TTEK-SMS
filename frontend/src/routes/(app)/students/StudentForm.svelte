@@ -89,11 +89,11 @@
 
   function handleSubmit() {
     error = '';
-    if (!form.admission_number.trim()) { error = 'Admission number is required.'; return; }
-    if (!form.first_name.trim())       { error = 'First name is required.'; return; }
-    if (!form.last_name.trim())        { error = 'Last name is required.'; return; }
+    if (!form.first_name.trim()) { error = 'First name is required.'; return; }
+    if (!form.last_name.trim())  { error = 'Last name is required.'; return; }
     $mut.mutate({
       ...form,
+      admission_number:    form.admission_number?.trim()    || undefined,
       middle_name:         form.middle_name?.trim()         || undefined,
       date_of_birth:       form.date_of_birth?.trim()       || undefined,
       nationality:         form.nationality?.trim()         || undefined,
@@ -136,9 +136,9 @@
 
       <!-- Admission number — standalone, prominent -->
       <div>
-        <label for="sf-admission" class={LABEL}>Admission number <span class="text-red-500">*</span></label>
+        <label for="sf-admission" class={LABEL}>Admission number</label>
         <input id="sf-admission" bind:value={form.admission_number}
-          placeholder="e.g. PRESEC/2024/001" class={INPUT} />
+          placeholder="Leave blank to auto-generate" class={INPUT} />
       </div>
 
       <!-- ── Personal details ────────────────────────────────────────── -->

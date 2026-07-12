@@ -2,11 +2,13 @@
 Student profile integration tests (CRUD, guardians, medical record).
 Run inside Docker: docker compose exec api pytest app/tests/test_students.py -v
 """
+import io
 import uuid
 from datetime import date
 
 import pytest
 from httpx import AsyncClient
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +21,12 @@ from app.models.students import StudentClassAssignment
 
 def _student(num: str = "ADM001", **kw) -> dict:
     return {"admission_number": num, "first_name": "Ama", "last_name": "Boateng", **kw}
+
+
+def _tiny_png() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="red").save(buf, format="PNG")
+    return buf.getvalue()
 
 
 async def _login_as_position(
@@ -306,9 +314,89 @@ async def test_add_and_remove_guardian(client: AsyncClient, auth: dict):
     detail = (await client.get(f"/students/{sid}", headers=auth)).json()
     assert len(detail["guardians"]) == 1
 
+    # A second guardian is required before the first can be removed — a
+    # student must always have at least one guardian on record.
+    await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Abena", "last_name": "Boateng",
+        "phone": "0244000002", "relation_type": "Mother",
+    }, headers=auth)
+
     await client.delete(f"/students/{sid}/guardians/{guardian_id}", headers=auth)
     detail = (await client.get(f"/students/{sid}", headers=auth)).json()
-    assert len(detail["guardians"]) == 0
+    assert len(detail["guardians"]) == 1
+    assert detail["guardians"][0]["first_name"] == "Abena"
+
+
+@pytest.mark.asyncio
+async def test_first_guardian_forced_primary(client: AsyncClient, auth: dict):
+    """The first guardian added to a student is always primary, even if the
+    request explicitly says otherwise — a student may never have guardians
+    but no primary."""
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    resp = await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": False,
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["is_primary"] is True
+
+
+@pytest.mark.asyncio
+async def test_cannot_remove_only_guardian(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    guardian_id = (await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": True,
+    }, headers=auth)).json()["guardian_id"]
+
+    resp = await client.delete(f"/students/{sid}/guardians/{guardian_id}", headers=auth)
+    assert resp.status_code == 409
+
+    detail = (await client.get(f"/students/{sid}", headers=auth)).json()
+    assert len(detail["guardians"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_removing_primary_auto_promotes_remaining(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    primary_id = (await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": True,
+    }, headers=auth)).json()["guardian_id"]
+    secondary_id = (await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Abena", "last_name": "Boateng",
+        "phone": "0244000002", "relation_type": "Mother", "is_primary": False,
+    }, headers=auth)).json()["guardian_id"]
+
+    resp = await client.delete(f"/students/{sid}/guardians/{primary_id}", headers=auth)
+    assert resp.status_code == 204
+
+    detail = (await client.get(f"/students/{sid}", headers=auth)).json()
+    assert len(detail["guardians"]) == 1
+    assert detail["guardians"][0]["guardian_id"] == secondary_id
+    assert detail["guardians"][0]["is_primary"] is True
+
+
+@pytest.mark.asyncio
+async def test_cannot_demote_sole_primary_without_replacement(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    primary_id = (await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": True,
+    }, headers=auth)).json()["guardian_id"]
+    await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Abena", "last_name": "Boateng",
+        "phone": "0244000002", "relation_type": "Mother", "is_primary": False,
+    }, headers=auth)
+
+    resp = await client.patch(f"/students/{sid}/guardians/{primary_id}", json={
+        "is_primary": False,
+    }, headers=auth)
+    assert resp.status_code == 422
+
+    # Promoting the other guardian instead works fine (existing demote-on-promote path).
+    detail = (await client.get(f"/students/{sid}", headers=auth)).json()
+    assert any(g["is_primary"] for g in detail["guardians"])
 
 
 @pytest.mark.asyncio
@@ -446,3 +534,91 @@ async def test_grant_portal_access_reactivates_after_revoke(client: AsyncClient,
         "school_code": school.school_code, "password": "ADM001",
     })
     assert login.status_code == 200, login.text
+
+
+# ── Admission number auto-generation ────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_admission_number_auto_generated_when_omitted(client: AsyncClient, auth: dict, school: School):
+    resp = await client.post("/students", json={
+        "first_name": "Ama", "last_name": "Boateng",
+    }, headers=auth)
+    assert resp.status_code == 201
+    year = date.today().year
+    assert resp.json()["admission_number"] == f"{school.school_code}/{year}/0001"
+
+
+@pytest.mark.asyncio
+async def test_admission_number_auto_generated_sequence_increments(client: AsyncClient, auth: dict, school: School):
+    first = await client.post("/students", json={"first_name": "Ama", "last_name": "Boateng"}, headers=auth)
+    second = await client.post("/students", json={"first_name": "Kofi", "last_name": "Mensah"}, headers=auth)
+    year = date.today().year
+    assert first.json()["admission_number"] == f"{school.school_code}/{year}/0001"
+    assert second.json()["admission_number"] == f"{school.school_code}/{year}/0002"
+
+
+@pytest.mark.asyncio
+async def test_admission_number_auto_generated_ignores_manual_numbers_outside_pattern(
+    client: AsyncClient, auth: dict, school: School,
+):
+    """A pre-existing manually-entered admission number that doesn't match the
+    auto-gen pattern shouldn't break sequence calculation for the next auto one."""
+    await client.post("/students", json=_student("LEGACY-001"), headers=auth)
+    resp = await client.post("/students", json={"first_name": "Ama", "last_name": "Boateng"}, headers=auth)
+    year = date.today().year
+    assert resp.json()["admission_number"] == f"{school.school_code}/{year}/0001"
+
+
+@pytest.mark.asyncio
+async def test_admission_number_blank_string_also_auto_generates(client: AsyncClient, auth: dict, school: School):
+    resp = await client.post("/students", json={
+        "admission_number": "   ", "first_name": "Ama", "last_name": "Boateng",
+    }, headers=auth)
+    assert resp.status_code == 201
+    year = date.today().year
+    assert resp.json()["admission_number"] == f"{school.school_code}/{year}/0001"
+
+
+@pytest.mark.asyncio
+async def test_admission_number_explicit_value_still_honoured(client: AsyncClient, auth: dict):
+    resp = await client.post("/students", json=_student("CUSTOM/SCHEME/9"), headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["admission_number"] == "CUSTOM/SCHEME/9"
+
+
+# ── Student photo ────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_upload_and_delete_student_photo(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    assert (await client.get(f"/students/{sid}", headers=auth)).json()["photo_url"] is None
+
+    resp = await client.post(
+        f"/students/{sid}/photo",
+        files={"file": ("photo.png", _tiny_png(), "image/png")},
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    photo_url = resp.json()["photo_url"]
+    assert photo_url is not None
+    assert photo_url.endswith(".webp")
+
+    detail = (await client.get(f"/students/{sid}", headers=auth)).json()
+    assert detail["photo_url"] == photo_url
+
+    del_resp = await client.delete(f"/students/{sid}/photo", headers=auth)
+    assert del_resp.status_code == 204
+
+    detail = (await client.get(f"/students/{sid}", headers=auth)).json()
+    assert detail["photo_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_upload_student_photo_rejects_non_image(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    resp = await client.post(
+        f"/students/{sid}/photo",
+        files={"file": ("doc.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=auth,
+    )
+    assert resp.status_code == 415

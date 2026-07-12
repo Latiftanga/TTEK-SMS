@@ -16,6 +16,7 @@ export interface StudentSummary {
   is_boarding: boolean;
   current_class_name: string | null;
   current_class_id: string | null;
+  photo_url: string | null;
 }
 
 export interface MedicalRecord {
@@ -82,7 +83,8 @@ export interface TermEnrollmentRead {
 }
 
 export interface StudentCreate {
-  admission_number: string;
+  // Omit or leave blank to auto-generate as {SCHOOL_CODE}/{YEAR}/{SEQ}.
+  admission_number?: string;
   first_name: string;
   middle_name?: string;
   last_name: string;
@@ -202,6 +204,17 @@ export const createStudent = (data: StudentCreate): Promise<StudentDetail> =>
 
 export const updateStudent = (id: string, data: StudentUpdate): Promise<StudentDetail> =>
   api.patch(`/students/${id}`, data).then(r => r.data);
+
+export const uploadStudentPhoto = (id: string, file: File): Promise<StudentDetail> => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post(`/students/${id}/photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data);
+};
+
+export const deleteStudentPhoto = (id: string): Promise<void> =>
+  api.delete(`/students/${id}/photo`).then(() => undefined);
 
 export const addGuardian = (studentId: string, data: GuardianCreate): Promise<Guardian> =>
   api.post(`/students/${studentId}/guardians`, data).then(r => r.data);

@@ -10,7 +10,10 @@ ORPHAN_STATUSES = ("NONE", "HALF_ORPHAN", "FULL_ORPHAN")
 
 
 class StudentCreate(BaseModel):
-    admission_number: str
+    # Omit or leave blank to auto-generate as {SCHOOL_CODE}/{YEAR}/{SEQ} (see
+    # services/student.py::_next_admission_number). Supply a value to keep an
+    # existing numbering scheme (bulk import, mid-year onboarding, etc.).
+    admission_number: str | None = None
     first_name: str
     middle_name: str | None = None
     last_name: str
@@ -26,7 +29,12 @@ class StudentCreate(BaseModel):
     orphan_status: str = "NONE"
     disability: str | None = None
 
-    @field_validator("admission_number", "first_name", "last_name")
+    @field_validator("admission_number")
+    @classmethod
+    def blank_to_none(cls, v: str | None) -> str | None:
+        return v.strip() or None if v is not None else None
+
+    @field_validator("first_name", "last_name")
     @classmethod
     def not_blank(cls, v: str) -> str:
         if not v.strip():
@@ -117,6 +125,7 @@ class StudentSummary(BaseModel):
     is_boarding: bool = False
     current_class_name: str | None = None
     current_class_id: uuid.UUID | None = None
+    photo_url: str | None = None
 
 
 class StudentDetail(StudentSummary):

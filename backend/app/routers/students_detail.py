@@ -20,10 +20,11 @@ GET  /students/{id}/term-enrollments          students.view
 POST/GET /students/{id}/transfers             students.edit / students.view
 POST /students/{id}/grant-portal-access       students.edit
 DELETE /students/{id}/revoke-portal-access    students.edit
+POST/DELETE /students/{id}/photo              students.edit
 """
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -187,3 +188,24 @@ async def revoke_portal_access(
 ):
     _, school_id = ids
     await portal_svc.revoke_portal_access(student_id, school_id, db)
+
+
+@router.post("/{student_id}/photo", response_model=StudentDetail)
+async def upload_photo(
+    student_id: uuid.UUID,
+    file: UploadFile = File(...),
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await svc.upload_student_photo(student_id, file, school_id, db)
+
+
+@router.delete("/{student_id}/photo", status_code=204)
+async def delete_photo(
+    student_id: uuid.UUID,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await svc.remove_student_photo(student_id, school_id, db)
