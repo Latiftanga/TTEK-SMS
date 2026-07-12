@@ -4,10 +4,11 @@
     getMyPortalProfile, listMyTermEnrollments, getMyReportCardBlob,
     type PortalTermEnrollment,
   } from '$lib/api/portal';
+  import { ghs } from '$lib/api/fees';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
 
-  setPageTitle('My Report Cards');
+  setPageTitle('My Portal');
 
   const profileQ = createQuery({ queryKey: ['portal-me'], queryFn: getMyPortalProfile, staleTime: 5 * 60_000 });
   const termsQ   = createQuery({ queryKey: ['portal-term-enrollments'], queryFn: listMyTermEnrollments, staleTime: 60_000 });
@@ -74,7 +75,7 @@
   </div>
 
   <!-- Terms -->
-  <h2 class="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Report cards</h2>
+  <h2 class="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Report cards &amp; fees</h2>
 
   {#if terms.length === 0}
     <div class="rounded-2xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
@@ -92,6 +93,11 @@
               {/if}
             </div>
             <p class="text-xs text-[var(--fg-muted)]">{term.academic_year_name}</p>
+            {#if term.fee_balance !== null}
+              <p class="mt-1 text-xs font-semibold {Number(term.fee_balance) > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-500'}">
+                {Number(term.fee_balance) > 0 ? `Balance due: ${ghs(term.fee_balance)}` : 'Fees fully paid'}
+              </p>
+            {/if}
           </div>
 
           {#if term.is_published}

@@ -15,6 +15,11 @@ export interface PortalTermEnrollment {
   academic_year_name: string;
   is_current: boolean;
   is_published: boolean;
+  // null = no fees assigned for this term yet, not a zero balance.
+  fee_total_due: string | null;
+  fee_total_paid: string | null;
+  fee_balance: string | null;
+  fee_last_payment_date: string | null;
 }
 
 export type ReportFormat = 'BASIC' | 'SHS' | 'ECM';

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, AcademicYear
 from app.models.assessments import Assessment
+from app.models.fees import StudentFeeSummary
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.schemas.portal import PortalProfile, PortalTermEnrollmentRead
@@ -75,6 +76,18 @@ async def is_report_published(
     return count > 0
 
 
+async def _fee_summary_for_term(
+    student_id: uuid.UUID, academic_term_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> StudentFeeSummary | None:
+    return await db.scalar(
+        select(StudentFeeSummary).where(
+            StudentFeeSummary.student_id == student_id,
+            StudentFeeSummary.academic_term_id == academic_term_id,
+            StudentFeeSummary.school_id == school_id,
+        )
+    )
+
+
 async def list_my_term_enrollments(
     student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
 ) -> list[PortalTermEnrollmentRead]:
@@ -89,6 +102,7 @@ async def list_my_term_enrollments(
     results = []
     for te, term, year in rows:
         published = await is_report_published(student_id, term.id, school_id, db)
+        fee_summary = await _fee_summary_for_term(student_id, term.id, school_id, db)
         results.append(PortalTermEnrollmentRead(
             id=te.id,
             academic_term_id=term.id,
@@ -96,5 +110,12 @@ async def list_my_term_enrollments(
             academic_year_name=year.name,
             is_current=term.is_current,
             is_published=published,
+            fee_total_due=fee_summary.total_due if fee_summary else None,
+            fee_total_paid=fee_summary.total_paid if fee_summary else None,
+            fee_balance=(
+                fee_summary.total_due - fee_summary.total_paid - fee_summary.total_discounted
+                if fee_summary else None
+            ),
+            fee_last_payment_date=fee_summary.last_payment_date if fee_summary else None,
         ))
     return results

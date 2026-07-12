@@ -14,6 +14,7 @@ from app.models.academic import (
 )
 from app.models.assessments import Assessment, AssessmentType
 from app.models.auth import LoginType, User
+from app.models.fees import StudentFeeRecord
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 
@@ -220,6 +221,8 @@ async def test_portal_list_term_enrollments_reflects_publish_state(
     assert data[0]["id"] == str(te.id)
     assert data[0]["term_name"] == academic_term.name
     assert data[0]["is_published"] is False
+    # No StudentFeeSummary row exists for this student+term — None, not zero.
+    assert data[0]["fee_balance"] is None
 
     await _publish_assessment(db_session, school, school_class, academic_term)
     resp2 = await client.get("/portal/term-enrollments", headers=portal_auth)
@@ -246,3 +249,40 @@ async def test_portal_list_term_enrollments_only_own(
     resp = await client.get("/portal/term-enrollments", headers=portal_auth)
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ── Fee balance on term enrollments ─────────────────────────────────────────────
+# fee_balance is computed live from StudentFeeSummary (total_due - total_paid -
+# total_discounted), never stored, per the project's fee-balance rule — same
+# pattern as the fee gate and the staff-facing fee summary endpoint.
+
+@pytest.mark.asyncio
+async def test_portal_term_enrollment_reflects_fee_balance(
+    client: AsyncClient, auth: dict,
+    db_session: AsyncSession, school: School, student: Student,
+    school_class: Class, academic_term: AcademicTerm, school_admin: User,
+    fee_record: StudentFeeRecord,
+):
+    await _make_student_user(db_session, school, student)
+    await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+    portal_auth = await _portal_login(client, school, student)
+
+    resp = await client.get("/portal/term-enrollments", headers=portal_auth)
+    data = resp.json()[0]
+    assert data["fee_total_due"] == "500.00"
+    assert data["fee_total_paid"] == "0.00"
+    assert data["fee_balance"] == "500.00"
+    assert data["fee_last_payment_date"] is None
+
+    # Staff records a partial payment — the portal view must reflect it live,
+    # not a cached figure.
+    await client.post("/fees/payments", json={
+        "student_id": str(student.id), "fee_record_id": str(fee_record.id),
+        "amount_paid": "200.00", "payment_method": "CASH", "payment_date": "2024-10-01",
+    }, headers=auth)
+
+    resp2 = await client.get("/portal/term-enrollments", headers=portal_auth)
+    data2 = resp2.json()[0]
+    assert data2["fee_total_paid"] == "200.00"
+    assert data2["fee_balance"] == "300.00"
+    assert data2["fee_last_payment_date"] == "2024-10-01"
