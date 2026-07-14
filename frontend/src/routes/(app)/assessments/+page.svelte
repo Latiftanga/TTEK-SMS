@@ -6,7 +6,7 @@
     listAssessments, listAssessmentTypes, createAssessment,
     type Assessment,
   } from '$lib/api/assessments';
-  import { listClasses, listYears, listSubjects } from '$lib/api/academic';
+  import { listClasses, listYears, listSubjects, updateTerm } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
@@ -28,10 +28,19 @@
   const allTerms = $derived(
     ($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name })))
   );
+  const selectedTerm = $derived(allTerms.find(t => t.id === termId));
 
   $effect(() => {
     const cur = allTerms.find(t => t.is_current);
     if (cur && !termId) termId = cur.id;
+  });
+
+  const resultsLockMut = createMutation({
+    mutationFn: ({ id, on }: { id: string; on: boolean }) => updateTerm(id, { results_locked: on }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['academic-years'] });
+      qc.invalidateQueries({ queryKey: ['all-terms'] });
+    },
   });
 
   // Auto-select class when only one is available (e.g. class teacher with one class)
@@ -103,6 +112,27 @@
       {#each allTerms as t}<option value={t.id}>{t.yearName} — {t.name}</option>{/each}
     </select>
   </div>
+  {#if canManage && termId && selectedTerm}
+    <button
+      onclick={() => $resultsLockMut.mutate({ id: termId, on: !selectedTerm.results_locked })}
+      disabled={$resultsLockMut.isPending}
+      title={selectedTerm.results_locked
+        ? 'Unlock — scores and behaviour records for this term can be edited again'
+        : 'Lock — freeze scores and behaviour records for this term (overridable with a reason)'}
+      class="flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:opacity-50
+        {selectedTerm.results_locked
+          ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400'
+          : 'border-[var(--border)] bg-[var(--card)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--brand)]'}">
+      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+        {#if selectedTerm.results_locked}
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+        {:else}
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+        {/if}
+      </svg>
+      {$resultsLockMut.isPending ? '…' : selectedTerm.results_locked ? 'Results locked' : 'Lock results'}
+    </button>
+  {/if}
   {#if canManage && classId && termId}
     <button onclick={() => { showCreate = !showCreate; cfError = ''; }}
       class="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
