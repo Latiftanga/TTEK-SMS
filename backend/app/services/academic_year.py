@@ -200,6 +200,10 @@ async def update_term(
         term.block_owing_students = req.block_owing_students
         term.block_owing_students_set_by = user_id
         term.block_owing_students_set_at = datetime.now(timezone.utc)
+    if req.results_locked is not None and req.results_locked != term.results_locked:
+        term.results_locked = req.results_locked
+        term.results_locked_by_id = user_id
+        term.results_locked_at = datetime.now(timezone.utc)
     await db.flush()
     return term
 

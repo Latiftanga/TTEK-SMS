@@ -81,6 +81,16 @@ class AcademicTerm(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     )
     block_owing_students_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Results lock — when True, submit_scores/approve_scores/behaviour records
+    # for this term are frozen. Bypassed only by a caller with
+    # assessments.approve_scores who supplies an override_reason (audit logged).
+    # See services/scoring.py and services/behaviour.py.
+    results_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    results_locked_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
+    )
+    results_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     academic_year: Mapped[AcademicYear] = relationship(back_populates="terms")
 
 

@@ -136,6 +136,9 @@ class ScoreSubmit(BaseModel):
 
 class BulkScoreSubmit(BaseModel):
     scores: list[ScoreSubmit]
+    # Only used/required when the assessment's term has results_locked=True.
+    # Honoured only if the caller holds assessments.approve_scores.
+    override_reason: str | None = None
 
 
 class ScoreRead(BaseModel):
@@ -154,6 +157,8 @@ class ScoreRead(BaseModel):
 
 class ScoreApproveRequest(BaseModel):
     score_ids: list[uuid.UUID]
+    # Only required when the assessment's term has results_locked=True.
+    override_reason: str | None = None
 
 
 # ── Behaviour ─────────────────────────────────────────────────────────────────
@@ -166,6 +171,8 @@ class BehaviourRecordCreate(BaseModel):
     severity: Literal["LOW", "MEDIUM", "HIGH"]
     action_taken: str | None = None
     incident_date: date
+    # Only required when the term has results_locked=True.
+    override_reason: str | None = None
 
     @field_validator("incident_type", "description")
     @classmethod
@@ -186,6 +193,19 @@ class BehaviourRecordRead(BaseModel):
     incident_date: date
     recorded_by_id: uuid.UUID
     created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class BehaviourAuditLogRead(BaseModel):
+    id: uuid.UUID
+    behaviour_record_id: uuid.UUID | None
+    student_id: uuid.UUID
+    action: str
+    incident_type: str
+    incident_date: date
+    changed_by_id: uuid.UUID
+    reason: str | None
+    changed_at: datetime
     model_config = {"from_attributes": True}
 
 

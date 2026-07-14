@@ -32,6 +32,9 @@ class TermRead(BaseModel):
     block_owing_students: bool
     block_owing_students_set_by: uuid.UUID | None = None
     block_owing_students_set_at: datetime | None = None
+    results_locked: bool
+    results_locked_by_id: uuid.UUID | None = None
+    results_locked_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -67,6 +70,7 @@ class AcademicTermUpdate(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     block_owing_students: bool | None = None
+    results_locked: bool | None = None
 
 
 class ProgrammeRead(BaseModel):

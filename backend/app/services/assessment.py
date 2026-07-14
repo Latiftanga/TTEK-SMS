@@ -118,6 +118,18 @@ async def create_assessment(
     )
     if not atype:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment type not found.")
+    term = await db.scalar(
+        select(AcademicTerm).where(
+            AcademicTerm.id == req.academic_term_id, AcademicTerm.school_id == school_id,
+        )
+    )
+    if not term:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Academic term not found.")
+    if req.due_date and not (term.start_date <= req.due_date <= term.end_date):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"due_date {req.due_date} falls outside the term ({term.start_date} – {term.end_date}).",
+        )
     a = Assessment(
         school_id=school_id,
         class_id=req.class_id,
@@ -171,6 +183,13 @@ async def update_assessment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
     if a.is_published:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot edit a published assessment.")
+    if req.due_date is not None:
+        term = await db.get(AcademicTerm, a.academic_term_id)
+        if term and not (term.start_date <= req.due_date <= term.end_date):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"due_date {req.due_date} falls outside the term ({term.start_date} – {term.end_date}).",
+            )
     if req.max_score is not None:
         max_entered = await db.scalar(
             select(func.max(Score.raw_score)).where(Score.assessment_id == assessment_id)

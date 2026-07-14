@@ -52,11 +52,12 @@ async def list_behaviour_records(
 @router.delete("/behaviour/{record_id}", status_code=204)
 async def delete_behaviour_record(
     record_id: uuid.UUID,
+    override_reason: str | None = Query(None),
     auth=Depends(require_permission("assessments", "approve_scores")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    await beh_svc.delete_behaviour_record(record_id, school_id, db)
+    user_id, school_id = auth
+    await beh_svc.delete_behaviour_record(record_id, school_id, user_id, db, override_reason)
 
 
 # ── Class enrollment list (for report card selection) ────────────────────────

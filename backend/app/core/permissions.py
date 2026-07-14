@@ -223,3 +223,30 @@ async def has_permission(
     """
     perms = await resolve_permissions(staff_member_id, db)
     return perms.get(f"{module}.{action}", False)
+
+
+async def user_has_permission(
+    user_id: uuid.UUID,
+    module: str,
+    action: str,
+    db: AsyncSession,
+) -> bool:
+    """
+    Same as has_permission(), but starting from a User row instead of a
+    staff_member_id — for ad hoc checks inside service functions where the
+    caller only has the authenticated user_id (e.g. an override permission
+    that differs from the permission the route itself is gated on).
+
+    Superadmin always returns True. A user with no staff_member_id (e.g. a
+    portal login) always returns False.
+    """
+    from app.models.auth import User
+
+    user = await db.get(User, user_id)
+    if not user:
+        return False
+    if user.is_superadmin:
+        return True
+    if not user.staff_member_id:
+        return False
+    return await has_permission(user.staff_member_id, module, action, db)

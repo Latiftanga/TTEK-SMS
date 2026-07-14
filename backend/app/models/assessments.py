@@ -185,3 +185,28 @@ class StudentBehaviourRecord(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedM
         UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
     )
     incident_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+class BehaviourAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Immutable log of every behaviour record create/delete, mirroring
+    ScoreAuditLog. behaviour_record_id is SET NULL (not CASCADE) on delete so
+    the log survives the record it documents.
+    """
+    __tablename__ = "behaviour_audit_log"
+
+    behaviour_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("student_behaviour_record.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(10), nullable=False)  # CREATE | DELETE
+    incident_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    incident_date: Mapped[date] = mapped_column(Date, nullable=False)
+    changed_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # set only for locked-term overrides
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
