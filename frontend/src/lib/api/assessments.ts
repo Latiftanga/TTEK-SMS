@@ -123,8 +123,13 @@ export const listScores = (assessmentId: string): Promise<Score[]> =>
 export const submitScores = (
   assessmentId: string,
   scores: { student_id: string; raw_score: number }[],
+  overrideReason?: string,
 ): Promise<Score[]> =>
-  api.post(`/assessments/${assessmentId}/scores`, { scores }).then(r => r.data);
+  api.post(`/assessments/${assessmentId}/scores`, { scores, override_reason: overrideReason }).then(r => r.data);
 
-export const approveScores = (assessmentId: string, scoreIds: string[]): Promise<Score[]> =>
-  api.post(`/assessments/${assessmentId}/scores/approve`, { score_ids: scoreIds }).then(r => r.data);
+export const approveScores = (
+  assessmentId: string,
+  scoreIds: string[],
+  overrideReason?: string,
+): Promise<Score[]> =>
+  api.post(`/assessments/${assessmentId}/scores/approve`, { score_ids: scoreIds, override_reason: overrideReason }).then(r => r.data);

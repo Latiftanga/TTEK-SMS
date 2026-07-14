@@ -51,6 +51,11 @@
     onSuccess: () => qc.invalidateQueries({ queryKey: ['academic-years'] }),
   });
 
+  const resultsLockMut = createMutation({
+    mutationFn: ({ id, on }: { id: string; on: boolean }) => updateTerm(id, { results_locked: on }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['academic-years'] }),
+  });
+
   let confirmTermId = $state<string | null>(null);
 
   function fmtDate(d: string) {
@@ -116,13 +121,22 @@
             {/if}
           </div>
           <p class="text-xs text-[var(--fg-muted)]">{fmtDate(term.start_date)} – {fmtDate(term.end_date)}</p>
-          {#if term.block_owing_students}
-            <span class="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400"
-              title={term.block_owing_students_set_at ? `Turned on ${fmtDate(term.block_owing_students_set_at)}` : undefined}>
-              <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
-              Fee gate on — owing students blocked
-            </span>
-          {/if}
+          <div class="mt-1 flex flex-wrap gap-1.5">
+            {#if term.block_owing_students}
+              <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400"
+                title={term.block_owing_students_set_at ? `Turned on ${fmtDate(term.block_owing_students_set_at)}` : undefined}>
+                <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                Fee gate on — owing students blocked
+              </span>
+            {/if}
+            {#if term.results_locked}
+              <span class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-950/30 dark:text-red-400"
+                title={term.results_locked_at ? `Locked ${fmtDate(term.results_locked_at)}` : undefined}>
+                <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                Results locked — scores &amp; behaviour records frozen
+              </span>
+            {/if}
+          </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           {#if !term.is_current}
@@ -140,6 +154,15 @@
               {term.block_owing_students ? 'text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30' : 'text-[var(--fg-muted)] opacity-0 group-hover:opacity-100 hover:bg-[var(--card)] hover:text-[var(--fg)]'}">
             <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
             Fee gate
+          </button>
+          <button
+            onclick={() => $resultsLockMut.mutate({ id: term.id, on: !term.results_locked })}
+            disabled={$resultsLockMut.isPending && $resultsLockMut.variables?.id === term.id}
+            title={term.results_locked ? 'Unlock — scores and behaviour records can be edited again' : 'Lock — freeze scores and behaviour records for this term (overridable with a reason by an approver)'}
+            class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition disabled:opacity-50
+              {term.results_locked ? 'text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30' : 'text-[var(--fg-muted)] opacity-0 group-hover:opacity-100 hover:bg-[var(--card)] hover:text-[var(--fg)]'}">
+            <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+            Results lock
           </button>
           <button
             onclick={() => { editingTermId = term.id; editTermForm = { name: term.name, start_date: term.start_date, end_date: term.end_date }; editTermError = ''; }}
