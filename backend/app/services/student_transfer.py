@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.school import School
 from app.models.students import Student, TransferRequest, TransferStatus
 from app.schemas.students import TransferRequestCreate, TransferRequestRead, TransferRequestReview
+from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
 from app.services.student_lifecycle import deactivate_student
 
@@ -132,6 +133,14 @@ async def review_transfer(
     if req.status in (TransferStatus.APPROVED, TransferStatus.REJECTED):
         school = await db.get(School, school_id)
         await sms_svc.notify_transfer_decision(
+            student_id=tr.student_id,
+            school_id=school_id,
+            school_short=(school.short_name or school.name) if school else "",
+            approved=req.status == TransferStatus.APPROVED,
+            entity_id=tr.id,
+            db=db,
+        )
+        await email_svc.notify_transfer_decision_email(
             student_id=tr.student_id,
             school_id=school_id,
             school_short=(school.short_name or school.name) if school else "",

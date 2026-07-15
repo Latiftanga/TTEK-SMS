@@ -12,6 +12,7 @@ from app.schemas.fees import (
     FeePaymentCreate, FeePaymentRead,
     InstalmentCreate, InstalmentRead,
 )
+from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
 
 
@@ -86,6 +87,16 @@ async def record_payment(
     )
 
     await sms_svc.notify_fee_receipt(
+        student_id=rec.student_id,
+        school_id=school_id,
+        school_short=(school.short_name or school.name) if school else "",
+        amount=req.amount_paid,
+        fee_type_name=fee_type_name,
+        balance=balance,
+        entity_id=payment.id,
+        db=db,
+    )
+    await email_svc.notify_fee_receipt_email(
         student_id=rec.student_id,
         school_id=school_id,
         school_short=(school.short_name or school.name) if school else "",

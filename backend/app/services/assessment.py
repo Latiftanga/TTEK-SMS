@@ -19,6 +19,7 @@ from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead, AssessmentUpdate,
     AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
 )
+from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
 
 
@@ -252,6 +253,15 @@ async def publish_assessment(
         )
         for sca in assignments:
             await sms_svc.notify_report_published(
+                student_id=sca.student_id,
+                school_id=school_id,
+                school_short=school.short_name or school.name,
+                school_code=school.school_code,
+                term_name=term.name,
+                entity_id=a.id,
+                db=db,
+            )
+            await email_svc.notify_report_published_email(
                 student_id=sca.student_id,
                 school_id=school_id,
                 school_short=school.short_name or school.name,

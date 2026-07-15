@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models.school import EmailProvider, SchoolOwnership, SchoolType, SmsProvider
+from app.models.school import EmailProvider, EmailStatus, SchoolOwnership, SchoolType, SmsProvider
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
@@ -252,9 +253,12 @@ class EmailLogRead(BaseModel):
     provider: EmailProvider
     recipient: str
     subject: str
-    status: str
+    status: EmailStatus
     error_message: str | None
     entity_type: str | None
-    sent_at: str
+    entity_id: uuid.UUID | None
+    sent_at: datetime
+
+    model_config = {"from_attributes": True}
 
     model_config = {"from_attributes": True}

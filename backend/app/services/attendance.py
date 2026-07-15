@@ -24,6 +24,7 @@ from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
     CalendarDayRead, StudentAbsenceSummary, TodayStatusRead,
 )
+from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
 
 _MARKABLE_TYPES = {DayType.SCHOOL_DAY, DayType.EXAM_DAY, DayType.HALF_DAY}
@@ -101,6 +102,14 @@ async def mark_attendance(
         for rec, mark in zip(saved, req.records):
             if mark.student_id in new_absent_ids:
                 await sms_svc.notify_attendance_absent(
+                    student_id=mark.student_id,
+                    school_id=school_id,
+                    school_short=school_short,
+                    absence_date=absence_date,
+                    entity_id=rec.id,
+                    db=db,
+                )
+                await email_svc.notify_attendance_absent_email(
                     student_id=mark.student_id,
                     school_id=school_id,
                     school_short=school_short,
