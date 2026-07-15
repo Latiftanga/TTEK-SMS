@@ -115,6 +115,7 @@ async def test_delete_behaviour_record_allowed_when_locked_with_reason_writes_au
         select(BehaviourAuditLog).where(
             BehaviourAuditLog.behaviour_record_id.is_(None),
             BehaviourAuditLog.action == "DELETE",
+            BehaviourAuditLog.student_id == student.id,
         )
     )
     assert log is not None
