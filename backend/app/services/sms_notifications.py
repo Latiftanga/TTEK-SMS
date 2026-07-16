@@ -10,6 +10,8 @@ NOTIFICATION TYPES
   notify_attendance_absent → guardian when a student is marked ABSENT
   notify_report_published  → guardian when an assessment is published
   notify_transfer_decision → guardian when a transfer request is approved/rejected
+  notify_staff_invite      → staff member with their invitation link
+  notify_portal_access     → student or guardian confirming their own new portal login
   send_manual              → admin-initiated message to specified phones
 
 RECIPIENT RESOLUTION
@@ -239,6 +241,38 @@ async def notify_staff_invite(
         )
         result = await driver.send(normalized, msg)
         await _log_result(result, normalized, msg, school_id, "STAFF_INVITE", invitation_id, db)
+        return result.success
+    except Exception:
+        return False
+
+
+async def notify_portal_access(
+    phone: str,
+    message: str,
+    school_id: uuid.UUID,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    db: AsyncSession,
+) -> bool:
+    """
+    SMS confirming a portal login was just granted — used for both the
+    student ADMISSION_ID portal (message goes to the primary guardian) and
+    the guardian PHONE portal (message goes to the guardian themselves).
+
+    Unlike the other notify_* functions this doesn't build its own message
+    template — the two callers have different content (admission number vs
+    phone-as-username) but identical send/log mechanics, so only that shared
+    part is centralised here.
+
+    Returns True if the SMS was sent successfully, False otherwise.
+    Fire-and-forget: never raises.
+    """
+    try:
+        driver = await _get_active_driver(school_id, db)
+        if not driver:
+            return False
+        result = await driver.send(phone, message)
+        await _log_result(result, phone, message, school_id, entity_type, entity_id, db)
         return result.success
     except Exception:
         return False

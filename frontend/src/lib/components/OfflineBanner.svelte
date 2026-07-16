@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { getPendingCount } from '$lib/offline/outbox';
   import { drainWriteOutbox } from '$lib/sync/drainer';
   import { listConflicts } from '$lib/api/sync';
+  import { isAuthenticated } from '$lib/stores/auth';
 
   let online        = $state(true);
   let draining      = $state(false);
@@ -14,6 +16,7 @@
   }
 
   async function checkConflicts() {
+    if (!get(isAuthenticated)) { conflictCount = 0; return; }
     try {
       const items = await listConflicts();
       conflictCount = items.length;

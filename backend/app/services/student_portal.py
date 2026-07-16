@@ -87,12 +87,15 @@ async def revoke_portal_access(
 
 
 async def _notify_guardian(student: Student, school_id: uuid.UUID, db: AsyncSession) -> bool:
+    """
+    NOTE: previously called sms_notifications.get_active_driver (never
+    existed — the function is named _get_active_driver) and _log_result with
+    the wrong argument order, so every call silently returned False via the
+    broad except below regardless of SMS config. Fixed to go through the
+    public notify_portal_access() helper instead of reaching into private
+    module internals directly.
+    """
     try:
-        from app.services.sms_notifications import get_active_driver, _log_result
-        driver = await get_active_driver(school_id, db)
-        if not driver:
-            return False
-
         sg = await db.scalar(
             select(StudentGuardian)
             .where(StudentGuardian.student_id == student.id, StudentGuardian.is_primary.is_(True))
@@ -113,8 +116,7 @@ async def _notify_guardian(student: Student, school_id: uuid.UUID, db: AsyncSess
             f"Login with admission number as username and password. "
             f"Please change the password after first login."
         )
-        result = await driver.send(guardian.phone, msg)
-        await _log_result(result, school_id, "student", student.id, db)
-        return result.success
+        from app.services.sms_notifications import notify_portal_access
+        return await notify_portal_access(guardian.phone, msg, school_id, "STUDENT_PORTAL", student.id, db)
     except Exception:
         return False

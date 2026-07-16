@@ -3,9 +3,11 @@ Student profile integration tests (CRUD, guardians, medical record).
 Run inside Docker: docker compose exec api pytest app/tests/test_students.py -v
 """
 import io
+import unittest.mock as mock
 import uuid
 from datetime import date
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from PIL import Image
@@ -15,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class
 from app.models.auth import LoginType, StaffPosition, User
-from app.models.school import School
+from app.models.school import School, SmsConfig, SmsProvider
 from app.models.students import StudentClassAssignment
 
 
@@ -485,6 +487,44 @@ async def test_grant_portal_access(client: AsyncClient, auth: dict, school: Scho
         "school_code": school.school_code, "password": "ADM001",
     })
     assert login.status_code == 200, login.text
+
+
+@pytest.mark.asyncio
+async def test_grant_portal_access_sends_sms_to_primary_guardian(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    """Regression test: student_portal.py's _notify_guardian previously
+    imported a function that doesn't exist (sms_notifications.get_active_driver
+    — the real name is _get_active_driver) and called _log_result with the
+    wrong argument order, so sms_sent was silently always False even with an
+    active provider and a primary guardian configured. Both were swallowed by
+    a broad except Exception. This drives the real path with a mocked HTTP
+    transport to prove sms_sent actually reflects a real send now."""
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Boateng",
+        "phone": "0244000001", "relation_type": "Father", "is_primary": True,
+    }, headers=auth)
+
+    db_session.add(SmsConfig(
+        school_id=school.id, provider=SmsProvider.ARKESEL,
+        api_key="test-arkesel-key", sender_id="TESTSCHOOL", is_active=True,
+    ))
+    await db_session.flush()
+
+    original_init = httpx.AsyncClient.__init__
+
+    class _MockTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return httpx.Response(200, json={"status": "ok"})
+
+    with mock.patch("httpx.AsyncClient.__init__", lambda self, **kw: original_init(
+        self, transport=_MockTransport(), **{k: v for k, v in kw.items() if k != "transport"}
+    )):
+        resp = await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+
+    assert resp.status_code == 201
+    assert resp.json()["sms_sent"] is True
 
 
 @pytest.mark.asyncio

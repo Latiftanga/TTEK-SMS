@@ -61,12 +61,22 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     --------------
     staff_member_id → links the user account to a StaffMember record (staff/admin)
     student_id      → links the user account to a Student record (student login)
-    Both are nullable; a user can be linked to at most one of these — never both.
+    guardian_id     → links the user account to a Guardian record (parent login,
+                       PHONE type — a guardian can be linked to multiple students
+                       via StudentGuardian, so this is a single account with
+                       multi-child access, unlike student_id's one-to-one)
+    All three are nullable; a user can be linked to at most one of these.
+
+    KNOWN LIMITATION: phone is globally unique across the whole platform (like
+    email), so a guardian with children at two different schools on this
+    platform cannot hold two separate guardian portal accounts under the same
+    phone number. Not solved — rare in practice, and the same constraint
+    already applies to staff PHONE accounts.
 
     INVARIANTS (enforced by DB check constraints)
     ---------------------------------------------
     - admission_id is non-null if and only if login_type = ADMISSION_ID
-    - A user cannot be both a staff member and a student simultaneously
+    - A user is linked to at most one of staff_member_id / student_id / guardian_id
     """
     __tablename__ = "user"
     __table_args__ = (
@@ -77,7 +87,9 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
             name="ck_user_admission_id_matches_login_type",
         ),
         CheckConstraint(
-            "NOT (staff_member_id IS NOT NULL AND student_id IS NOT NULL)",
+            "NOT (staff_member_id IS NOT NULL AND student_id IS NOT NULL)"
+            " AND NOT (staff_member_id IS NOT NULL AND guardian_id IS NOT NULL)"
+            " AND NOT (student_id IS NOT NULL AND guardian_id IS NOT NULL)",
             name="ck_user_single_identity",
         ),
     )
@@ -98,6 +110,9 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     )
     student_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("student.id", ondelete="SET NULL"), nullable=True
+    )
+    guardian_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("guardian.id", ondelete="SET NULL"), nullable=True
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
