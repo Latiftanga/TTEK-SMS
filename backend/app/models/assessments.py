@@ -30,7 +30,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy import String, Boolean, Integer, Date, DateTime, ForeignKey, Text, Numeric, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKey, SchoolScopedMixin
 
 
@@ -166,6 +166,28 @@ class ScoreAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     score: Mapped[Score] = relationship(back_populates="audit_logs")
+
+
+class AssessmentAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Immutable log of every Assessment field edit (name/max_score/due_date),
+    mirroring ScoreAuditLog/BehaviourAuditLog. assessment_id is SET NULL (not
+    CASCADE) on delete so the log survives the assessment it documents.
+    reason is set only for locked-term overrides.
+    """
+    __tablename__ = "assessment_audit_log"
+
+    assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessment.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    changed_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
+    )
+    old_values: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    new_values: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class StudentBehaviourRecord(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):

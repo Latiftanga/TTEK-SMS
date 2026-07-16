@@ -3,16 +3,23 @@ AssessmentType and Assessment CRUD.
 
 Assessment.is_published gates report card access (parent portal checks this).
 Publishing is one-way — there is no un-publish endpoint.
+
+Every field edit in update_assessment (name/max_score/due_date) is written to
+AssessmentAuditLog with an old/new value snapshot, mirroring ScoreAuditLog and
+BehaviourAuditLog. reason is only populated when the edit overrode a locked
+term (see core/permissions.py::check_term_lock_override).
 """
 from __future__ import annotations
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import check_term_lock_override
 from app.models.academic import AcademicTerm
-from app.models.assessments import Assessment, AssessmentType, Score
+from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score
 from app.models.school import School
 from app.models.students import StudentClassAssignment
 from app.schemas.assessments import (
@@ -173,7 +180,8 @@ async def get_assessment(
 
 
 async def update_assessment(
-    assessment_id: uuid.UUID, req: AssessmentUpdate, school_id: uuid.UUID, db: AsyncSession
+    assessment_id: uuid.UUID, req: AssessmentUpdate, school_id: uuid.UUID,
+    user_id: uuid.UUID, db: AsyncSession
 ) -> AssessmentRead:
     a = await db.scalar(
         select(Assessment).where(
@@ -184,6 +192,7 @@ async def update_assessment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
     if a.is_published:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot edit a published assessment.")
+    override_reason = await check_term_lock_override(a.academic_term_id, req.override_reason, user_id, db)
     if req.due_date is not None:
         term = await db.get(AcademicTerm, a.academic_term_id)
         if term and not (term.start_date <= req.due_date <= term.end_date):
@@ -200,12 +209,21 @@ async def update_assessment(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 f"Cannot reduce max score: existing score of {max_entered} would exceed it.",
             )
-    if req.name is not None:
-        a.name = req.name
-    if req.max_score is not None:
-        a.max_score = req.max_score
-    if req.due_date is not None:
-        a.due_date = req.due_date
+    old_values: dict[str, str | None] = {}
+    new_values: dict[str, str | None] = {}
+    for field, value in (("name", req.name), ("max_score", req.max_score), ("due_date", req.due_date)):
+        if value is None:
+            continue
+        old_values[field] = str(getattr(a, field)) if getattr(a, field) is not None else None
+        new_values[field] = str(value)
+        setattr(a, field, value)
+
+    if new_values:
+        db.add(AssessmentAuditLog(
+            school_id=school_id, assessment_id=a.id, changed_by_id=user_id,
+            old_values=old_values, new_values=new_values, reason=override_reason,
+            changed_at=datetime.now(timezone.utc),
+        ))
     await db.flush()
     return _assessment_read(a)
 
@@ -222,6 +240,13 @@ async def delete_assessment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
     if a.is_published:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot delete a published assessment.")
+    term = await db.get(AcademicTerm, a.academic_term_id)
+    if term and term.results_locked:
+        raise HTTPException(
+            status.HTTP_423_LOCKED,
+            "This term's results are locked. Unlock the term before deleting an assessment "
+            "— deleting one permanently removes its scores and their audit trail.",
+        )
     await db.delete(a)
     await db.flush()
 

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.academic import AcademicTerm, Class
-from app.models.assessments import Assessment, AssessmentType, Score, ScoreAuditLog
+from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score, ScoreAuditLog
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import School
 from app.models.students import Student
@@ -190,6 +190,83 @@ async def test_approve_scores_allowed_when_locked_with_reason(
     }, headers=auth)
     assert resp.status_code == 200
     assert resp.json()[0]["is_approved"] is True
+
+
+# ── Update / delete assessment ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_update_assessment_blocked_when_locked_without_reason(
+    client: AsyncClient, auth: dict, assessment: Assessment, academic_term: AcademicTerm,
+    db_session: AsyncSession,
+):
+    await _lock_term(client, auth, academic_term.id)
+    resp = await client.patch(f"/assessments/{assessment.id}", json={
+        "name": "Renamed while locked",
+    }, headers=auth)
+    assert resp.status_code == 423
+    log = await db_session.scalar(
+        select(AssessmentAuditLog).where(AssessmentAuditLog.assessment_id == assessment.id)
+    )
+    assert log is None
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_allowed_when_locked_with_reason(
+    client: AsyncClient, auth: dict, assessment: Assessment, academic_term: AcademicTerm,
+    db_session: AsyncSession,
+):
+    await _lock_term(client, auth, academic_term.id)
+    resp = await client.patch(f"/assessments/{assessment.id}", json={
+        "name": "Renamed with HOD approval",
+        "override_reason": "Corrected a typo in the assessment name after lock.",
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Renamed with HOD approval"
+    log = await db_session.scalar(
+        select(AssessmentAuditLog).where(AssessmentAuditLog.assessment_id == assessment.id)
+    )
+    assert log is not None
+    assert log.reason == "Corrected a typo in the assessment name after lock."
+    assert log.old_values["name"] == "Locked-Term Test"
+    assert log.new_values["name"] == "Renamed with HOD approval"
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_unlocked_writes_audit_log_without_reason(
+    client: AsyncClient, auth: dict, assessment: Assessment, db_session: AsyncSession,
+):
+    resp = await client.patch(f"/assessments/{assessment.id}", json={
+        "max_score": "80.00",
+    }, headers=auth)
+    assert resp.status_code == 200
+    log = await db_session.scalar(
+        select(AssessmentAuditLog).where(AssessmentAuditLog.assessment_id == assessment.id)
+    )
+    assert log is not None
+    assert log.reason is None
+    assert log.old_values["max_score"] == "100.00"
+    assert log.new_values["max_score"] == "80.00"
+
+
+@pytest.mark.asyncio
+async def test_delete_assessment_blocked_when_term_locked(
+    client: AsyncClient, auth: dict, assessment: Assessment, academic_term: AcademicTerm,
+    db_session: AsyncSession,
+):
+    await _lock_term(client, auth, academic_term.id)
+    resp = await client.delete(f"/assessments/{assessment.id}", headers=auth)
+    assert resp.status_code == 423
+    # No override path exists for delete — confirm it's still there.
+    still_there = await db_session.get(Assessment, assessment.id)
+    assert still_there is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_assessment_allowed_when_term_unlocked(
+    client: AsyncClient, auth: dict, assessment: Assessment,
+):
+    resp = await client.delete(f"/assessments/{assessment.id}", headers=auth)
+    assert resp.status_code == 204
 
 
 # ── Assessment due_date term bounds ────────────────────────────────────────────

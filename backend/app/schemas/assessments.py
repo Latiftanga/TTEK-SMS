@@ -99,6 +99,7 @@ class AssessmentUpdate(BaseModel):
     name: str | None = None
     max_score: Decimal | None = None
     due_date: date | None = None
+    override_reason: str | None = None
 
 
 # ── Assessment ────────────────────────────────────────────────────────────────

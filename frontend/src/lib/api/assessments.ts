@@ -106,8 +106,8 @@ export const createAssessment = (data: {
 
 export const updateAssessment = (id: string, data: {
   name?: string; max_score?: number; due_date?: string | null;
-}): Promise<Assessment> =>
-  api.patch(`/assessments/${id}`, data).then(r => r.data);
+}, overrideReason?: string): Promise<Assessment> =>
+  api.patch(`/assessments/${id}`, { ...data, override_reason: overrideReason }).then(r => r.data);
 
 export const deleteAssessment = (id: string): Promise<void> =>
   api.delete(`/assessments/${id}`).then(() => undefined);

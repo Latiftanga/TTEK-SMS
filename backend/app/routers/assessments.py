@@ -176,8 +176,8 @@ async def update_assessment(
     ids=Depends(require_permission("assessments", "approve_scores")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await assess_svc.update_assessment(assessment_id, req, school_id, db)
+    user_id, school_id = ids
+    return await assess_svc.update_assessment(assessment_id, req, school_id, user_id, db)
 
 
 @router.delete("/{assessment_id}", status_code=204)

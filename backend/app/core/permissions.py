@@ -250,3 +250,34 @@ async def user_has_permission(
     if not user.staff_member_id:
         return False
     return await has_permission(user.staff_member_id, module, action, db)
+
+
+async def check_term_lock_override(
+    academic_term_id: uuid.UUID,
+    requested_reason: str | None,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> str | None:
+    """
+    Enforce AcademicTerm.results_locked for a mutating action.
+
+    Returns None if the term isn't locked (nothing to record). Otherwise
+    returns the stripped override reason, raising 423 if the caller lacks
+    assessments.approve_scores or didn't supply one. Shared by
+    services/scoring.py (score submit/approve) and services/assessment.py
+    (assessment edit) so the lock is enforced identically everywhere.
+    """
+    from fastapi import HTTPException, status
+    from app.models.academic import AcademicTerm
+
+    term = await db.get(AcademicTerm, academic_term_id)
+    if not term or not term.results_locked:
+        return None
+    reason = (requested_reason or "").strip()
+    if not reason or not await user_has_permission(user_id, "assessments", "approve_scores", db):
+        raise HTTPException(
+            status.HTTP_423_LOCKED,
+            "This term's results are locked. A user with assessments.approve_scores "
+            "can override by supplying an override_reason.",
+        )
+    return reason

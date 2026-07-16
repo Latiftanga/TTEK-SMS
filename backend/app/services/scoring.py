@@ -26,8 +26,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import user_has_permission
-from app.models.academic import AcademicTerm
+from app.core.permissions import check_term_lock_override
 from app.models.assessments import Assessment, Score, ScoreAuditLog
 from app.models.students import Student
 from app.schemas.assessments import BulkScoreSubmit, ScoreApproveRequest, ScoreRead
@@ -36,30 +35,6 @@ from app.services.grading import resolve_grade
 
 def _to_read(s: Score) -> ScoreRead:
     return ScoreRead.model_validate(s)
-
-
-async def _term_lock_override_reason(
-    academic_term_id: uuid.UUID,
-    requested_reason: str | None,
-    user_id: uuid.UUID,
-    db: AsyncSession,
-) -> str | None:
-    """
-    None if the term isn't locked (nothing to record). Otherwise returns the
-    stripped override reason, raising 423 if the caller lacks
-    assessments.approve_scores or didn't supply one.
-    """
-    term = await db.get(AcademicTerm, academic_term_id)
-    if not term or not term.results_locked:
-        return None
-    reason = (requested_reason or "").strip()
-    if not reason or not await user_has_permission(user_id, "assessments", "approve_scores", db):
-        raise HTTPException(
-            status.HTTP_423_LOCKED,
-            "This term's results are locked. A user with assessments.approve_scores "
-            "can override by supplying an override_reason.",
-        )
-    return reason
 
 
 async def submit_scores(
@@ -81,7 +56,7 @@ async def submit_scores(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Cannot modify scores on a published assessment.",
         )
-    override_reason = await _term_lock_override_reason(
+    override_reason = await check_term_lock_override(
         assessment.academic_term_id, req.override_reason, user_id, db
     )
 
@@ -160,7 +135,7 @@ async def approve_scores(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Cannot approve scores on a published assessment.",
         )
-    await _term_lock_override_reason(
+    await check_term_lock_override(
         assessment.academic_term_id, req.override_reason, user_id, db
     )
 

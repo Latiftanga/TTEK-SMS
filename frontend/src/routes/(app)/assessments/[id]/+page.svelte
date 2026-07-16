@@ -77,7 +77,7 @@
   }
 
   // ── Term-lock override ────────────────────────────────────────────────────────
-  let lockOverride      = $state<'submit' | 'approve' | null>(null);
+  let lockOverride      = $state<'submit' | 'approve' | 'edit' | null>(null);
   let lockOverrideError = $state('');
 
   function detailOf(e: unknown): string | undefined {
@@ -89,7 +89,7 @@
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const submitMut = createMutation({
-    mutationFn: async (overrideReason?: string) => {
+    mutationFn: async (overrideReason: string | undefined) => {
       const a = $assessmentQ.data!;
       const entries = ($studentsQ.data ?? [])
         .filter(s => scoreInputs[s.id] != null && scoreInputs[s.id] !== '')
@@ -135,7 +135,7 @@
   });
 
   const approveMut = createMutation({
-    mutationFn: (overrideReason?: string) =>
+    mutationFn: (overrideReason: string | undefined) =>
       approveScores(assessmentId, ($scoresQ.data ?? []).filter(s => !s.is_approved).map(s => s.id), overrideReason),
     onSuccess: (approved) => {
       lockOverride = null; lockOverrideError = '';
@@ -163,19 +163,44 @@
     const a = $assessmentQ.data!;
     editForm = { name: a.name, maxScore: String(a.max_score), dueDate: a.due_date ?? '' };
     editErr = ''; editing = true;
+    // AssessmentActionsBar unmounts while editing — clear any armed confirm
+    // prompt so it doesn't silently reappear when editing is cancelled.
+    confirmDelete = false; confirmPublish = false;
   }
   const editMut = createMutation({
-    mutationFn: () => updateAssessment(assessmentId, { name: editForm.name.trim() || undefined, max_score: parseFloat(editForm.maxScore) || undefined, due_date: editForm.dueDate || null }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['assessment', assessmentId] }); editing = false; toast.success('Assessment updated.'); },
-    onError: (e: unknown) => { editErr = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not update.'; },
+    mutationFn: (overrideReason: string | undefined) => updateAssessment(assessmentId, {
+      name: editForm.name.trim() || undefined,
+      max_score: parseFloat(editForm.maxScore) || undefined,
+      due_date: editForm.dueDate || null,
+    }, overrideReason),
+    onSuccess: () => {
+      lockOverride = null; lockOverrideError = '';
+      qc.invalidateQueries({ queryKey: ['assessment', assessmentId] });
+      qc.invalidateQueries({ queryKey: ['assessments'] });
+      editing = false; toast.success('Assessment updated.');
+    },
+    onError: (e: unknown) => {
+      if (isLocked(e)) { lockOverride = 'edit'; lockOverrideError = detailOf(e) ?? 'This term is locked.'; return; }
+      editErr = detailOf(e) ?? 'Could not update.';
+    },
   });
 
   // ── Delete ────────────────────────────────────────────────────────────────────
   let confirmDelete = $state(false);
   const deleteMut = createMutation({
     mutationFn: () => deleteAssessment(assessmentId),
-    onSuccess: () => { goto('/assessments'); toast.success('Assessment deleted.'); },
-    onError: () => toast.error('Could not delete assessment.'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assessments'] });
+      goto('/assessments'); toast.success('Assessment deleted.');
+    },
+    onError: (e: unknown) => {
+      confirmDelete = false;
+      if (isLocked(e)) {
+        toast.error(detailOf(e) ?? "This term's results are locked — unlock the term first to delete this assessment.");
+        return;
+      }
+      toast.error('Could not delete assessment.');
+    },
   });
 
   $effect(() => setPageTitle($assessmentQ.data?.name ?? 'Assessment'));
@@ -206,7 +231,7 @@
         </div>
         {#if editErr}<p class="text-xs text-red-500">{editErr}</p>{/if}
         <div class="flex gap-2">
-          <button onclick={() => $editMut.mutate()} disabled={$editMut.isPending}
+          <button onclick={() => $editMut.mutate(undefined)} disabled={$editMut.isPending}
             class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90 transition" style="background:var(--brand)">
             {$editMut.isPending ? 'Saving…' : 'Save changes'}
           </button>
@@ -284,10 +309,11 @@
 <OverrideReasonModal
   open={lockOverride !== null}
   errorMessage={lockOverrideError}
-  isPending={lockOverride === 'submit' ? $submitMut.isPending : $approveMut.isPending}
+  isPending={lockOverride === 'submit' ? $submitMut.isPending : lockOverride === 'approve' ? $approveMut.isPending : $editMut.isPending}
   onSubmit={(reason) => {
     if (lockOverride === 'submit') $submitMut.mutate(reason);
     else if (lockOverride === 'approve') $approveMut.mutate(reason);
+    else if (lockOverride === 'edit') $editMut.mutate(reason);
   }}
   onCancel={() => { lockOverride = null; lockOverrideError = ''; }}
 />
