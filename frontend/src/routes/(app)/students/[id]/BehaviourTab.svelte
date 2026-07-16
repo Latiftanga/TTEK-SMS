@@ -61,7 +61,7 @@
   }
 
   const createMut = createMutation({
-    mutationFn: (overrideReason?: string) => createBehaviourRecord({
+    mutationFn: (overrideReason: string | undefined) => createBehaviourRecord({
       student_id: studentId, academic_term_id: termId,
       incident_type: cf.incident_type.trim(), description: cf.description.trim(),
       severity: cf.severity, action_taken: cf.action_taken.trim() || undefined,
@@ -91,7 +91,7 @@
   let deleteError = $state('');
 
   const deleteMut = createMutation({
-    mutationFn: (overrideReason?: string) => deleteBehaviourRecord(deleteTarget!.id, overrideReason),
+    mutationFn: (overrideReason: string | undefined) => deleteBehaviourRecord(deleteTarget!.id, overrideReason),
     onSuccess: () => {
       invalidateRecords(); deleteTarget = null; deleteOverrideNeeded = false; deleteError = '';
       toast.success('Incident deleted.');
