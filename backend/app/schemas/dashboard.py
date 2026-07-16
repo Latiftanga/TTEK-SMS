@@ -25,7 +25,7 @@ class TeacherDashboard(BaseModel):
     view: Literal["teacher"] = "teacher"
     greeting_name: str
     today_iso: str
-    my_class: ClassSnapshot | None
+    my_classes: list[ClassSnapshot]
     pending_score_assessments: int
 
 

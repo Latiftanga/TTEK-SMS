@@ -27,3 +27,21 @@ export const userRole = {
 export const isSchoolAdmin = derived(_view, $v => $v === 'admin');
 export const isApprover   = derived(_view, $v => $v === 'approver');
 export const isFinance     = derived(_view, $v => $v === 'finance');
+
+// Whether the current 'teacher' role holds at least one ClassTeacher
+// assignment this year, vs. a subject-only teacher — drives whether
+// class-teacher-only nav items (e.g. Report Cards) are shown. Distinct from
+// the role check above: only meaningful when userRole === 'teacher'.
+const CLASS_TEACHER_KEY = 'user_is_class_teacher';
+
+const _isClassTeacher = writable<boolean>(
+  browser ? localStorage.getItem(CLASS_TEACHER_KEY) === 'true' : false
+);
+
+export const isClassTeacher = {
+  subscribe: _isClassTeacher.subscribe,
+  set: (value: boolean) => {
+    _isClassTeacher.set(value);
+    if (browser) localStorage.setItem(CLASS_TEACHER_KEY, String(value));
+  },
+};

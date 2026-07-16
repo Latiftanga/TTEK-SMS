@@ -20,7 +20,7 @@ export interface TeacherDashboard {
   view: 'teacher';
   greeting_name: string;
   today_iso: string;
-  my_class: ClassSnapshot | null;
+  my_classes: ClassSnapshot[];
   pending_score_assessments: number;
 }
 

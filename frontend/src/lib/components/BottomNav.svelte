@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
-  import { userRole } from '$lib/stores/permissions';
+  import { userRole, isClassTeacher } from '$lib/stores/permissions';
   import { NAV_GROUPS, type NavItem, type NavRole, type SchoolType } from '$lib/nav';
 
   interface Props { onmore: () => void; }
@@ -24,16 +24,19 @@
     '/dashboard', '/attendance', '/assessments', '/fees', '/housing', '/reports', '/students',
   ]);
 
+  // Top-level items plus any nested child that carries its own icon — a child
+  // without an icon (e.g. Grading Scales) isn't meant for the tab bar, only
+  // reachable via "More" → the full sidebar.
   const ALL_TABS: Tab[] = NAV_GROUPS.flatMap(g => g.items)
-    .filter(i => MOBILE_HREFS.has(i.href))
-    .map(i => ({
-      href: i.href,
-      label: MOBILE_LABELS[i.href] ?? i.label,
-      icon: i.icon,
-      exact: i.exact,
-      roles: i.roles,
-      schoolTypes: i.schoolTypes,
-    }));
+    .flatMap((i): Tab[] => [
+      { href: i.href, label: i.label, icon: i.icon, exact: i.exact, roles: i.roles, schoolTypes: i.schoolTypes,
+        classTeacherOnly: i.classTeacherOnly },
+      ...(i.children ?? [])
+        .filter((c): c is typeof c & { icon: string } => !!c.icon)
+        .map(c => ({ href: c.href, label: c.label, icon: c.icon, roles: c.roles, schoolTypes: c.schoolTypes })),
+    ])
+    .filter(t => MOBILE_HREFS.has(t.href))
+    .map(t => ({ ...t, label: MOBILE_LABELS[t.href] ?? t.label }));
 
   // The 4 most useful tabs per role — in priority order.
   // Tabs not listed here bubble to the end and may end up behind "More".
@@ -54,10 +57,11 @@
     const role       = $userRole as NavRole | null;
     const isSuperadmin = $currentUser?.is_superadmin ?? false;
     const sType      = $school?.schoolType as SchoolType | undefined;
+    const classTeacherOk = isSuperadmin || $isClassTeacher;
     return ALL_TABS.filter(t => {
       const roleOk = isSuperadmin || !t.roles || (role !== null && t.roles.includes(role));
       const typeOk = !t.schoolTypes || !sType || t.schoolTypes.includes(sType);
-      return roleOk && typeOk;
+      return roleOk && typeOk && (!t.classTeacherOnly || classTeacherOk);
     });
   });
 

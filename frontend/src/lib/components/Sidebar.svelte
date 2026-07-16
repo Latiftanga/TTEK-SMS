@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
-  import { userRole } from '$lib/stores/permissions';
+  import { userRole, isClassTeacher } from '$lib/stores/permissions';
   import { NAV_GROUPS, IC, type NavRole, type SchoolType, type NavItem, type ChildNavItem } from '$lib/nav';
   import SidebarFooter from './SidebarFooter.svelte';
 
@@ -21,6 +21,7 @@
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
   const role         = $derived($userRole as NavRole | null);
   const schoolType   = $derived($school?.schoolType as SchoolType | undefined);
+  const classTeacher = $derived($isClassTeacher);
 
   function canSee(roles: NavRole[] | undefined): boolean {
     if (isSuperadmin || !roles) return true;
@@ -33,12 +34,17 @@
     return types.includes(schoolType);
   }
 
+  function canSeeClassTeacherOnly(flag: boolean | undefined): boolean {
+    if (isSuperadmin || !flag) return true;
+    return classTeacher;
+  }
+
   const visibleGroups = $derived(
     NAV_GROUPS
       .map(g => ({
         ...g,
         items: g.items
-          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes))
+          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes) && canSeeClassTeacherOnly(i.classTeacherOnly))
           .map(i => ({
             ...i,
             children: i.children?.filter(c => canSee(c.roles) && canSeeType(c.schoolTypes)),
@@ -181,7 +187,7 @@
       {#if group.heading}
         {#if !collapsed}
           <div class="px-3 pb-1 {gi > 0 ? 'pt-5' : 'pt-3'}">
-            <p class="text-[9.5px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
+            <p class="text-[11px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
               {group.heading}
             </p>
           </div>

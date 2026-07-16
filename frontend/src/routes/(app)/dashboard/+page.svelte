@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { getDashboard } from '$lib/api/dashboard';
-  import { userRole } from '$lib/stores/permissions';
+  import { userRole, isClassTeacher } from '$lib/stores/permissions';
   import SkeletonCard from '$lib/components/SkeletonCard.svelte';
   import TeacherView      from './TeacherView.svelte';
   import AdminView        from './AdminView.svelte';
@@ -20,7 +20,10 @@
 
   // Populate the permissions store so the sidebar can adapt
   $effect(() => {
-    if ($query.data) userRole.set($query.data.view);
+    if ($query.data) {
+      userRole.set($query.data.view);
+      isClassTeacher.set($query.data.view === 'teacher' && $query.data.my_classes.length > 0);
+    }
   });
 </script>
 

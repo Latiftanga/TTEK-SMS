@@ -12,12 +12,27 @@
     weekday: 'long', day: 'numeric', month: 'long',
   }));
 
+  // A class teacher can hold more than one class — aggregate across all of them
+  // for the header badge, task list, and stat row; the hero section still shows
+  // one card per class.
+  const hasClasses     = $derived(data.my_classes.length > 0);
+  const multipleClasses = $derived(data.my_classes.length > 1);
+  const totalStudents  = $derived(data.my_classes.reduce((n, c) => n + c.student_count, 0));
+  const totalAbsent    = $derived(data.my_classes.reduce((n, c) => n + c.absent_today, 0));
+  const allMarked      = $derived(hasClasses && data.my_classes.every(c => c.attendance_marked_today));
+
+  const absentStudents = $derived(
+    data.my_classes
+      .flatMap(c => c.absent_students.map(s => ({ ...s, className: c.name })))
+      .slice(0, 8)
+  );
+
   const tasks = $derived.by(() => [
     {
       href: '/attendance',
       label: 'Mark Attendance',
-      badge: data.my_class?.attendance_marked_today ? 'Done today' : 'Not yet marked',
-      urgent: !data.my_class?.attendance_marked_today,
+      badge: allMarked ? 'Done today' : 'Not yet marked',
+      urgent: !allMarked,
     },
     {
       href: '/assessments',
@@ -25,7 +40,7 @@
       badge: data.pending_score_assessments > 0 ? `${data.pending_score_assessments} pending` : 'No pending',
       urgent: data.pending_score_assessments > 0,
     },
-    { href: '/students', label: 'My Students', badge: `${data.my_class?.student_count ?? 0} enrolled`, urgent: false },
+    { href: '/students', label: 'My Students', badge: `${totalStudents} enrolled`, urgent: false },
     { href: '/reports',  label: 'Report Cards', badge: 'View & download', urgent: false },
   ]);
 
@@ -42,84 +57,92 @@
     <h1 class="text-2xl font-bold text-[var(--fg)]">{salutation}, {data.greeting_name.split(' ')[0]}.</h1>
     <p class="mt-0.5 text-sm text-[var(--fg-muted)]">{todayLabel}</p>
   </div>
-  {#if (data.my_class?.absent_today ?? 0) > 0}
+  {#if totalAbsent > 0}
     <div class="flex items-center gap-1.5 rounded-full border border-red-200 dark:border-red-800
                 bg-red-50 dark:bg-red-950/40 px-3 py-1.5 text-xs font-semibold
                 text-red-600 dark:text-red-400">
       <span class="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse"></span>
-      {data.my_class?.absent_today} absent
+      {totalAbsent} absent
     </div>
   {/if}
 </div>
 
-<!-- Two-column on xl: left = class + stats, right = tasks + absences -->
+<!-- Two-column on xl: left = classes + stats, right = tasks + absences -->
 <div class="grid grid-cols-1 gap-5 xl:grid-cols-[3fr_2fr]">
 
   <!-- LEFT COLUMN -->
   <div class="space-y-5">
 
-    <!-- Class hero card -->
-    {#if data.my_class}
-      {@const cls = data.my_class}
-      {@const C = 2 * Math.PI * 30}
-      {@const pct = cls.attendance_marked_today && cls.student_count > 0
-        ? Math.round((cls.present_today / cls.student_count) * 100) : 0}
-      {@const low = cls.attendance_marked_today && pct < 75}
-
-      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-        <p class="mb-4 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Your Class</p>
-        <div class="flex items-center gap-5">
-          <div class="relative flex-shrink-0">
-            <svg class="w-20 h-20" viewBox="0 0 80 80">
-              <circle cx="40" cy="40" r="30" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="6"/>
-              <circle cx="40" cy="40" r="30" fill="none"
-                stroke={!cls.attendance_marked_today ? '#d1d5db' : low ? '#f59e0b' : 'var(--brand)'}
-                stroke-width="6" stroke-linecap="round"
-                stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - pct / 100)}"
-                transform="rotate(-90 40 40)"
-                style="transition: stroke-dashoffset 800ms cubic-bezier(0.4,0,0.2,1)"/>
-            </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center">
-              <span class="text-lg font-bold text-[var(--fg)]">
-                {cls.attendance_marked_today ? `${pct}%` : '—'}
-              </span>
-            </div>
-          </div>
-          <div class="min-w-0 flex-1">
-            <h2 class="text-xl font-bold text-[var(--fg)] truncate">{cls.name}</h2>
-            <p class="text-sm text-[var(--fg-muted)]">{cls.student_count} students enrolled</p>
-            <div class="mt-2.5 flex flex-wrap gap-2">
-              {#if cls.attendance_marked_today}
-                <span class="inline-flex items-center gap-1 rounded-full bg-green-600 px-2.5 py-0.5 text-[11px] font-semibold text-white dark:bg-green-700">
-                  <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                  {cls.present_today} present
-                </span>
-                {#if cls.absent_today > 0}
-                  <span class="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400">
-                    {cls.absent_today} absent
-                  </span>
-                {/if}
-              {:else}
-                <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-                  <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                  Not yet marked
-                </span>
-              {/if}
-            </div>
-          </div>
-        </div>
-        {#if !cls.attendance_marked_today}
-          <a href="/attendance"
-             class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition active:scale-[0.99] hover:opacity-90"
-             style="background-color: var(--brand)">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-            </svg>
-            Mark attendance now
-          </a>
+    <!-- Class hero card(s) -->
+    {#if hasClasses}
+      <div class="space-y-3">
+        {#if multipleClasses}
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Your Classes</p>
         {/if}
+        {#each data.my_classes as cls (cls.id)}
+          {@const C = 2 * Math.PI * 30}
+          {@const pct = cls.attendance_marked_today && cls.student_count > 0
+            ? Math.round((cls.present_today / cls.student_count) * 100) : 0}
+          {@const low = cls.attendance_marked_today && pct < 75}
+
+          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+            {#if !multipleClasses}
+              <p class="mb-4 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Your Class</p>
+            {/if}
+            <div class="flex items-center gap-5">
+              <div class="relative flex-shrink-0">
+                <svg class="w-20 h-20" viewBox="0 0 80 80">
+                  <circle cx="40" cy="40" r="30" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="6"/>
+                  <circle cx="40" cy="40" r="30" fill="none"
+                    stroke={!cls.attendance_marked_today ? '#d1d5db' : low ? '#f59e0b' : 'var(--brand)'}
+                    stroke-width="6" stroke-linecap="round"
+                    stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - pct / 100)}"
+                    transform="rotate(-90 40 40)"
+                    style="transition: stroke-dashoffset 800ms cubic-bezier(0.4,0,0.2,1)"/>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="text-lg font-bold text-[var(--fg)]">
+                    {cls.attendance_marked_today ? `${pct}%` : '—'}
+                  </span>
+                </div>
+              </div>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-xl font-bold text-[var(--fg)] truncate">{cls.name}</h2>
+                <p class="text-sm text-[var(--fg-muted)]">{cls.student_count} students enrolled</p>
+                <div class="mt-2.5 flex flex-wrap gap-2">
+                  {#if cls.attendance_marked_today}
+                    <span class="inline-flex items-center gap-1 rounded-full bg-green-600 px-2.5 py-0.5 text-[11px] font-semibold text-white dark:bg-green-700">
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                      {cls.present_today} present
+                    </span>
+                    {#if cls.absent_today > 0}
+                      <span class="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400">
+                        {cls.absent_today} absent
+                      </span>
+                    {/if}
+                  {:else}
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                      Not yet marked
+                    </span>
+                  {/if}
+                </div>
+              </div>
+            </div>
+            {#if !cls.attendance_marked_today}
+              <a href="/attendance"
+                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition active:scale-[0.99] hover:opacity-90"
+                 style="background-color: var(--brand)">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                </svg>
+                Mark attendance now
+              </a>
+            {/if}
+          </div>
+        {/each}
       </div>
     {:else}
       <div class="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center text-sm text-[var(--fg-muted)]">
@@ -133,11 +156,11 @@
         iconPath={icons.pencil}
         color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
         href="/assessments" alert={data.pending_score_assessments > 0} />
-      <StatCard label="Absent Today" value={data.my_class?.absent_today ?? 0}
+      <StatCard label="Absent Today" value={totalAbsent}
         iconPath={icons.userMinus}
         color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"
-        href="/attendance" alert={(data.my_class?.absent_today ?? 0) > 0} />
-      <StatCard label="Class Size" value={data.my_class?.student_count ?? 0}
+        href="/attendance" alert={totalAbsent > 0} />
+      <StatCard label="Class Size" value={totalStudents}
         iconPath={icons.users}
         color="bg-indigo-50 dark:bg-indigo-950/40" iconColor="text-indigo-600 dark:text-indigo-400"
         href="/students" />
@@ -177,20 +200,22 @@
     </div>
 
     <!-- Absent students -->
-    {#if (data.my_class?.absent_students.length ?? 0) > 0}
+    {#if absentStudents.length > 0}
       <div>
         <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
-          Absent today · {data.my_class!.absent_students.length}
+          Absent today · {totalAbsent}
         </p>
         <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
-          {#each data.my_class!.absent_students as s}
+          {#each absentStudents as s}
             <div class="flex items-center gap-3.5 px-5 py-3">
               <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/50 text-[11px] font-bold text-red-600 dark:text-red-400">
                 {s.name.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()}
               </span>
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-medium text-[var(--fg)]">{s.name}</p>
-                <p class="text-[11px] text-[var(--fg-muted)]">{s.admission_number}</p>
+                <p class="text-[11px] text-[var(--fg-muted)]">
+                  {s.admission_number}{multipleClasses ? ` · ${s.className}` : ''}
+                </p>
               </div>
             </div>
           {/each}

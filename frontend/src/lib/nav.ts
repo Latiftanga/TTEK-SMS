@@ -13,6 +13,7 @@ export interface ChildNavItem {
   label: string;
   roles?: NavRole[];
   schoolTypes?: SchoolType[];
+  icon?: string;   // only needed if this child should also be eligible for BottomNav's mobile tab bar
 }
 
 export interface NavItem {
@@ -22,6 +23,7 @@ export interface NavItem {
   exact?: boolean;
   roles?: NavRole[];
   schoolTypes?: SchoolType[];
+  classTeacherOnly?: boolean;   // requires isClassTeacher, on top of roles — see Sidebar/BottomNav
   children?: ChildNavItem[];
 }
 
@@ -63,13 +65,21 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
       { href: '/attendance',  label: 'Attendance',    icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
       {
+        // Teachers can't see either config child below, so for them Report Cards
+        // would be the only item in the submenu — an extra click with no payoff.
+        // Nested here for admin/approver (who get real value from 3 children);
+        // duplicated as a plain top-level link below for teacher only.
         href: '/assessments', label: 'Assessments', icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
         children: [
-          { href: '/assessments/scales', label: 'Grading Scales',   roles: ['admin', 'approver'] },
-          { href: '/assessments/types',  label: 'Assessment Types', roles: ['admin', 'approver'] },
+          { href: '/assessments/types',   label: 'Assessment Types', roles: ['admin', 'approver'] },
+          { href: '/assessments/scales',  label: 'Grading Scales',   roles: ['admin', 'approver'] },
+          { href: '/reports',             label: 'Report Cards',     roles: ['admin', 'approver'], icon: IC.reports },
         ],
       },
-      { href: '/reports',     label: 'Report Cards',  icon: IC.reports,     roles: ['teacher', 'admin', 'approver'] },
+      // Subject-only teachers (no ClassTeacher assignment) have no real need for
+      // this — report cards are the class teacher's responsibility to review/hand
+      // out. classTeacherOnly is on top of roles: ['teacher'] below.
+      { href: '/reports',     label: 'Report Cards', icon: IC.reports,     roles: ['teacher'], classTeacherOnly: true },
       { href: '/fees',        label: 'Fees',          icon: IC.fees,        roles: ['finance', 'admin'] },
       { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
         schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
