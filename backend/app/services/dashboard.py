@@ -16,10 +16,10 @@ from app.models.staff import StaffMember
 from app.schemas.dashboard import (
     ApproverDashboard,
     DashboardData,
-    HousemasterDashboard,
     TeacherDashboard,
 )
 from app.services.dashboard_admin import admin_view, finance_view
+from app.services.dashboard_housemaster import housemaster_view
 from app.services.dashboard_teacher import teacher_view
 
 
@@ -58,67 +58,6 @@ async def _approver_view(
     )
 
 
-async def _housemaster_view(
-    school_id: uuid.UUID,
-    staff_member_id: uuid.UUID,
-    greeting_name: str,
-    db: AsyncSession,
-) -> HousemasterDashboard:
-    from app.models.housing import Exeat, ExeatStatus, ExeatType, House, HouseMaster, StudentHouseAssignment
-
-    hm = await db.scalar(
-        select(HouseMaster).where(
-            HouseMaster.staff_member_id == staff_member_id,
-            HouseMaster.school_id == school_id,
-            HouseMaster.is_active.is_(True),
-        )
-    )
-    if not hm:
-        return HousemasterDashboard(greeting_name=greeting_name)
-
-    house = await db.get(House, hm.house_id)
-
-    total_residents = await db.scalar(
-        select(func.count(StudentHouseAssignment.id)).where(
-            StudentHouseAssignment.house_id == hm.house_id,
-            StudentHouseAssignment.school_id == school_id,
-            StudentHouseAssignment.vacated_at.is_(None),
-        )
-    ) or 0
-
-    active_students = (
-        select(StudentHouseAssignment.student_id).where(
-            StudentHouseAssignment.house_id == hm.house_id,
-            StudentHouseAssignment.school_id == school_id,
-            StudentHouseAssignment.vacated_at.is_(None),
-        )
-    )
-    pending_exeats = await db.scalar(
-        select(func.count(Exeat.id)).where(
-            Exeat.school_id == school_id,
-            Exeat.status == ExeatStatus.PENDING,
-            Exeat.student_id.in_(active_students),
-        )
-    ) or 0
-    off_campus = await db.scalar(
-        select(func.count(Exeat.id)).where(
-            Exeat.school_id == school_id,
-            Exeat.status == ExeatStatus.APPROVED,
-            Exeat.exeat_type == ExeatType.EXTERNAL,
-            Exeat.student_id.in_(active_students),
-        )
-    ) or 0
-
-    return HousemasterDashboard(
-        greeting_name=greeting_name,
-        house_id=hm.house_id,
-        house_name=house.name if house else None,
-        total_residents=total_residents,
-        pending_exeats=pending_exeats,
-        off_campus_count=off_campus,
-    )
-
-
 async def get_dashboard(
     user_id: uuid.UUID,
     school_id: uuid.UUID,
@@ -148,5 +87,5 @@ async def get_dashboard(
     if perms.get("assessments.approve_scores"):
         return await _approver_view(school_id, greeting_name, db)
     if perms.get("housing.manage"):
-        return await _housemaster_view(school_id, user.staff_member_id, greeting_name, db)
+        return await housemaster_view(school_id, user.staff_member_id, greeting_name, db)
     return await teacher_view(school_id, user.staff_member_id, greeting_name, db)

@@ -64,14 +64,18 @@ export interface FinanceDashboard {
   outstanding_students: number;
 }
 
-export interface HousemasterDashboard {
-  view: 'housemaster';
-  greeting_name: string;
-  house_id: string | null;
-  house_name: string | null;
+export interface HouseSnapshot {
+  id: string;
+  name: string;
   total_residents: number;
   pending_exeats: number;
   off_campus_count: number;
+}
+
+export interface HousemasterDashboard {
+  view: 'housemaster';
+  greeting_name: string;
+  my_houses: HouseSnapshot[];
 }
 
 export type DashboardData = TeacherDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard | HousemasterDashboard;

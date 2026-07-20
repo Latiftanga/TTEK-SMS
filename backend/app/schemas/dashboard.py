@@ -69,14 +69,18 @@ class FinanceDashboard(BaseModel):
     outstanding_students: int
 
 
+class HouseSnapshot(BaseModel):
+    id: uuid.UUID
+    name: str
+    total_residents: int
+    pending_exeats: int
+    off_campus_count: int
+
+
 class HousemasterDashboard(BaseModel):
     view: Literal["housemaster"] = "housemaster"
     greeting_name: str
-    house_id: uuid.UUID | None = None
-    house_name: str | None = None
-    total_residents: int = 0
-    pending_exeats: int = 0
-    off_campus_count: int = 0
+    my_houses: list[HouseSnapshot] = []
 
 
 DashboardData = Annotated[
