@@ -23,7 +23,9 @@
   .milestone-not-yet { color: #dc2626; }
   .footer { margin-top: 20px; display: flex; gap: 30px; }
   .sig-line { flex: 1; border-top: 1px solid #555; padding-top: 4px; font-size: 8pt; color: #555; text-align: center; }
-  .qr-block { text-align: right; font-size: 7pt; color: #888; margin-top: 6px; }
+  .qr-block { text-align: right; margin-top: 6px; }
+  .qr-block img { width: 60px; height: 60px; }
+  .qr-block p { font-size: 7pt; color: #888; }
 </style>
 </head>
 <body>
@@ -84,7 +86,10 @@
   <div class="sig-line">Parent / Guardian</div>
 </div>
 
-<div class="qr-block">Verify at: /verify/{{ qr_token }}</div>
+<div class="qr-block">
+  <img src="{{ qr_image }}" alt="Verification QR code">
+  <p>Verify at: /verify/{{ qr_token }}</p>
+</div>
 
 </body>
 </html>

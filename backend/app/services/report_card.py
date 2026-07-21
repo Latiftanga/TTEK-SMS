@@ -19,7 +19,7 @@ from app.models.attendance import AttendanceRecord, SchoolCalendar
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
-from app.services.qr import generate_token
+from app.services.qr import generate_qr_image, generate_token
 
 
 def _class_name(cls: Class, programme_name: str | None) -> str:
@@ -265,6 +265,8 @@ async def assemble(
     if school.logo_path:
         logo_url = f"/uploads/{school.logo_path}"
 
+    qr_token = generate_token(enrollment_id, school_id)
+
     return {
         "enrollment_id": str(enrollment_id),
         "student_name": f"{student.first_name} {student.last_name}",
@@ -292,6 +294,7 @@ async def assemble(
             }
             for b in behaviour
         ],
-        "qr_token": generate_token(enrollment_id, school_id),
+        "qr_token": qr_token,
+        "qr_image": generate_qr_image(qr_token),
         "format": format,
     }

@@ -36,7 +36,9 @@
 
   .footer { width: 100%; border-collapse: collapse; margin-top: 20px; }
   .footer td { border-top: 1px solid #555; padding-top: 4px; font-size: 8pt; color: #555; text-align: center; }
-  .qr { text-align: right; font-size: 7pt; color: #888; margin-top: 6px; }
+  .qr { text-align: right; margin-top: 6px; }
+  .qr img { width: 60px; height: 60px; }
+  .qr p { font-size: 7pt; color: #888; }
 </style>
 </head>
 <body>
@@ -117,7 +119,10 @@
   </tr>
 </table>
 
-<p class="qr">Verify: /verify/{{ qr_token }}</p>
+<div class="qr">
+  <img src="{{ qr_image }}" alt="Verification QR code">
+  <p>Verify: /verify/{{ qr_token }}</p>
+</div>
 
 </body>
 </html>
