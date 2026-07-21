@@ -120,8 +120,8 @@ async def assessment_type(db_session: AsyncSession, school) -> AssessmentType:
 
 
 @pytest.fixture
-async def subject(db_session: AsyncSession, school):
-    from app.models.academic import SubjectCatalogue, SubjectType, Subject, SchoolLevel
+async def subject(db_session: AsyncSession, school, school_class: Class):
+    from app.models.academic import ClassSubject, SubjectCatalogue, SubjectType, Subject, SchoolLevel
     cat = SubjectCatalogue(
         name="Mathematics", code="MATH", subject_type=SubjectType.CORE,
         level=SchoolLevel.SHS,
@@ -130,6 +130,11 @@ async def subject(db_session: AsyncSession, school):
     await db_session.flush()
     subj = Subject(school_id=school.id, catalogue_id=cat.id, code="MATH", name="Mathematics", is_active=True)
     db_session.add(subj)
+    await db_session.flush()
+    # Assessments require subject_id to be an active ClassSubject on class_id
+    # (services/subject_roster.py::class_subject_exists) — wire it up here so
+    # every test using `subject` + `school_class` together gets a valid pair.
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))
     await db_session.flush()
     return subj
 

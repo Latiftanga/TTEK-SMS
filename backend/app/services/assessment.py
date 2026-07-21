@@ -1,8 +1,14 @@
 """
-AssessmentType and Assessment CRUD.
+Assessment CRUD. AssessmentType CRUD lives in services/assessment_type.py.
 
 Assessment.is_published gates report card access (parent portal checks this).
 Publishing is one-way — there is no un-publish endpoint.
+
+create_assessment requires subject_id to already be an active ClassSubject on
+class_id (services/subject_roster.py) — an assessment can't be created for a
+subject the class was never assigned, which is also what stops
+subject_roster.py from silently treating every class member as eligible for
+a subject that doesn't belong to their curriculum at all.
 
 Every field edit in update_assessment (name/max_score/due_date) is written to
 AssessmentAuditLog with an old/new value snapshot, mirroring ScoreAuditLog and
@@ -22,91 +28,10 @@ from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score
 from app.models.school import School
 from app.models.students import StudentClassAssignment
-from app.schemas.assessments import (
-    AssessmentCreate, AssessmentRead, AssessmentUpdate,
-    AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
-)
+from app.schemas.assessments import AssessmentCreate, AssessmentRead, AssessmentUpdate
 from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
-
-
-# ── AssessmentType ────────────────────────────────────────────────────────────
-
-def _type_read(t: AssessmentType) -> AssessmentTypeRead:
-    return AssessmentTypeRead.model_validate(t)
-
-
-async def create_assessment_type(
-    req: AssessmentTypeCreate, school_id: uuid.UUID, db: AsyncSession
-) -> AssessmentTypeRead:
-    existing = await db.scalar(
-        select(AssessmentType).where(
-            AssessmentType.school_id == school_id,
-            (AssessmentType.code == req.code) | (AssessmentType.name == req.name),
-        )
-    )
-    if existing:
-        field = "code" if existing.code == req.code else "name"
-        value = req.code if field == "code" else req.name
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"Assessment type with {field} '{value}' already exists.",
-        )
-    t = AssessmentType(
-        school_id=school_id,
-        name=req.name,
-        code=req.code,
-        weight=req.weight,
-    )
-    db.add(t)
-    await db.flush()
-    return _type_read(t)
-
-
-async def update_assessment_type(
-    type_id: uuid.UUID, req: AssessmentTypeUpdate, school_id: uuid.UUID, db: AsyncSession
-) -> AssessmentTypeRead:
-    t = await db.scalar(
-        select(AssessmentType).where(
-            AssessmentType.id == type_id, AssessmentType.school_id == school_id
-        )
-    )
-    if not t:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment type not found.")
-    if req.name is not None or req.code is not None:
-        conflict = await db.scalar(
-            select(AssessmentType).where(
-                AssessmentType.school_id == school_id,
-                AssessmentType.id != type_id,
-                (AssessmentType.name == req.name) | (AssessmentType.code == req.code),
-            )
-        )
-        if conflict:
-            field = "name" if conflict.name == req.name else "code"
-            value = req.name if field == "name" else req.code
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                f"Assessment type with {field} '{value}' already exists.",
-            )
-    if req.name is not None:
-        t.name = req.name
-    if req.code is not None:
-        t.code = req.code
-    if req.weight is not None:
-        t.weight = req.weight
-    await db.flush()
-    return _type_read(t)
-
-
-async def list_assessment_types(
-    school_id: uuid.UUID, db: AsyncSession
-) -> list[AssessmentTypeRead]:
-    rows = await db.scalars(
-        select(AssessmentType)
-        .where(AssessmentType.school_id == school_id, AssessmentType.is_active.is_(True))
-        .order_by(AssessmentType.name)
-    )
-    return [_type_read(t) for t in rows]
+from app.services.subject_roster import class_subject_exists
 
 
 # ── Assessment ────────────────────────────────────────────────────────────────
@@ -133,6 +58,11 @@ async def create_assessment(
     )
     if not term:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Academic term not found.")
+    if not await class_subject_exists(req.class_id, req.subject_id, school_id, db):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "This subject is not assigned to the selected class.",
+        )
     if req.due_date and not (term.start_date <= req.due_date <= term.end_date):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

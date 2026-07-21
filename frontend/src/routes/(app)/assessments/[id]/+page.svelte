@@ -5,12 +5,11 @@
   import { goto } from '$app/navigation';
   import { get } from 'svelte/store';
   import {
-    getAssessment, listScores, submitScores, approveScores,
+    getAssessment, getAssessmentRoster, listScores, submitScores, approveScores,
     publishAssessment, updateAssessment, deleteAssessment,
     listAssessmentTypes, type Score,
   } from '$lib/api/assessments';
   import { listSubjects, listAllTerms } from '$lib/api/academic';
-  import { listStudents } from '$lib/api/students';
   import { userRole } from '$lib/stores/permissions';
   import { auth } from '$lib/stores/auth';
   import { queueWrite } from '$lib/offline/outbox';
@@ -36,15 +35,12 @@
     ($termsQ.data ?? []).find(t => t.id === $assessmentQ.data?.academic_term_id)?.results_locked ?? false
   );
 
-  const studentsQ = reactiveQuery(() => {
-    const cid = $assessmentQ.data?.class_id ?? '';
-    return {
-      queryKey: ['students-for-class', cid] as const,
-      queryFn:  () => listStudents({ class_id: cid }),
-      enabled:  !!cid,
-      staleTime: 60_000,
-    };
-  });
+  const studentsQ = reactiveQuery(() => ({
+    queryKey: ['assessment-roster', assessmentId] as const,
+    queryFn:  () => getAssessmentRoster(assessmentId),
+    enabled:  !!$assessmentQ.data,
+    staleTime: 60_000,
+  }));
 
   const subjectName = (id: string) => ($subjectsQ.data ?? []).find(s => s.id === id)?.name ?? '—';
   const typeName    = (id: string) => ($typesQ.data    ?? []).find(t => t.id === id)?.name ?? '—';

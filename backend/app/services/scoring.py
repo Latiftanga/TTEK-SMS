@@ -17,6 +17,13 @@ independent of each Assessment's own is_published flag. A caller who holds
 assessments.approve_scores can still push a change through by supplying a
 non-blank override_reason, which is written to ScoreAuditLog.reason. Without
 that permission + reason, a locked term rejects the write with 423.
+
+SUBJECT ELIGIBILITY
+--------------------
+submit_scores rejects any student not registered for the assessment's subject
+this term (services/subject_roster.py) — this is what stops a French
+assessment from silently accepting a score for a student actually registered
+for Literature in the same class.
 """
 from __future__ import annotations
 import uuid
@@ -31,6 +38,7 @@ from app.models.assessments import Assessment, Score, ScoreAuditLog
 from app.models.students import Student
 from app.schemas.assessments import BulkScoreSubmit, ScoreApproveRequest, ScoreRead
 from app.services.grading import resolve_grade
+from app.services.subject_roster import filter_eligible_for_subject
 
 
 def _to_read(s: Score) -> ScoreRead:
@@ -60,6 +68,25 @@ async def submit_scores(
         assessment.academic_term_id, req.override_reason, user_id, db
     )
 
+    # Every submitted student must be registered for this subject this term —
+    # see services/subject_roster.py for what "registered" means (falls back
+    # to eligible when no registration data exists, so schools that never use
+    # subject registration are unaffected).
+    student_ids = [entry.student_id for entry in req.scores]
+    eligible_ids = await filter_eligible_for_subject(
+        student_ids, assessment.academic_term_id, assessment.subject_id, school_id, db,
+    )
+    ineligible_ids = [sid for sid in student_ids if sid not in eligible_ids]
+    if ineligible_ids:
+        ineligible_students = await db.scalars(
+            select(Student).where(Student.id.in_(ineligible_ids))
+        )
+        names = ", ".join(f"{s.first_name} {s.last_name}" for s in ineligible_students)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Not registered for this subject this term: {names}.",
+        )
+
     # Validate all scores before touching the DB
     for entry in req.scores:
         if entry.raw_score < 0 or entry.raw_score > assessment.max_score:
@@ -69,7 +96,6 @@ async def submit_scores(
             )
 
     # Batch-load existing scores to avoid N+1
-    student_ids = [entry.student_id for entry in req.scores]
     existing_map: dict[str, Score] = {
         str(s.student_id): s
         for s in await db.scalars(

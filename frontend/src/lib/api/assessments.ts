@@ -115,6 +115,17 @@ export const deleteAssessment = (id: string): Promise<void> =>
 export const publishAssessment = (id: string): Promise<Assessment> =>
   api.post(`/assessments/${id}/publish`).then(r => r.data);
 
+export interface RosterStudent {
+  id: string;
+  display_name: string;
+  admission_number: string;
+}
+
+// Students eligible to be scored for this assessment's subject — not just
+// "everyone in the class" once subject registration splits them (electives).
+export const getAssessmentRoster = (id: string): Promise<RosterStudent[]> =>
+  api.get(`/assessments/${id}/roster`).then(r => r.data);
+
 // ── Scores ────────────────────────────────────────────────────────────────────
 
 export const listScores = (assessmentId: string): Promise<Score[]> =>

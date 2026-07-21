@@ -128,6 +128,14 @@ class AssessmentRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AssessmentRosterStudent(BaseModel):
+    """A student eligible to be scored for this assessment's subject —
+    see services/subject_roster.py for what "eligible" means."""
+    id: uuid.UUID
+    display_name: str
+    admission_number: str
+
+
 # ── Scores ────────────────────────────────────────────────────────────────────
 
 class ScoreSubmit(BaseModel):

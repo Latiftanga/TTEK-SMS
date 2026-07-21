@@ -16,15 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
 from app.schemas.assessments import (
-    AssessmentCreate, AssessmentRead, AssessmentUpdate,
+    AssessmentCreate, AssessmentRead, AssessmentRosterStudent, AssessmentUpdate,
     AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
     BulkScoreSubmit, GradeCreate, GradeRead,
     GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
     ScoreApproveRequest, ScoreRead,
 )
 from app.services import assessment as assess_svc
+from app.services import assessment_type as atype_svc
 from app.services import grading as grade_svc
 from app.services import scoring as score_svc
+from app.services.subject_roster import list_assessment_roster
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 
@@ -113,7 +115,7 @@ async def create_assessment_type(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await assess_svc.create_assessment_type(req, school_id, db)
+    return await atype_svc.create_assessment_type(req, school_id, db)
 
 
 @router.get("/types", response_model=list[AssessmentTypeRead])
@@ -122,7 +124,7 @@ async def list_assessment_types(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await assess_svc.list_assessment_types(school_id, db)
+    return await atype_svc.list_assessment_types(school_id, db)
 
 
 @router.patch("/types/{type_id}", response_model=AssessmentTypeRead)
@@ -133,7 +135,7 @@ async def update_assessment_type(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await assess_svc.update_assessment_type(type_id, req, school_id, db)
+    return await atype_svc.update_assessment_type(type_id, req, school_id, db)
 
 
 # ── Assessments ───────────────────────────────────────────────────────────────
@@ -167,6 +169,22 @@ async def get_assessment(
 ):
     _, school_id = ids
     return await assess_svc.get_assessment(assessment_id, school_id, db)
+
+
+@router.get("/{assessment_id}/roster", response_model=list[AssessmentRosterStudent])
+async def get_assessment_roster(
+    assessment_id: uuid.UUID,
+    ids=Depends(require_permission("assessments", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Students eligible to be scored for this assessment's subject — never
+    "everyone in the class" once subject registration splits them (electives).
+    See services/subject_roster.py."""
+    _, school_id = ids
+    assessment = await assess_svc.get_assessment(assessment_id, school_id, db)
+    return await list_assessment_roster(
+        assessment.class_id, assessment.subject_id, assessment.academic_term_id, school_id, db,
+    )
 
 
 @router.patch("/{assessment_id}", response_model=AssessmentRead)
