@@ -3,13 +3,17 @@ Report card data assembly.
 
 assemble() fetches all data for one TermEnrollment and returns a context dict
 ready for Jinja2. No PDF logic here — see services/pdf.py.
+
+Weighted-score aggregation lives in report_card_scoring.py; class ranking
+lives in report_card_rank.py — both split out when this file went over the
+300-line cap.
 """
 from __future__ import annotations
 import uuid
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +24,8 @@ from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.services.qr import generate_qr_image, generate_token
+from app.services.report_card_rank import compute_rank
+from app.services.report_card_scoring import _compute_weighted_scores
 
 
 def _class_name(cls: Class, programme_name: str | None) -> str:
@@ -58,42 +64,6 @@ async def _load_scores(
     return [dict(r) for r in rows]
 
 
-def _compute_weighted_scores(scores: list[dict]) -> dict[str, Decimal]:
-    """
-    For each subject, compute the weighted score out of 100.
-
-    Per type: contribution = (sum_raw / sum_max) * type_weight
-    Subject total = sum of contributions across all types.
-
-    If weights don't sum to 100 the total is proportional — callers display
-    whatever the school configured.
-    """
-    # Group by subject → type
-    subjects: dict[str, dict[str, dict]] = {}
-    for row in scores:
-        subj = row["subject_name"]
-        typ  = row["type_name"]
-        if subj not in subjects:
-            subjects[subj] = {}
-        if typ not in subjects[subj]:
-            subjects[subj][typ] = {
-                "weight": Decimal(str(row["type_weight"])),
-                "sum_raw": Decimal("0"),
-                "sum_max": Decimal("0"),
-            }
-        subjects[subj][typ]["sum_raw"] += Decimal(str(row["raw_score"]))
-        subjects[subj][typ]["sum_max"] += Decimal(str(row["max_score"]))
-
-    result: dict[str, Decimal] = {}
-    for subj, types in subjects.items():
-        total = Decimal("0")
-        for t in types.values():
-            if t["sum_max"] > 0:
-                total += (t["sum_raw"] / t["sum_max"]) * t["weight"]
-        result[subj] = total.quantize(Decimal("0.01"))
-    return result
-
-
 async def _load_attendance(
     student_id: uuid.UUID, term_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> tuple[int, int]:
@@ -120,70 +90,6 @@ async def _load_attendance(
         )
     ) or 0
     return present, total
-
-
-async def _compute_rank(
-    student_id: uuid.UUID, class_id: uuid.UUID, term_id: uuid.UUID,
-    academic_year_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
-) -> tuple[int, int]:
-    """Returns (rank, class_size). Rank 1 = highest weighted total."""
-    q = text("""
-        SELECT sca.student_id,
-               sc.raw_score,
-               a.max_score,
-               at.weight,
-               sub.name AS subject_name,
-               at.name  AS type_name
-        FROM student_class_assignment sca
-        JOIN term_enrollment te
-            ON te.student_id = sca.student_id
-           AND te.academic_term_id = :term_id
-        LEFT JOIN score sc ON sc.student_id = sca.student_id
-            AND sc.school_id = :school_id
-            AND sc.is_approved = true
-        LEFT JOIN assessment a ON a.id = sc.assessment_id
-            AND a.academic_term_id = :term_id
-            AND a.is_published = true
-        LEFT JOIN assessment_type at ON at.id = a.assessment_type_id
-        LEFT JOIN subject sub ON sub.id = a.subject_id
-        WHERE sca.class_id = :class_id
-          AND sca.academic_year_id = :academic_year_id
-    """)
-    rows = (await db.execute(q, {
-        "school_id": str(school_id),
-        "term_id": str(term_id),
-        "class_id": str(class_id),
-        "academic_year_id": str(academic_year_id),
-    })).all()
-
-    from collections import defaultdict
-    student_score_rows: dict[str, list[dict]] = defaultdict(list)
-    students_seen: set[str] = set()
-    for r in rows:
-        sid = str(r.student_id)
-        students_seen.add(sid)
-        if r.raw_score is not None and r.max_score and r.weight:
-            student_score_rows[sid].append({
-                "raw_score": r.raw_score, "max_score": r.max_score,
-                "type_weight": r.weight,
-                "subject_name": r.subject_name or "",
-                "type_name": r.type_name or "",
-            })
-
-    totals = {
-        sid: sum(_compute_weighted_scores(score_rows).values())
-        for sid, score_rows in student_score_rows.items()
-    }
-    for sid in students_seen:
-        totals.setdefault(sid, Decimal("0"))
-
-    ranked = sorted(totals.items(), key=lambda x: x[1], reverse=True)
-    class_size = len(ranked)
-    rank = next(
-        (i + 1 for i, (sid, _) in enumerate(ranked) if sid == str(student_id)),
-        class_size,
-    )
-    return rank, class_size
 
 
 async def assemble(
@@ -242,7 +148,7 @@ async def assemble(
     days_present, total_days = await _load_attendance(
         te.student_id, te.academic_term_id, school_id, db
     )
-    rank, class_size = await _compute_rank(
+    rank, class_size = await compute_rank(
         te.student_id, cls.id, te.academic_term_id, term.academic_year_id, school_id, db
     )
 
