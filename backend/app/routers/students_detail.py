@@ -46,6 +46,7 @@ from app.services import student as svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
 from app.services import student_guardian as guardian_svc
+from app.services import student_photo as photo_svc
 from app.services import student_portal as portal_svc
 from app.services import student_transfer as transfer_svc
 
@@ -226,7 +227,7 @@ async def upload_photo(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.upload_student_photo(student_id, file, school_id, db)
+    return await photo_svc.upload_student_photo(student_id, file, school_id, db)
 
 
 @router.delete("/{student_id}/photo", status_code=204)
@@ -236,4 +237,4 @@ async def delete_photo(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    await svc.remove_student_photo(student_id, school_id, db)
+    await photo_svc.remove_student_photo(student_id, school_id, db)

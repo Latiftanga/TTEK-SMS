@@ -3,6 +3,10 @@ Student CRUD and medical record upsert.
 
 Guardian add/update/remove live in student_guardian.py.
 Enrollment (initial + term) and transfer logic live in student_enrollment.py.
+Listing/search lives in student_list.py. Photo upload/delete lives in
+student_photo.py. Shared display helpers (_display_name, _class_display,
+_photo_url, _get_class_map) live in student_display.py — split out when this
+file went over the 300-line cap.
 
 ADMISSION NUMBER AUTO-GENERATION
 ---------------------------------
@@ -16,24 +20,18 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import case, func, or_, select
+from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
-from app.models.academic import Class, ClassTeacher, SHSProgramme, SubjectTeacher
 from app.models.auth import User
-from app.models.housing import HouseMaster, StudentHouseAssignment
 from app.models.school import School
 from app.models.students import (
-    Guardian,
     Student,
-    StudentClassAssignment,
     StudentGuardian,
     StudentMedicalRecord,
-    TermEnrollment,
 )
 from app.schemas.students import (
     MedicalRecordRead,
@@ -44,32 +42,7 @@ from app.schemas.students import (
     StudentSummary,
     StudentUpdate,
 )
-
-
-def _display_name(first: str, middle: str | None, last: str) -> str:
-    parts = [first]
-    if middle:
-        parts.append(middle)
-    parts.append(last)
-    return " ".join(parts)
-
-
-def _class_display(level: str, year_group: int, programme: str | None, stream: str | None) -> str:
-    parts = [level, str(year_group)]
-    if programme:
-        parts.append(programme)
-    if stream:
-        parts.append(stream)
-    return " ".join(parts)
-
-
-def _photo_url(photo_path: str | None) -> str | None:
-    """Convert a stored photo path to an absolute URL the frontend can use."""
-    if not photo_path:
-        return None
-    if settings.storage_backend == "CLOUDFLARE_R2":
-        return f"{settings.r2_public_url.rstrip('/')}/{photo_path}"
-    return f"{settings.app_base_url.rstrip('/')}/uploads/{photo_path}"
+from app.services.student_display import _class_display, _display_name, _photo_url
 
 
 def _to_summary(
@@ -234,207 +207,6 @@ async def create_student(
     return _to_detail(student)
 
 
-async def upload_student_photo(
-    student_id: uuid.UUID,
-    file: UploadFile,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> StudentDetail:
-    student = await db.scalar(
-        select(Student)
-        .where(Student.id == student_id, Student.school_id == school_id)
-        .options(
-            selectinload(Student.medical_record),
-            selectinload(Student.guardians).selectinload(StudentGuardian.guardian),
-        )
-    )
-    if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-    from app.services.storage import save_student_photo
-    student.photo_path = await save_student_photo(file, student.id)
-    await db.flush()
-    portal = await _portal_access(student_id, db)
-    return _to_detail(student, has_portal_access=portal)
-
-
-async def remove_student_photo(
-    student_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    student = await db.get(Student, student_id)
-    if not student or student.school_id != school_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-    from app.services.storage import delete_student_photo
-    delete_student_photo(student.id)
-    student.photo_path = None
-    await db.flush()
-
-
-def _active_class_assignment_subquery():
-    """Most-recent active StudentClassAssignment per student.
-
-    A promoted (not graduated/withdrawn) student is never deactivated from their
-    prior year's assignment, so 2+ is_active=True rows can coexist for one student.
-    DISTINCT ON collapses that to exactly one row per student, keeping this join
-    provably 1:1 wherever it's used (list_students' count/sort, and here).
-    """
-    return (
-        select(StudentClassAssignment.student_id, StudentClassAssignment.class_id)
-        .where(StudentClassAssignment.is_active == True)  # noqa: E712
-        .distinct(StudentClassAssignment.student_id)
-        .order_by(StudentClassAssignment.student_id, StudentClassAssignment.created_at.desc())
-        .subquery()
-    )
-
-
-async def _get_class_map(
-    student_ids: list[uuid.UUID],
-    db: AsyncSession,
-) -> dict[uuid.UUID, tuple[str, int, str | None, str | None, uuid.UUID]]:
-    if not student_ids:
-        return {}
-    active_sca = _active_class_assignment_subquery()
-    rows = await db.execute(
-        select(
-            active_sca.c.student_id,
-            Class.level,
-            Class.year_group,
-            Class.stream,
-            SHSProgramme.name.label("programme_name"),
-            Class.id.label("class_id"),
-        )
-        .join(Class, Class.id == active_sca.c.class_id)
-        .outerjoin(SHSProgramme, SHSProgramme.id == Class.programme_id)
-        .where(active_sca.c.student_id.in_(student_ids))
-    )
-    return {
-        r.student_id: (r.level, r.year_group, r.programme_name, r.stream, r.class_id)
-        for r in rows
-    }
-
-
-# Pedagogical order — Class.level is a free-text column, not a DB-enforced enum,
-# so plain alphabetical ORDER BY would put "Basic" before "Creche".
-_CLASS_LEVEL_ORDER = ["Creche", "Nursery", "KG", "Basic", "SHS"]
-
-
-async def list_students(
-    school_id: uuid.UUID,
-    db: AsyncSession,
-    *,
-    active_only: bool = True,
-    skip: int = 0,
-    limit: int = 50,
-    search: str | None = None,
-    class_id: uuid.UUID | None = None,
-    term_id: uuid.UUID | None = None,
-    gender: str | None = None,
-    level: str | None = None,
-    year_group: int | None = None,
-    staff_member_id: uuid.UUID | None = None,
-    sort_by: str = "name",
-    sort_dir: str = "asc",
-) -> tuple[list[StudentSummary], int]:
-    q = select(Student).where(Student.school_id == school_id)
-
-    if staff_member_id is not None:
-        # Restrict to students the staff member is directly responsible for:
-        # classes they teach (ClassTeacher) or subjects they deliver (SubjectTeacher),
-        # plus any house they manage (HouseMaster).
-        taught_class_ids = (
-            select(ClassTeacher.class_id).where(
-                ClassTeacher.staff_member_id == staff_member_id,
-                ClassTeacher.is_active == True,  # noqa: E712
-            )
-        ).union(
-            select(SubjectTeacher.class_id).where(
-                SubjectTeacher.staff_member_id == staff_member_id,
-                SubjectTeacher.is_active == True,  # noqa: E712
-            )
-        )
-        in_taught_class = select(StudentClassAssignment.student_id).where(
-            StudentClassAssignment.class_id.in_(taught_class_ids),
-            StudentClassAssignment.is_active == True,  # noqa: E712
-        )
-        managed_house_ids = select(HouseMaster.house_id).where(
-            HouseMaster.staff_member_id == staff_member_id,
-            HouseMaster.is_active == True,  # noqa: E712
-        )
-        in_managed_house = select(StudentHouseAssignment.student_id).where(
-            StudentHouseAssignment.house_id.in_(managed_house_ids),
-            StudentHouseAssignment.vacated_at.is_(None),
-        )
-        q = q.where(or_(Student.id.in_(in_taught_class), Student.id.in_(in_managed_house)))
-
-    if active_only:
-        q = q.where(Student.is_active == True)  # noqa: E712
-    if gender:
-        q = q.where(Student.gender == gender)
-
-    # Class filter/sort share one dedup'd active-assignment join so a student with
-    # 2+ active StudentClassAssignment rows (promoted, not graduated) can't fan out
-    # the result — see _active_class_assignment_subquery().
-    class_filtered = bool(class_id or level or year_group)
-    class_sorted = sort_by == "class"
-    active_sca = _active_class_assignment_subquery()
-    if class_filtered:
-        q = q.join(active_sca, active_sca.c.student_id == Student.id)
-        if class_id:
-            q = q.where(active_sca.c.class_id == class_id)
-        if level or year_group or class_sorted:
-            q = q.join(Class, Class.id == active_sca.c.class_id)
-            if level:
-                q = q.where(Class.level == level)
-            if year_group:
-                q = q.where(Class.year_group == year_group)
-    elif class_sorted:
-        # No class filter active — outer join so students with no current class
-        # assignment still appear in an otherwise-unfiltered list.
-        q = q.outerjoin(active_sca, active_sca.c.student_id == Student.id)
-        q = q.outerjoin(Class, Class.id == active_sca.c.class_id)
-
-    if term_id:
-        q = q.join(TermEnrollment, TermEnrollment.student_id == Student.id).where(
-            TermEnrollment.is_active == True,  # noqa: E712
-            TermEnrollment.academic_term_id == term_id,
-        )
-    if search:
-        s = f"%{search}%"
-        q = q.where(or_(
-            Student.first_name.ilike(s),
-            Student.last_name.ilike(s),
-            Student.admission_number.ilike(s),
-        ))
-
-    total = await db.scalar(select(func.count()).select_from(q.subquery()))
-
-    desc = sort_dir == "desc"
-    if sort_by == "admission":
-        order_cols = [Student.admission_number.desc() if desc else Student.admission_number.asc()]
-    elif sort_by == "class":
-        level_rank = case(
-            {lvl: i for i, lvl in enumerate(_CLASS_LEVEL_ORDER)},
-            value=Class.level,
-            else_=len(_CLASS_LEVEL_ORDER),
-        )
-        order_cols = [
-            c.desc().nulls_last() if desc else c.asc().nulls_last()
-            for c in (level_rank, Class.year_group, Class.stream)
-        ]
-    else:
-        order_cols = (
-            [Student.last_name.desc(), Student.first_name.desc()] if desc
-            else [Student.last_name.asc(), Student.first_name.asc()]
-        )
-    order_cols.append(Student.id)  # deterministic tiebreaker — none of the above are unique keys
-
-    q = q.order_by(*order_cols).offset(skip).limit(limit)
-    students = list(await db.scalars(q))
-    class_map = await _get_class_map([s.id for s in students], db)
-    return [_to_summary(s, class_map.get(s.id)) for s in students], total
-
-
 async def get_student(
     student_id: uuid.UUID,
     school_id: uuid.UUID,
@@ -504,5 +276,3 @@ async def upsert_medical_record(
         db.add(rec)
     await db.flush()
     return MedicalRecordRead.model_validate(rec)
-
-

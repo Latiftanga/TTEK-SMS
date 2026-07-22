@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class
 from app.models.students import Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment
-from app.services.student import _class_display, _display_name, _get_class_map
+from app.services.student_display import _class_display, _display_name, _get_class_map
 
 
 HEADERS = [

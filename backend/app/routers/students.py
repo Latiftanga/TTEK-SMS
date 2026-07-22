@@ -33,6 +33,7 @@ from app.schemas.documents import ImportBatchResult
 from app.schemas.students import StudentCreate, StudentDetail, StudentSummary
 from app.services import student as svc
 from app.services import student_import as import_svc
+from app.services import student_list as list_svc
 from app.services.student_import_template import build_template
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -90,7 +91,7 @@ async def list_students(
         if not any(perms.get(p, False) for p in broad_access_perms):
             staff_member_id = user.staff_member_id
 
-    items, total = await svc.list_students(
+    items, total = await list_svc.list_students(
         school_id, db,
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
