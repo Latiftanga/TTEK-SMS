@@ -7,6 +7,7 @@
   import { toast } from '$lib/stores/toast';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import PortalAccessCard from './PortalAccessCard.svelte';
+  import GuardianPortalAccessButton from './GuardianPortalAccessButton.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
   const { student, studentId }: Props = $props();
@@ -190,6 +191,7 @@
               </p>
             </div>
             <div class="shrink-0 flex items-center gap-1">
+              <GuardianPortalAccessButton guardian={g} {studentId} />
               <button onclick={() => editingId === g.guardian_id ? cancelEdit() : startEdit(g)}
                 class="rounded-lg p-1.5 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]" title="Edit">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">

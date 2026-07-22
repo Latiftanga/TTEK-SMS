@@ -21,7 +21,7 @@ from app.models.academic import AcademicTerm, AcademicYear
 from app.models.assessments import Assessment
 from app.models.fees import StudentFeeSummary
 from app.models.school import School
-from app.models.students import Student, StudentClassAssignment, TermEnrollment
+from app.models.students import Student, StudentClassAssignment, StudentGuardian, TermEnrollment
 from app.schemas.portal import PortalProfile, PortalTermEnrollmentRead
 from app.services.student import _class_display, _display_name, _get_class_map
 
@@ -38,6 +38,30 @@ async def get_my_profile(student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncS
         current_class_name=_class_display(*class_info[:4]) if class_info else None,
         school_name=school.name if school else "School",
     )
+
+
+async def is_guardian_of(
+    guardian_id: uuid.UUID, student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> bool:
+    return await db.scalar(
+        select(StudentGuardian.id).where(
+            StudentGuardian.guardian_id == guardian_id,
+            StudentGuardian.student_id == student_id,
+            StudentGuardian.school_id == school_id,
+        )
+    ) is not None
+
+
+async def list_my_children(
+    guardian_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> list[PortalProfile]:
+    student_ids = await db.scalars(
+        select(StudentGuardian.student_id).where(
+            StudentGuardian.guardian_id == guardian_id,
+            StudentGuardian.school_id == school_id,
+        )
+    )
+    return [await get_my_profile(sid, school_id, db) for sid in student_ids]
 
 
 async def is_report_published(

@@ -18,9 +18,11 @@ import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.auth import User
 from app.models.students import Guardian, Student, StudentGuardian
 from app.schemas.students import GuardianCreate, GuardianUpdate, StudentGuardianRead
 from app.services.student import _to_guardian_read
@@ -128,8 +130,23 @@ async def update_guardian(
         elif field in link_fields:
             setattr(link, field, val)
 
-    await db.flush()
-    return _to_guardian_read(link)
+    # Guardian.phone is also the portal login identifier (User.phone) —
+    # keep an active portal account's login in sync, or a phone-number edit
+    # here would silently lock the guardian out.
+    portal_user = await db.scalar(
+        select(User).where(User.guardian_id == guardian_id, User.is_active.is_(True))
+    )
+    if portal_user and "phone" in data:
+        portal_user.phone = g.phone
+
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This phone number is already used by another portal account on this platform.",
+        )
+    return _to_guardian_read(link, has_portal_access=portal_user is not None)
 
 
 async def remove_guardian(

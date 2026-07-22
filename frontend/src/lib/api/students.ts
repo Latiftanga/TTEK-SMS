@@ -38,6 +38,7 @@ export interface Guardian {
   occupation: string | null;
   relation_type: string;
   is_primary: boolean;
+  has_portal_access: boolean;
 }
 
 export interface StudentDetail extends StudentSummary {
@@ -59,6 +60,12 @@ export interface StudentDetail extends StudentSummary {
 export interface PortalAccessResult {
   has_portal_access: boolean;
   admission_number: string;
+  sms_sent: boolean;
+}
+
+export interface GuardianPortalAccessResult {
+  has_portal_access: boolean;
+  phone: string;
   sms_sent: boolean;
 }
 
@@ -289,6 +296,12 @@ export const grantPortalAccess = (studentId: string): Promise<PortalAccessResult
 
 export const revokePortalAccess = (studentId: string): Promise<void> =>
   api.delete(`/students/${studentId}/revoke-portal-access`).then(() => undefined);
+
+export const grantGuardianPortalAccess = (studentId: string, guardianId: string): Promise<GuardianPortalAccessResult> =>
+  api.post<GuardianPortalAccessResult>(`/students/${studentId}/guardians/${guardianId}/grant-portal-access`).then(r => r.data);
+
+export const revokeGuardianPortalAccess = (studentId: string, guardianId: string): Promise<void> =>
+  api.delete(`/students/${studentId}/guardians/${guardianId}/revoke-portal-access`).then(() => undefined);
 
 // ── Transfers ─────────────────────────────────────────────────────────────────
 

@@ -88,6 +88,7 @@ class StudentGuardianRead(BaseModel):
     occupation: str | None
     relation_type: str
     is_primary: bool
+    has_portal_access: bool = False
 
 
 class GuardianCreate(BaseModel):
@@ -147,6 +148,12 @@ class StudentDetail(StudentSummary):
 class PortalAccessResult(BaseModel):
     has_portal_access: bool
     admission_number: str
+    sms_sent: bool
+
+
+class GuardianPortalAccessResult(BaseModel):
+    has_portal_access: bool
+    phone: str
     sms_sent: bool
 
 

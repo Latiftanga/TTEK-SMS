@@ -38,6 +38,7 @@ class UserRead(BaseModel):
     school_id: uuid.UUID | None
     staff_member_id: uuid.UUID | None
     student_id: uuid.UUID | None
+    guardian_id: uuid.UUID | None
     last_login_at: datetime | None
     display_name: str | None = None
 

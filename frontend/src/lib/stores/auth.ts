@@ -8,6 +8,7 @@ export interface CurrentUser {
   school_id: string | null;
   staff_member_id: string | null;
   student_id: string | null;
+  guardian_id: string | null;
   is_superadmin: boolean;
   login_type: 'EMAIL' | 'PHONE' | 'ADMISSION_ID';
   display_name: string | null;

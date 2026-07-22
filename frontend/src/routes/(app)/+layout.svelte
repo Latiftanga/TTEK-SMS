@@ -8,6 +8,7 @@
   import { documentTitle } from '$lib/stores/title';
   import { initOfflineSync, pendingOutboxCount, isOnline } from '$lib/offline/sync';
   import { currentUser } from '$lib/stores/auth';
+  import { isPortalUser } from '$lib/api/auth';
 
   const { children } = $props();
 
@@ -15,12 +16,13 @@
 
   $effect(() => { initOfflineSync(); });
 
-  // Student/parent (ADMISSION_ID) logins have no staff permissions and
-  // belong on /portal, not this staff app shell — without this a portal
-  // user landing here (e.g. a stale bookmark) sees a silently blank
-  // dashboard rather than being routed to the page that works for them.
+  // Student (ADMISSION_ID) and guardian (PHONE + guardian_id) logins have no
+  // staff permissions and belong on /portal, not this staff app shell —
+  // without this a portal user landing here (e.g. a stale bookmark) sees a
+  // silently blank dashboard rather than being routed to the page that works
+  // for them.
   $effect(() => {
-    if ($currentUser?.login_type === 'ADMISSION_ID') goto('/portal');
+    if ($currentUser && isPortalUser($currentUser)) goto('/portal');
   });
 </script>
 

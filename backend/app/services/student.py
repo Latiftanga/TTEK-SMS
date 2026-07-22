@@ -99,7 +99,7 @@ def _to_summary(
     )
 
 
-def _to_guardian_read(sg: StudentGuardian) -> StudentGuardianRead:
+def _to_guardian_read(sg: StudentGuardian, has_portal_access: bool = False) -> StudentGuardianRead:
     g = sg.guardian
     return StudentGuardianRead(
         guardian_id=sg.guardian_id,
@@ -111,10 +111,16 @@ def _to_guardian_read(sg: StudentGuardian) -> StudentGuardianRead:
         occupation=g.occupation,
         relation_type=sg.relation_type,
         is_primary=sg.is_primary,
+        has_portal_access=has_portal_access,
     )
 
 
-def _to_detail(s: Student, has_portal_access: bool = False) -> StudentDetail:
+def _to_detail(
+    s: Student,
+    has_portal_access: bool = False,
+    guardian_portal_ids: set[uuid.UUID] | None = None,
+) -> StudentDetail:
+    guardian_portal_ids = guardian_portal_ids or set()
     return StudentDetail(
         **_to_summary(s).model_dump(),
         date_of_birth=s.date_of_birth,
@@ -129,7 +135,10 @@ def _to_detail(s: Student, has_portal_access: bool = False) -> StudentDetail:
         photo_path=s.photo_path,
         has_portal_access=has_portal_access,
         medical_record=MedicalRecordRead.model_validate(s.medical_record) if s.medical_record else None,
-        guardians=[_to_guardian_read(sg) for sg in s.guardians],
+        guardians=[
+            _to_guardian_read(sg, has_portal_access=sg.guardian_id in guardian_portal_ids)
+            for sg in s.guardians
+        ],
     )
 
 
@@ -137,6 +146,17 @@ async def _portal_access(student_id: uuid.UUID, db: AsyncSession) -> bool:
     return await db.scalar(
         select(User.id).where(User.student_id == student_id, User.is_active.is_(True))
     ) is not None
+
+
+async def _guardian_portal_access_ids(guardian_ids: list[uuid.UUID], db: AsyncSession) -> set[uuid.UUID]:
+    if not guardian_ids:
+        return set()
+    rows = await db.scalars(
+        select(User.guardian_id).where(
+            User.guardian_id.in_(guardian_ids), User.is_active.is_(True)
+        )
+    )
+    return set(rows)
 
 
 async def _next_admission_number(school_id: uuid.UUID, school_code: str, db: AsyncSession) -> str:
@@ -431,7 +451,10 @@ async def get_student(
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
     portal = await _portal_access(student_id, db)
-    return _to_detail(student, has_portal_access=portal)
+    guardian_portal_ids = await _guardian_portal_access_ids(
+        [sg.guardian_id for sg in student.guardians], db
+    )
+    return _to_detail(student, has_portal_access=portal, guardian_portal_ids=guardian_portal_ids)
 
 
 async def update_student(

@@ -1,17 +1,52 @@
 <script lang="ts">
-  import { createQuery } from '@tanstack/svelte-query';
+  import { reactiveQuery } from '$lib/query.svelte';
   import {
-    getMyPortalProfile, listMyTermEnrollments, getMyReportCardBlob,
-    type PortalTermEnrollment,
+    getMyPortalProfile, listMyChildren, listMyTermEnrollments, getMyReportCardBlob,
+    type PortalProfile, type PortalTermEnrollment,
   } from '$lib/api/portal';
+  import { currentUser } from '$lib/stores/auth';
   import { ghs } from '$lib/api/fees';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
 
   setPageTitle('My Portal');
 
-  const profileQ = createQuery({ queryKey: ['portal-me'], queryFn: getMyPortalProfile, staleTime: 5 * 60_000 });
-  const termsQ   = createQuery({ queryKey: ['portal-term-enrollments'], queryFn: listMyTermEnrollments, staleTime: 60_000 });
+  // $currentUser hydrates asynchronously after mount (root layout's getMe() call),
+  // so isGuardian isn't known at first render — both queries below use
+  // reactiveQuery() rather than a plain createQuery({...}) object so `enabled`
+  // re-evaluates once the user store actually populates.
+  const isGuardian = $derived(!!$currentUser?.guardian_id);
+
+  const profileQ = reactiveQuery(() => ({
+    queryKey: ['portal-me'] as const,
+    queryFn:  getMyPortalProfile,
+    enabled:  !!$currentUser && !isGuardian,
+    staleTime: 5 * 60_000,
+  }));
+  const childrenQ = reactiveQuery(() => ({
+    queryKey: ['portal-children'] as const,
+    queryFn:  listMyChildren,
+    enabled:  isGuardian,
+    staleTime: 5 * 60_000,
+  }));
+
+  let selectedChildId = $state<string | null>(null);
+  $effect(() => {
+    if (isGuardian && !selectedChildId && ($childrenQ.data?.length ?? 0) > 0) {
+      selectedChildId = $childrenQ.data![0].student_id;
+    }
+  });
+
+  const activeProfile = $derived<PortalProfile | undefined>(
+    isGuardian ? $childrenQ.data?.find(c => c.student_id === selectedChildId) : $profileQ.data
+  );
+
+  const termsQ = reactiveQuery(() => ({
+    queryKey: ['portal-term-enrollments', isGuardian ? selectedChildId : 'self'] as const,
+    queryFn:  () => listMyTermEnrollments(isGuardian ? selectedChildId! : undefined),
+    enabled:  isGuardian ? !!selectedChildId : true,
+    staleTime: 60_000,
+  }));
 
   let downloading = $state<Set<string>>(new Set());
 
@@ -19,7 +54,7 @@
     if (downloading.has(enrollment.id)) return;
     downloading = new Set([...downloading, enrollment.id]);
     try {
-      const blob = await getMyReportCardBlob(enrollment.id);
+      const blob = await getMyReportCardBlob(enrollment.id, 'BASIC', isGuardian ? selectedChildId ?? undefined : undefined);
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 30_000);
@@ -30,13 +65,16 @@
     }
   }
 
+  const loading = $derived(isGuardian ? $childrenQ.isPending || $termsQ.isPending : $profileQ.isPending || $termsQ.isPending);
   const forbidden = $derived(
     ($profileQ.error as { response?: { status?: number } })?.response?.status === 403
+    || ($childrenQ.error as { response?: { status?: number } })?.response?.status === 403
     || ($termsQ.error as { response?: { status?: number } })?.response?.status === 403
   );
+  const noChildren = $derived(isGuardian && !$childrenQ.isPending && ($childrenQ.data?.length ?? 0) === 0);
 </script>
 
-{#if $profileQ.isPending || $termsQ.isPending}
+{#if loading}
   <div class="space-y-4">
     <div class="h-24 animate-pulse rounded-2xl bg-[var(--card)]"></div>
     <div class="h-16 animate-pulse rounded-2xl bg-[var(--card)]"></div>
@@ -45,17 +83,38 @@
 
 {:else if forbidden}
   <div class="rounded-2xl border border-red-100 bg-red-50 p-6 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
-    This portal is only available to student accounts. If you're a staff member, use the main app instead.
+    This portal is only available to student and parent accounts. If you're a staff member, use the main app instead.
   </div>
 
-{:else if $profileQ.isError || $termsQ.isError}
+{:else if noChildren}
+  <div class="rounded-2xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--fg-muted)]">
+    No children are linked to this account yet.
+  </div>
+
+{:else if $profileQ.isError || $childrenQ.isError || $termsQ.isError}
   <div class="rounded-2xl border border-red-100 bg-red-50 p-6 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
     Could not load your portal. Please try again shortly.
   </div>
 
-{:else if $profileQ.data}
-  {@const profile = $profileQ.data}
+{:else if activeProfile}
+  {@const profile = activeProfile}
   {@const terms = $termsQ.data ?? []}
+
+  <!-- Child switcher (guardian accounts with 2+ children only) -->
+  {#if isGuardian && ($childrenQ.data?.length ?? 0) > 1}
+    <div class="mb-4 flex gap-2 overflow-x-auto pb-1">
+      {#each $childrenQ.data ?? [] as child (child.student_id)}
+        <button onclick={() => selectedChildId = child.student_id}
+          class="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-semibold transition
+                 {selectedChildId === child.student_id
+                   ? 'border-transparent text-white'
+                   : 'border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}"
+          style={selectedChildId === child.student_id ? 'background: var(--brand)' : ''}>
+          {child.display_name}
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Profile card -->
   <div class="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">

@@ -1,16 +1,18 @@
 """
-Parent/student portal — read-only self-service access for ADMISSION_ID users.
+Parent/student portal — read-only self-service access for ADMISSION_ID
+(student) and PHONE+guardian_id (guardian) users.
 
-Two checks gate every portal request:
-  1. The caller must be a student user (User.student_id is not None).
-  2. Report cards additionally require at least one published Assessment for
-     the class+term (Assessment.is_published = True) — see
-     services/portal.py::is_report_published.
+Two account shapes share this router:
+  - Student (User.student_id set): every endpoint implicitly resolves to
+    their own record — GET /portal/me is student-only.
+  - Guardian (User.guardian_id set): can be linked to multiple children via
+    StudentGuardian, so term-enrollments/report-cards require an explicit
+    ?student_id= query param, verified against StudentGuardian before use.
+    GET /portal/children lists the guardian's own linked students.
 
-GET /portal/me and GET /portal/term-enrollments exist so the frontend can
-discover the logged-in student's own identity and which enrollment_id to
-request a report card for — before these existed there was no way for a
-portal user to find that out at all.
+Report cards additionally require at least one published Assessment for the
+class+term (Assessment.is_published = True) — see
+services/portal.py::is_report_published.
 """
 from __future__ import annotations
 import uuid
@@ -36,7 +38,10 @@ async def _require_portal_user(
     ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> tuple[uuid.UUID, uuid.UUID | None, uuid.UUID]:
-    """Return (user_id, school_id, student_id); reject non-student callers."""
+    """Return (user_id, school_id, student_id); reject non-student callers.
+
+    Student-only — used by GET /portal/me, which has no equivalent "single
+    profile" shape for a guardian (see GET /portal/children instead)."""
     user_id, school_id = ids
     user = await db.get(User, user_id)
     if not user or not user.is_active:
@@ -49,6 +54,37 @@ async def _require_portal_user(
     return user_id, school_id, user.student_id
 
 
+async def _require_portal_access(
+    student_id: uuid.UUID | None = Query(
+        None, description="Which child to view — required for a guardian account, ignored for a student account."
+    ),
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """Return (user_id, school_id, resolved_student_id) for a student viewing
+    their own record OR a guardian viewing a linked child (student_id
+    required, checked against StudentGuardian)."""
+    user_id, school_id = ids
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or deactivated.")
+
+    if user.student_id is not None:
+        return user_id, school_id, user.student_id
+
+    if user.guardian_id is not None:
+        if student_id is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "student_id is required for a guardian account.")
+        if not await portal_svc.is_guardian_of(user.guardian_id, student_id, school_id, db):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a guardian of this student.")
+        return user_id, school_id, student_id
+
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        "Portal access is limited to student and guardian accounts.",
+    )
+
+
 @router.get("/me", response_model=PortalProfile)
 async def get_my_profile(
     auth=Depends(_require_portal_user),
@@ -58,9 +94,22 @@ async def get_my_profile(
     return await portal_svc.get_my_profile(student_id, school_id, db)
 
 
+@router.get("/children", response_model=list[PortalProfile])
+async def list_my_children(
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Guardian-only — the list of linked students a guardian can switch between."""
+    user_id, school_id = ids
+    user = await db.get(User, user_id)
+    if not user or not user.is_active or user.guardian_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Portal access is limited to guardian accounts.")
+    return await portal_svc.list_my_children(user.guardian_id, school_id, db)
+
+
 @router.get("/term-enrollments", response_model=list[PortalTermEnrollmentRead])
 async def list_my_term_enrollments(
-    auth=Depends(_require_portal_user),
+    auth=Depends(_require_portal_access),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id, student_id = auth
@@ -71,11 +120,12 @@ async def list_my_term_enrollments(
 async def portal_get_report_card(
     enrollment_id: uuid.UUID,
     format: str = Query("BASIC", pattern="^(BASIC|SHS|ECM)$"),
-    auth=Depends(_require_portal_user),
+    auth=Depends(_require_portal_access),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Return the PDF report card for the logged-in student.
+    Return the PDF report card for the logged-in student, or (for a guardian)
+    the child named by ?student_id=.
     Returns 403 until the school publishes at least one assessment for the term.
     """
     _, school_id, student_id = auth

@@ -27,8 +27,17 @@ export type ReportFormat = 'BASIC' | 'SHS' | 'ECM';
 export const getMyPortalProfile = (): Promise<PortalProfile> =>
   api.get('/portal/me').then(r => r.data);
 
-export const listMyTermEnrollments = (): Promise<PortalTermEnrollment[]> =>
-  api.get('/portal/term-enrollments').then(r => r.data);
+// Guardian accounts only — the children they can switch between.
+export const listMyChildren = (): Promise<PortalProfile[]> =>
+  api.get('/portal/children').then(r => r.data);
 
-export const getMyReportCardBlob = (enrollmentId: string, format: ReportFormat = 'BASIC'): Promise<Blob> =>
-  api.get(`/portal/report-cards/${enrollmentId}`, { params: { format }, responseType: 'blob' }).then(r => r.data);
+// studentId is only needed (and only accepted server-side) for a guardian account —
+// a student's own login resolves to themself regardless of what's passed here.
+export const listMyTermEnrollments = (studentId?: string): Promise<PortalTermEnrollment[]> =>
+  api.get('/portal/term-enrollments', { params: studentId ? { student_id: studentId } : {} }).then(r => r.data);
+
+export const getMyReportCardBlob = (enrollmentId: string, format: ReportFormat = 'BASIC', studentId?: string): Promise<Blob> =>
+  api.get(`/portal/report-cards/${enrollmentId}`, {
+    params: { format, ...(studentId ? { student_id: studentId } : {}) },
+    responseType: 'blob',
+  }).then(r => r.data);

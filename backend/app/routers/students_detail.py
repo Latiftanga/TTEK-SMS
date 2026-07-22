@@ -14,6 +14,8 @@ GET  /students/{id}                          students.view
 PATCH /students/{id}                         students.edit
 PUT  /students/{id}/medical                  students.edit
 POST/DELETE /students/{id}/guardians          students.edit
+POST/DELETE /students/{id}/guardians/{gid}/grant-portal-access|revoke-portal-access
+                                               students.edit
 POST /students/{id}/enroll                    students.edit
 GET  /students/{id}/class-assignments         students.view
 GET  /students/{id}/term-enrollments          students.view
@@ -31,7 +33,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.schemas.students import (
     EnrollmentCreate, EnrollmentRead,
-    GuardianCreate, GuardianUpdate, StudentGuardianRead,
+    GuardianCreate, GuardianPortalAccessResult, GuardianUpdate, StudentGuardianRead,
     MedicalRecordRead, MedicalRecordUpsert,
     PortalAccessResult,
     StudentClassAssignmentRead,
@@ -39,6 +41,7 @@ from app.schemas.students import (
     TermEnrollmentRead,
     TransferRequestCreate, TransferRequestRead,
 )
+from app.services import guardian_portal as guardian_portal_svc
 from app.services import student as svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
@@ -113,6 +116,31 @@ async def remove_guardian(
 ):
     _, school_id = ids
     await guardian_svc.remove_guardian(student_id, guardian_id, school_id, db)
+
+
+@router.post(
+    "/{student_id}/guardians/{guardian_id}/grant-portal-access",
+    response_model=GuardianPortalAccessResult, status_code=201,
+)
+async def grant_guardian_portal_access(
+    student_id: uuid.UUID,
+    guardian_id: uuid.UUID,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await guardian_portal_svc.grant_portal_access(guardian_id, school_id, db)
+
+
+@router.delete("/{student_id}/guardians/{guardian_id}/revoke-portal-access", status_code=204)
+async def revoke_guardian_portal_access(
+    student_id: uuid.UUID,
+    guardian_id: uuid.UUID,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await guardian_portal_svc.revoke_portal_access(guardian_id, school_id, db)
 
 
 @router.post("/{student_id}/enroll", response_model=EnrollmentRead, status_code=201)

@@ -18,6 +18,12 @@ export interface TokenResponse {
   expires_in: number;
 }
 
+/** Student (ADMISSION_ID) or guardian (PHONE + guardian_id) — both land on /portal.
+ * PHONE is shared with staff accounts, so login_type alone can't tell them apart. */
+export function isPortalUser(user: CurrentUser): boolean {
+  return user.login_type === 'ADMISSION_ID' || !!user.guardian_id;
+}
+
 /** Detect login type from identifier string. */
 export function detectLoginType(identifier: string): LoginType {
   if (identifier.includes('@')) return 'EMAIL';

@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { auth, isAuthenticated } from '$lib/stores/auth';
-  import { login, getMe, detectLoginType } from '$lib/api/auth';
+  import { login, getMe, detectLoginType, isPortalUser } from '$lib/api/auth';
   import { getSchoolBranding, getSchoolByDomain, applyBranding, type SchoolBranding } from '$lib/api/schools';
   import { school } from '$lib/stores/school';
   import { subdomain, customDomain } from '$lib/stores/subdomain';
@@ -26,7 +26,7 @@
     if (get(isAuthenticated)) {
       try {
         const user = await getMe();
-        goto(user.login_type === 'ADMISSION_ID' ? '/portal' : '/dashboard');
+        goto(isPortalUser(user) ? '/portal' : '/dashboard');
       } catch {
         goto('/dashboard');
       }
@@ -118,7 +118,7 @@
       auth.setToken(tokens.access_token);
       const user = await getMe();
       auth.setAuth(user, tokens.access_token, tokens.refresh_token);
-      goto(user.login_type === 'ADMISSION_ID' ? '/portal' : '/dashboard');
+      goto(isPortalUser(user) ? '/portal' : '/dashboard');
     } catch (e: any) {
       formError = e?.response?.data?.detail ?? 'Login failed. Check your credentials.';
     } finally {
