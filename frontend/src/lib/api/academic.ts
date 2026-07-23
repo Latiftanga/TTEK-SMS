@@ -270,6 +270,18 @@ export async function listProgrammes(): Promise<Programme[]> {
   return data;
 }
 
+export async function listProgrammeCatalogue(): Promise<Programme[]> {
+  const { data } = await client.get<Programme[]>('/academic/programmes/catalogue');
+  return data;
+}
+
+export async function adoptProgramme(catalogueProgrammeId: string): Promise<Programme> {
+  const { data } = await client.post<Programme>('/academic/programmes/adopt', {
+    catalogue_programme_id: catalogueProgrammeId,
+  });
+  return data;
+}
+
 export async function createProgramme(req: { code: string; name: string }): Promise<Programme> {
   const { data } = await client.post<Programme>('/academic/programmes', req);
   return data;
