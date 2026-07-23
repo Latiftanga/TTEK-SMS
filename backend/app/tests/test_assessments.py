@@ -177,6 +177,30 @@ async def test_create_assessment(
 
 
 @pytest.mark.asyncio
+async def test_duplicate_assessment_name_rejected(
+    client: AsyncClient, auth: dict,
+    school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
+):
+    """Same class + subject + term + name must not silently create a second
+    assessment — reported live: creating two 'Assignment 1' for the same
+    subject was accepted with no warning."""
+    payload = {
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "name": "Assignment 1",
+        "max_score": "20.00",
+    }
+    first = await client.post("/assessments", json=payload, headers=auth)
+    assert first.status_code == 201
+
+    second = await client.post("/assessments", json=payload, headers=auth)
+    assert second.status_code == 409
+    assert "already exists" in second.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_list_assessments(
     client: AsyncClient, auth: dict,
     assessment: Assessment, school_class: Class, academic_term: AcademicTerm,

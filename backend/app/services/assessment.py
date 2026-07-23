@@ -68,13 +68,27 @@ async def create_assessment(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"due_date {req.due_date} falls outside the term ({term.start_date} – {term.end_date}).",
         )
+    duplicate = await db.scalar(
+        select(Assessment).where(
+            Assessment.school_id == school_id,
+            Assessment.class_id == req.class_id,
+            Assessment.subject_id == req.subject_id,
+            Assessment.academic_term_id == req.academic_term_id,
+            Assessment.name == req.name.strip(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"An assessment named '{req.name}' already exists for this subject this term.",
+        )
     a = Assessment(
         school_id=school_id,
         class_id=req.class_id,
         subject_id=req.subject_id,
         assessment_type_id=req.assessment_type_id,
         academic_term_id=req.academic_term_id,
-        name=req.name,
+        name=req.name.strip(),
         max_score=req.max_score,
         due_date=req.due_date,
     )
