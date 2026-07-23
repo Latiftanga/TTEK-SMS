@@ -155,9 +155,15 @@ async def delete_grade(
 
 
 async def resolve_grade(
-    raw_score: Decimal, school_id: uuid.UUID, db: AsyncSession
+    percentage: Decimal, school_id: uuid.UUID, db: AsyncSession
 ) -> str | None:
-    """Return letter_grade from the school's default grading scale, or None."""
+    """Return letter_grade from the school's default grading scale, or None.
+
+    `percentage` must already be normalized to 0-100 — Grade bands are defined
+    as percentage ranges (e.g. GES A1 = 80-100), not raw marks. Callers scoring
+    against a non-100 max_score (see services/scoring.py::approve_scores) must
+    convert before calling this.
+    """
     scale = await db.scalar(
         select(GradingScale).where(
             GradingScale.school_id == school_id,
@@ -169,7 +175,7 @@ async def resolve_grade(
         return None
     await db.refresh(scale, ["grades"])
     for band in scale.grades:
-        if band.min_score <= raw_score <= band.max_score:
+        if band.min_score <= percentage <= band.max_score:
             return band.letter_grade
     return None
 

@@ -7,6 +7,10 @@ APPROVAL FLOW
    cached_grade_label cleared, ScoreAuditLog written for every change.
 2. Approver/admin calls approve_scores → is_approved=True, cached_grade_label
    resolved from the school's default GradingScale, approved_by/at stamped.
+   raw_score is normalized to a percentage of the assessment's max_score
+   before resolution — GradingScale bands are 0-100 (see grading.py), but
+   Assessment.max_score is a free-form value (e.g. a 20-mark quiz), so an
+   un-normalized 18/20 would otherwise be graded as if it were 18/100.
 3. If GradingScale bands change → grading.clear_cached_grades() clears labels
    so next approval recalculates from the new bands.
 
@@ -178,7 +182,8 @@ async def approve_scores(
 
     now = datetime.now(timezone.utc)
     for score in scores:
-        grade_label = await resolve_grade(score.raw_score, school_id, db)
+        pct = (score.raw_score / assessment.max_score * 100) if assessment.max_score else None
+        grade_label = await resolve_grade(pct, school_id, db) if pct is not None else None
         score.is_approved = True
         score.cached_grade_label = grade_label
         score.approved_by_id = user_id

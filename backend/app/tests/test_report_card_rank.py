@@ -13,6 +13,7 @@ Run inside Docker: docker compose exec api pytest app/tests/test_report_card_ran
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, AcademicYear, Class, SchoolLevel, Subject, SubjectCatalogue, SubjectType
@@ -165,3 +166,41 @@ async def test_rank_ignores_electives_once_registered(
     assert class_size == 3
     assert kwame_rank == 1  # best core performance — must win despite having no elective at all
     assert kofi_rank > kwame_rank  # French no longer allowed to outweigh weaker core scores
+
+
+@pytest.mark.asyncio
+async def test_rank_excludes_withdrawn_student(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, academic_term: AcademicTerm, school_admin,
+):
+    """A student withdrawn/transferred mid-term has their
+    StudentClassAssignment and TermEnrollment set is_active=False but the
+    rows are left in place (student_lifecycle.py::deactivate_student) — they
+    must not inflate class_size or appear in a classmate's ranking."""
+    english = await _subject(db_session, school, "ENG-WD", "English")
+    at = await _assessment_type(db_session, school, "EOT-WD")
+
+    active = Student(school_id=school.id, admission_number="RANK020", first_name="Yaw", last_name="Darko", is_active=True)
+    withdrawn = Student(school_id=school.id, admission_number="RANK021", first_name="Efua", last_name="Asante", is_active=False)
+    db_session.add_all([active, withdrawn])
+    await db_session.flush()
+
+    await _enroll(db_session, school, active, school_class, academic_year, academic_term, school_admin.id)
+    withdrawn_te = await _enroll(db_session, school, withdrawn, school_class, academic_year, academic_term, school_admin.id)
+
+    await _score(db_session, school, school_class, academic_term, at, english, active, "60.00", school_admin.id)
+    await _score(db_session, school, school_class, academic_term, at, english, withdrawn, "95.00", school_admin.id)
+
+    # Simulate student_lifecycle.py::deactivate_student's cascade
+    withdrawn_sca = await db_session.scalar(
+        select(StudentClassAssignment).where(StudentClassAssignment.student_id == withdrawn.id)
+    )
+    withdrawn_sca.is_active = False
+    withdrawn_te.is_active = False
+    await db_session.flush()
+
+    rank, class_size = await compute_rank(
+        active.id, school_class.id, academic_term.id, academic_year.id, school.id, db_session,
+    )
+    assert class_size == 1
+    assert rank == 1

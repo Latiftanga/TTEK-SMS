@@ -61,6 +61,8 @@ async def compute_rank(
            AND sr.subject_id = a.subject_id
         WHERE sca.class_id = :class_id
           AND sca.academic_year_id = :academic_year_id
+          AND sca.is_active = true
+          AND te.is_active = true
     """)
     rows = (await db.execute(q, {
         "school_id": str(school_id),

@@ -276,6 +276,47 @@ async def test_approve_scores_sets_grade_label(
     assert data["cached_grade_label"] == "A1"
 
 
+@pytest.fixture
+async def quiz_assessment(
+    db_session: AsyncSession, school, school_class: Class,
+    subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
+) -> Assessment:
+    """A 20-mark assessment, not out of 100 — regression fixture for the
+    grade-normalization bug (raw_score must be normalized to a percentage
+    before resolve_grade, since GradingScale bands are 0-100)."""
+    a = Assessment(
+        school_id=school.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        assessment_type_id=assessment_type.id,
+        academic_term_id=academic_term.id,
+        name="20-Mark Quiz",
+        max_score=Decimal("20.00"),
+    )
+    db_session.add(a)
+    await db_session.flush()
+    return a
+
+
+@pytest.mark.asyncio
+async def test_approve_scores_normalizes_non_100_max_score(
+    client: AsyncClient, auth: dict,
+    quiz_assessment: Assessment, student: Student, grading_scale: GradingScale,
+):
+    """18/20 is 90% and must resolve to A1 (80-100) — not be compared against
+    the GradingScale bands as a raw 18, which would wrongly land in F9."""
+    submit = await client.post(f"/assessments/{quiz_assessment.id}/scores", json={
+        "scores": [{"student_id": str(student.id), "raw_score": "18.00"}],
+    }, headers=auth)
+    score_id = submit.json()[0]["id"]
+
+    resp = await client.post(f"/assessments/{quiz_assessment.id}/scores/approve", json={
+        "score_ids": [score_id],
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()[0]["cached_grade_label"] == "A1"
+
+
 @pytest.mark.asyncio
 async def test_list_scores(
     client: AsyncClient, auth: dict, assessment: Assessment, student: Student,
