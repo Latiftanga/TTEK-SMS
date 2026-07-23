@@ -163,44 +163,157 @@ async def test_create_basic_class_no_programme(client: AsyncClient, auth: dict):
     assert data["programme_id"] is None
 
 
+async def _second_shs_school_auth(client: AsyncClient, db_session: AsyncSession) -> dict:
+    """Create a second SHS school + superadmin and return their auth headers."""
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    school = School(
+        name="Second SHS Test School", school_code="SHS002",
+        school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(school)
+    await db_session.flush()
+    user = User(
+        login_type=LoginType.EMAIL, email="second-shs-admin@test.gh",
+        password_hash=hash_password("pw"), is_active=True,
+        is_superadmin=True, school_id=school.id,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": "second-shs-admin@test.gh", "password": "pw",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
 @pytest.mark.asyncio
-async def test_update_global_programme_forks_school_copy(
+async def test_programmes_not_offered_until_adopted(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """A shared catalogue programme must not appear in a school's own list —
+    or be assignable to a class — until explicitly adopted."""
+    db_session.add(SHSProgramme(school_id=None, code="SCI_T", name="General Science", is_active=True))
+    await db_session.flush()
+
+    progs = (await client.get("/academic/programmes", headers=auth)).json()
+    assert not any(p["code"] == "SCI_T" for p in progs)
+
+    catalogue = (await client.get("/academic/programmes/catalogue", headers=auth)).json()
+    catalogue_entry = next(c for c in catalogue if c["code"] == "SCI_T")
+
+    class_resp = await client.post("/academic/classes", json={
+        "level": "SHS", "year_group": 1, "programme_id": catalogue_entry["id"], "stream": "A",
+    }, headers=auth)
+    assert class_resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_adopt_programme_from_catalogue(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
 ):
-    """Editing a shared (school_id=None) GES programme must never mutate the
-    shared row itself — every SHS school on the platform reads it. It should
-    fork a private copy for this school and re-point this school's own
-    classes at the copy, leaving the original untouched for everyone else."""
-    global_prog = SHSProgramme(school_id=None, code="GSCI", name="General Science", is_active=True)
-    db_session.add(global_prog)
+    db_session.add(SHSProgramme(school_id=None, code="BUS_T", name="Business", is_active=True))
     await db_session.flush()
-    global_id = global_prog.id
+    catalogue = (await client.get("/academic/programmes/catalogue", headers=auth)).json()
+    entry = next(c for c in catalogue if c["code"] == "BUS_T")
 
-    # This school already has a class using the shared programme.
+    resp = await client.post("/academic/programmes/adopt", json={
+        "catalogue_programme_id": entry["id"],
+    }, headers=auth)
+    assert resp.status_code == 201
+    adopted = resp.json()
+    assert adopted["id"] != entry["id"]
+    assert adopted["school_id"] == str(school.id)
+    assert adopted["name"] == "Business"
+
+    progs = (await client.get("/academic/programmes", headers=auth)).json()
+    assert any(p["code"] == "BUS_T" for p in progs)
+
+    # Now assignable to a class.
     class_resp = await client.post("/academic/classes", json={
-        "level": "SHS", "year_group": 2, "programme_id": str(global_id), "stream": "A",
+        "level": "SHS", "year_group": 1, "programme_id": adopted["id"], "stream": "A",
     }, headers=auth)
     assert class_resp.status_code == 201
-    class_id = class_resp.json()["id"]
+    assert class_resp.json()["programme_name"] == "Business"
 
-    resp = await client.patch(f"/academic/programmes/{global_id}", json={
-        "name": "General Science (Renamed)",
+
+@pytest.mark.asyncio
+async def test_adopting_same_programme_twice_rejected(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    db_session.add(SHSProgramme(school_id=None, code="TECH_T", name="Technical", is_active=True))
+    await db_session.flush()
+    catalogue = (await client.get("/academic/programmes/catalogue", headers=auth)).json()
+    entry = next(c for c in catalogue if c["code"] == "TECH_T")
+
+    first = await client.post("/academic/programmes/adopt", json={
+        "catalogue_programme_id": entry["id"],
     }, headers=auth)
-    assert resp.status_code == 200
-    forked = resp.json()
-    assert forked["id"] != str(global_id)
-    assert forked["school_id"] == str(school.id)
-    assert forked["name"] == "General Science (Renamed)"
+    assert first.status_code == 201
 
-    # The shared row itself must be untouched — other schools still see the original.
+    second = await client.post("/academic/programmes/adopt", json={
+        "catalogue_programme_id": entry["id"],
+    }, headers=auth)
+    assert second.status_code == 409
+
+    # Already-adopted, so it must no longer be offered in the catalogue.
+    catalogue_after = (await client.get("/academic/programmes/catalogue", headers=auth)).json()
+    assert not any(c["code"] == "TECH_T" for c in catalogue_after)
+
+
+@pytest.mark.asyncio
+async def test_schools_adopt_different_subsets_independently(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """School A can offer only Business while School B offers everything —
+    adopting is per-school and doesn't affect the shared catalogue or any
+    other school's own list."""
+    db_session.add_all([
+        SHSProgramme(school_id=None, code="BUS_I", name="Business", is_active=True),
+        SHSProgramme(school_id=None, code="ARTS_I", name="General Arts", is_active=True),
+    ])
+    await db_session.flush()
+    school_b_auth = await _second_shs_school_auth(client, db_session)
+
+    catalogue = (await client.get("/academic/programmes/catalogue", headers=auth)).json()
+    business = next(c for c in catalogue if c["code"] == "BUS_I")
+    arts = next(c for c in catalogue if c["code"] == "ARTS_I")
+
+    # School A adopts only Business.
+    await client.post("/academic/programmes/adopt", json={"catalogue_programme_id": business["id"]}, headers=auth)
+
+    # School B adopts both.
+    await client.post("/academic/programmes/adopt", json={"catalogue_programme_id": business["id"]}, headers=school_b_auth)
+    await client.post("/academic/programmes/adopt", json={"catalogue_programme_id": arts["id"]}, headers=school_b_auth)
+
+    school_a_progs = {p["code"] for p in (await client.get("/academic/programmes", headers=auth)).json()}
+    school_b_progs = {p["code"] for p in (await client.get("/academic/programmes", headers=school_b_auth)).json()}
+    assert school_a_progs == {"BUS_I"}
+    assert school_b_progs == {"BUS_I", "ARTS_I"}
+
+    # The shared catalogue entries themselves are untouched by either adoption.
+    shared = await db_session.scalar(select(SHSProgramme).where(SHSProgramme.code == "BUS_I", SHSProgramme.school_id.is_(None)))
+    assert shared is not None
+
+
+@pytest.mark.asyncio
+async def test_cannot_edit_unadopted_catalogue_programme(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """The shared catalogue is read-only — PATCH on a not-yet-adopted
+    programme id must 404, not silently fork or mutate the shared row."""
+    global_prog = SHSProgramme(school_id=None, code="VARTS_T", name="Visual Arts", is_active=True)
+    db_session.add(global_prog)
+    await db_session.flush()
+
+    resp = await client.patch(f"/academic/programmes/{global_prog.id}", json={
+        "name": "Renamed",
+    }, headers=auth)
+    assert resp.status_code == 404
+
     await db_session.refresh(global_prog)
-    assert global_prog.school_id is None
-    assert global_prog.name == "General Science"
-
-    # This school's existing class must now follow the forked copy.
-    cls_after = (await client.get(f"/academic/classes/{class_id}", headers=auth)).json()
-    assert cls_after["programme_id"] == forked["id"]
-    assert cls_after["programme_name"] == "General Science (Renamed)"
+    assert global_prog.name == "Visual Arts"
 
 
 @pytest.mark.asyncio
@@ -234,6 +347,25 @@ async def test_create_and_list_subjects(client: AsyncClient, auth: dict):
     resp = await client.get("/academic/subjects", headers=auth)
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_deactivated_subject_still_listed_for_reactivation(client: AsyncClient, auth: dict):
+    """A hardcoded active-only filter would make Deactivate a one-way trip —
+    list_subjects must still return an inactive subject so the UI can find
+    and reactivate it."""
+    subj_id = (await client.post("/academic/subjects", json={
+        "code": "HIST_T", "name": "History",
+    }, headers=auth)).json()["id"]
+
+    await client.patch(f"/academic/subjects/{subj_id}", json={"is_active": False}, headers=auth)
+
+    resp = await client.get("/academic/subjects", headers=auth)
+    listed = next(s for s in resp.json() if s["id"] == subj_id)
+    assert listed["is_active"] is False
+
+    reactivated = await client.patch(f"/academic/subjects/{subj_id}", json={"is_active": True}, headers=auth)
+    assert reactivated.json()["is_active"] is True
 
 
 @pytest.mark.asyncio

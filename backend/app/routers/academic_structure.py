@@ -27,6 +27,7 @@ from app.schemas.academic import (
     ClassTeacherAssign,
     ClassTeacherRead,
     ClassUpdate,
+    ProgrammeAdopt,
     ProgrammeCreate,
     ProgrammeRead,
     ProgrammeUpdate,
@@ -53,6 +54,27 @@ async def list_programmes(
     _, school_id = ids
     progs = await subj_svc.list_programmes(school_id, db)
     return [ProgrammeRead.model_validate(p) for p in progs]
+
+
+@router.get("/programmes/catalogue", response_model=list[ProgrammeRead])
+async def list_programme_catalogue(
+    ids=Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    progs = await subj_svc.list_programme_catalogue(school_id, db)
+    return [ProgrammeRead.model_validate(p) for p in progs]
+
+
+@router.post("/programmes/adopt", response_model=ProgrammeRead, status_code=201)
+async def adopt_programme(
+    req: ProgrammeAdopt,
+    ids=Depends(require_permission("academic", "create")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    prog = await subj_svc.adopt_programme(req.catalogue_programme_id, school_id, db)
+    return ProgrammeRead.model_validate(prog)
 
 
 @router.post("/programmes", response_model=ProgrammeRead, status_code=201)

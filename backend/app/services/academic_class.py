@@ -6,7 +6,7 @@ Programmes, subject catalogue, and school subjects live in academic_subjects.py.
 from __future__ import annotations
 import uuid
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import (
@@ -85,7 +85,15 @@ async def create_class(
             detail="A class with this name already exists.",
         )
 
-    programme = await db.get(SHSProgramme, req.programme_id) if req.programme_id else None
+    programme = None
+    if req.programme_id:
+        programme = await db.scalar(
+            select(SHSProgramme).where(
+                SHSProgramme.id == req.programme_id, SHSProgramme.school_id == school_id,
+            )
+        )
+        if not programme:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Programme not found.")
     cls = Class(
         school_id=school_id,
         level=req.level.strip(),
@@ -148,8 +156,7 @@ async def update_class(
     if req.programme_id is not None:
         prog = await db.scalar(
             select(SHSProgramme).where(
-                SHSProgramme.id == req.programme_id,
-                or_(SHSProgramme.school_id == school_id, SHSProgramme.school_id.is_(None)),
+                SHSProgramme.id == req.programme_id, SHSProgramme.school_id == school_id,
             )
         )
         if not prog:

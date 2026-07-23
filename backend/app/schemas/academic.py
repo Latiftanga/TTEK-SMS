@@ -94,6 +94,10 @@ class ProgrammeUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class ProgrammeAdopt(BaseModel):
+    catalogue_programme_id: uuid.UUID
+
+
 class CatalogueRead(BaseModel):
     id: uuid.UUID
     code: str
