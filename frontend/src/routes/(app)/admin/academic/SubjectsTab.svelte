@@ -1,9 +1,13 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { listSubjects, createSubject, updateSubject, type Subject } from '$lib/api/academic';
+  import { listSubjects, updateSubject, type Subject } from '$lib/api/academic';
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import AddSubjectPanel from './AddSubjectPanel.svelte';
+
+  interface Props { schoolType: string; }
+  const { schoolType }: Props = $props();
 
   const qc = useQueryClient();
 
@@ -33,16 +37,8 @@
 
   let confirmDeactivateSubj = $state<{ id: string; name: string } | null>(null);
 
-  // ── Create form ───────────────────────────────────────────────────────────────
-  let showForm  = $state(false);
-  let form      = $state({ code: '', name: '' });
-  let formError = $state('');
-
-  const createMut = createMutation({
-    mutationFn: createSubject,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['subjects'] }); showForm = false; form = { code: '', name: '' }; formError = ''; },
-    onError: (e: unknown) => { formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create subject.'; },
-  });
+  // ── Add subject (catalogue picker or custom) ──────────────────────────────────
+  let showForm = $state(false);
 
   // ── Inline edit ───────────────────────────────────────────────────────────────
   let editingId = $state<string | null>(null);
@@ -56,12 +52,6 @@
   });
 
   function startEdit(s: Subject) { editingId = s.id; editForm = { code: s.code, name: s.name }; editError = ''; }
-
-  function submitCreate() {
-    formError = '';
-    if (!form.code.trim() || !form.name.trim()) { formError = 'Code and name are required.'; return; }
-    $createMut.mutate({ code: form.code.toUpperCase(), name: form.name });
-  }
 
   function submitEdit() {
     editError = '';
@@ -87,7 +77,7 @@
         {/each}
       </div>
     </div>
-    <button onclick={() => { showForm = !showForm; formError = ''; }}
+    <button onclick={() => { showForm = !showForm; }}
       class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style="background-color: var(--brand)">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
       Add subject
@@ -95,24 +85,12 @@
   </div>
 
   {#if showForm}
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-      <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">New Subject</h2>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Code</label>
-          <input bind:value={form.code} placeholder="e.g. MATH" class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Name</label>
-          <input bind:value={form.name} placeholder="e.g. Mathematics" class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
-        </div>
-      </div>
-      {#if formError}<p class="mt-2 text-xs text-red-500">{formError}</p>{/if}
-      <div class="mt-4 flex gap-2">
-        <button onclick={submitCreate} disabled={$createMut.isPending} class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background-color: var(--brand)">{$createMut.isPending ? 'Creating…' : 'Create subject'}</button>
-        <button onclick={() => { showForm = false; formError = ''; }} class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">Cancel</button>
-      </div>
-    </div>
+    <AddSubjectPanel
+      {schoolType}
+      existingSubjects={all}
+      onDone={() => { showForm = false; }}
+      onClose={() => { showForm = false; }}
+    />
   {/if}
 
   {#if $subjectsQuery.isPending}

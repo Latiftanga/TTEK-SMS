@@ -44,6 +44,15 @@ export interface Subject {
   is_active: boolean;
 }
 
+export interface CatalogueEntry {
+  id: string;
+  code: string;
+  name: string;
+  subject_type: 'CORE' | 'ELECTIVE';
+  level: 'BASIC' | 'SHS';
+  is_active: boolean;
+}
+
 export interface SchoolClass {
   id: string;
   school_id: string;
@@ -143,6 +152,13 @@ export async function setCurrentTerm(termId: string): Promise<AcademicTerm> {
 
 export async function listSubjects(): Promise<Subject[]> {
   const { data } = await client.get<Subject[]>('/academic/subjects');
+  return data;
+}
+
+export async function listCatalogue(level?: 'BASIC' | 'SHS'): Promise<CatalogueEntry[]> {
+  const { data } = await client.get<CatalogueEntry[]>('/academic/catalogue', {
+    params: level ? { level } : undefined,
+  });
   return data;
 }
 
