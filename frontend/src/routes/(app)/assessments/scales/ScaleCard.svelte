@@ -140,7 +140,7 @@
       <div class="grid gap-2 sm:grid-cols-2">
         <div>
           <label class="label-xs">Scale name <span class="text-red-500">*</span></label>
-          <input bind:value={editForm.name} placeholder="e.g. Ghana GES Standard" class="inp" />
+          <input bind:value={editForm.name} placeholder="e.g. Standard Grading Scale" class="inp" />
         </div>
         <div>
           <label class="label-xs">Description</label>

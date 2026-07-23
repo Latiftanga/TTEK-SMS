@@ -59,7 +59,7 @@
 {#if showForm}
   <div class="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 space-y-3">
     <div class="grid gap-3 sm:grid-cols-2">
-      <div><label for="gs-name" class="label">Scale name <span class="text-red-500">*</span></label><input id="gs-name" bind:value={form.name} placeholder="Ghana GES Standard" class="input" /></div>
+      <div><label for="gs-name" class="label">Scale name <span class="text-red-500">*</span></label><input id="gs-name" bind:value={form.name} placeholder="Standard Grading Scale" class="input" /></div>
       <div><label for="gs-desc" class="label">Description</label><input id="gs-desc" bind:value={form.description} placeholder="Optional" class="input" /></div>
     </div>
     <div class="flex items-center gap-2">
