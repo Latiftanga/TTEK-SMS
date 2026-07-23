@@ -13,6 +13,7 @@ from app.models.academic import (
     Class,
     ClassSubject,
     SHSProgramme,
+    Subject,
 )
 from app.schemas.academic import (
     ClassCreate,
@@ -196,6 +197,19 @@ async def assign_subjects(
         select(ClassSubject).where(ClassSubject.class_id == class_id)
     )
     existing_ids = {cs.subject_id for cs in existing_rows}
+
+    # Every subject_id must be one of this school's own subjects — Subject
+    # rows are school-private (unlike the shared SubjectCatalogue), and
+    # nothing upstream of this call verifies that.
+    owned_ids = set((await db.scalars(
+        select(Subject.id).where(Subject.id.in_(req.subject_ids), Subject.school_id == school_id)
+    )).all())
+    unknown = [str(sid) for sid in req.subject_ids if sid not in owned_ids]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Subject(s) not found: {', '.join(unknown)}.",
+        )
 
     added = []
     for subj_id in req.subject_ids:

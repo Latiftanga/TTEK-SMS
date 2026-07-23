@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.auth import LoginType, User
-from app.models.academic import SchoolLevel, SubjectCatalogue, SubjectType
+from app.models.academic import SchoolLevel, SHSProgramme, SubjectCatalogue, SubjectType
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 
 
@@ -164,6 +164,46 @@ async def test_create_basic_class_no_programme(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
+async def test_update_global_programme_forks_school_copy(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    """Editing a shared (school_id=None) GES programme must never mutate the
+    shared row itself — every SHS school on the platform reads it. It should
+    fork a private copy for this school and re-point this school's own
+    classes at the copy, leaving the original untouched for everyone else."""
+    global_prog = SHSProgramme(school_id=None, code="GSCI", name="General Science", is_active=True)
+    db_session.add(global_prog)
+    await db_session.flush()
+    global_id = global_prog.id
+
+    # This school already has a class using the shared programme.
+    class_resp = await client.post("/academic/classes", json={
+        "level": "SHS", "year_group": 2, "programme_id": str(global_id), "stream": "A",
+    }, headers=auth)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    resp = await client.patch(f"/academic/programmes/{global_id}", json={
+        "name": "General Science (Renamed)",
+    }, headers=auth)
+    assert resp.status_code == 200
+    forked = resp.json()
+    assert forked["id"] != str(global_id)
+    assert forked["school_id"] == str(school.id)
+    assert forked["name"] == "General Science (Renamed)"
+
+    # The shared row itself must be untouched — other schools still see the original.
+    await db_session.refresh(global_prog)
+    assert global_prog.school_id is None
+    assert global_prog.name == "General Science"
+
+    # This school's existing class must now follow the forked copy.
+    cls_after = (await client.get(f"/academic/classes/{class_id}", headers=auth)).json()
+    assert cls_after["programme_id"] == forked["id"]
+    assert cls_after["programme_name"] == "General Science (Renamed)"
+
+
+@pytest.mark.asyncio
 async def test_list_classes_by_year(client: AsyncClient, auth: dict):
     year_id = (await client.post("/academic/years", json={
         "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
@@ -194,6 +234,32 @@ async def test_create_and_list_subjects(client: AsyncClient, auth: dict):
     resp = await client.get("/academic/subjects", headers=auth)
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_assign_subject_rejects_other_schools_subject(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """Subject rows are private per school (unlike the shared SubjectCatalogue)
+    — a subject_id belonging to a different school must not be attachable to
+    this school's class."""
+    other_auth = await _basic_school_auth(client, db_session)
+    other_subj_resp = await client.post("/academic/subjects", json={
+        "code": "OTH", "name": "Other School's Subject",
+    }, headers=other_auth)
+    assert other_subj_resp.status_code == 201
+    other_subject_id = other_subj_resp.json()["id"]
+
+    class_resp = await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    resp = await client.post(f"/academic/classes/{class_id}/subjects", json={
+        "subject_ids": [other_subject_id],
+    }, headers=auth)
+    assert resp.status_code == 404
 
 
 # ── SHS / BASIC guards ────────────────────────────────────────────────────────

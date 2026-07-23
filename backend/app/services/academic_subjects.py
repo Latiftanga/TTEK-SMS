@@ -12,10 +12,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import SchoolLevel, SHSProgramme, Subject, SubjectCatalogue, SubjectType
+from app.models.academic import Class, SchoolLevel, SHSProgramme, Subject, SubjectCatalogue, SubjectType
 from app.models.school import School, SchoolType
 from app.schemas.academic import ProgrammeCreate, ProgrammeUpdate, SubjectCreate, SubjectUpdate
 
@@ -77,10 +77,27 @@ async def update_programme(
     )
     if not prog:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Programme not found.")
-    # Claim any global (seed) programme for this school on first edit so subsequent
-    # updates keep the same record and other schools aren't affected.
+
+    # A shared (school_id=NULL) programme is used by every SHS school on the
+    # platform — editing it must never mutate the shared row itself, or the
+    # edit (rename, deactivate, ...) would silently apply to every other
+    # school too. Fork a school-owned copy on first edit instead, and
+    # re-point this school's own classes at the copy so their existing data
+    # follows the edit; the original shared row is left untouched for
+    # everyone else.
     if prog.school_id is None:
-        prog.school_id = school_id
+        copy = SHSProgramme(
+            school_id=school_id, code=prog.code, name=prog.name, is_active=prog.is_active,
+        )
+        db.add(copy)
+        await db.flush()
+        await db.execute(
+            update(Class)
+            .where(Class.school_id == school_id, Class.programme_id == prog.id)
+            .values(programme_id=copy.id)
+        )
+        prog = copy
+
     if req.code is not None:
         prog.code = req.code.upper().strip()
     if req.name is not None:
