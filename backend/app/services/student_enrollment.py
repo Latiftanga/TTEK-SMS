@@ -1,5 +1,5 @@
 """
-Initial enrollment, term enrollment, and subject registration.
+Initial enrollment and term enrollment.
 
 FLOW
 ----
@@ -8,7 +8,8 @@ FLOW
    See student_class_assignment.py.
 3. Teacher creates TermEnrollment when the student physically reports for a term.
    Requires a StudentClassAssignment for the same academic year to exist first.
-4. Teacher registers subjects (SubjectRegistration) against the TermEnrollment.
+4. Teacher registers subjects (SubjectRegistration) against the TermEnrollment —
+   see student_subject_registration.py.
 
 Transfer requests live in student_transfer.py.
 
@@ -42,14 +43,11 @@ from app.models.students import (
     Student,
     StudentClassAssignment,
     StudentEnrollment,
-    SubjectRegistration,
     TermEnrollment,
 )
 from app.schemas.students import (
     EnrollmentCreate,
     EnrollmentRead,
-    SubjectRegistrationItem,
-    SubjectRegistrationRead,
     TermEnrollmentCreate,
     TermEnrollmentRead,
 )
@@ -279,74 +277,3 @@ async def bulk_term_enrollment(
                 raise
             skipped += 1
     return {"enrolled": enrolled, "skipped": skipped}
-
-
-# ── Subject registration ──────────────────────────────────────────────────────
-
-async def register_subjects(
-    te_id: uuid.UUID,
-    items: list[SubjectRegistrationItem],
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> list[SubjectRegistrationRead]:
-    te = await db.scalar(
-        select(TermEnrollment).where(
-            TermEnrollment.id == te_id, TermEnrollment.school_id == school_id
-        )
-    )
-    if not te:
-        raise HTTPException(status_code=404, detail="Term enrollment not found.")
-
-    results: list[SubjectRegistration] = []
-    for item in items:
-        reg = SubjectRegistration(
-            school_id=school_id,
-            term_enrollment_id=te_id,
-            subject_id=item.subject_id,
-            registration_type=item.registration_type,
-        )
-        try:
-            async with db.begin_nested():
-                db.add(reg)
-                await db.flush()
-            results.append(reg)
-        except IntegrityError:
-            try:
-                db.expunge(reg)
-            except Exception:
-                pass  # already registered — skip silently
-
-    return [SubjectRegistrationRead.model_validate(r) for r in results]
-
-
-async def list_subject_registrations(
-    te_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> list[SubjectRegistrationRead]:
-    rows = await db.scalars(
-        select(SubjectRegistration).where(
-            SubjectRegistration.term_enrollment_id == te_id,
-            SubjectRegistration.school_id == school_id,
-        )
-    )
-    return [SubjectRegistrationRead.model_validate(r) for r in rows]
-
-
-async def delete_subject_registration(
-    te_id: uuid.UUID,
-    reg_id: uuid.UUID,
-    school_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    reg = await db.scalar(
-        select(SubjectRegistration).where(
-            SubjectRegistration.id == reg_id,
-            SubjectRegistration.term_enrollment_id == te_id,
-            SubjectRegistration.school_id == school_id,
-        )
-    )
-    if not reg:
-        raise HTTPException(status_code=404, detail="Subject registration not found.")
-    await db.delete(reg)
-    await db.flush()

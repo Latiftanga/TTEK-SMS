@@ -116,10 +116,16 @@ async def bulk_class_assignment(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> dict:
+    """Each item runs in its own SAVEPOINT (db.begin_nested()) — a plain
+    try/except around create_class_assignment isn't enough: a failed flush
+    (duplicate assignment) leaves the whole session's transaction unusable
+    for the rest of the batch without a savepoint to roll back to. See
+    student_enrollment.py::bulk_term_enrollment for the same pattern."""
     assigned = skipped = 0
     for item in items:
         try:
-            await create_class_assignment(item, school_id, user_id, db)
+            async with db.begin_nested():
+                await create_class_assignment(item, school_id, user_id, db)
             assigned += 1
         except HTTPException as e:
             if e.status_code != 409:

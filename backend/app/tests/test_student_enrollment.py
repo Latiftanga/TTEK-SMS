@@ -204,9 +204,13 @@ async def test_register_subjects(
     school_class: Class, academic_term: AcademicTerm,
     db_session: AsyncSession, school: School,
 ):
-    from app.models.academic import Subject
+    from app.models.academic import ClassSubject, Subject
     sub = Subject(school_id=school.id, code="MATH01", name="Mathematics", is_active=True)
     db_session.add(sub)
+    await db_session.flush()
+    # register_subjects requires subject_id to be an active ClassSubject on
+    # the student's class (services/subject_roster.py::class_subject_exists).
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
 
     sid = await _create_student(client, auth)
@@ -230,9 +234,11 @@ async def test_duplicate_subject_skipped_silently(
     school_class: Class, academic_term: AcademicTerm,
     db_session: AsyncSession, school: School,
 ):
-    from app.models.academic import Subject
+    from app.models.academic import ClassSubject, Subject
     sub = Subject(school_id=school.id, code="ENG01", name="English", is_active=True)
     db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
 
     sid = await _create_student(client, auth)
@@ -251,6 +257,92 @@ async def test_duplicate_subject_skipped_silently(
     ], headers=auth)
     assert resp.status_code == 201
     assert resp.json() == []   # nothing new registered
+
+
+@pytest.mark.asyncio
+async def test_register_subject_not_on_class_rejected(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School,
+):
+    """A subject never assigned to the class (no ClassSubject row) can't be
+    registered for a student in that class — mirrors create_assessment's
+    guard from 12q."""
+    from app.models.academic import Subject
+    orphan = Subject(school_id=school.id, code="ORPHAN01", name="Nobody's Subject", is_active=True)
+    db_session.add(orphan)
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+        {"subject_id": str(orphan.id), "registration_type": "CORE"},
+    ], headers=auth)
+    assert resp.status_code == 422
+    assert "not assigned" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_subjects_rejects_deactivated_term_enrollment(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School,
+):
+    """A withdrawn/transferred student's TermEnrollment is deactivated (not
+    deleted) by student_lifecycle.py — subjects must not be registerable
+    against it afterward."""
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="WD01", name="Withdrawn Test Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    te = await db_session.get(TermEnrollment, te_id)
+    te.is_active = False
+    await db_session.flush()
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ], headers=auth)
+    assert resp.status_code == 404
+
+
+# ── Bulk class assignment ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_bulk_class_assignment_skips_duplicate_and_continues(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+):
+    """A duplicate assignment earlier in the batch must not crash the request
+    or block later items — each item runs in its own savepoint."""
+    already_assigned = await _create_student(client, auth, num="BULK001")
+    await _assign_class(client, auth, already_assigned, school_class, academic_term)
+    fresh = await _create_student(client, auth, num="BULK002")
+
+    resp = await client.post("/students/class-assignments/bulk", json={
+        "items": [
+            {"student_id": already_assigned, "class_id": str(school_class.id),
+             "academic_year_id": str(academic_term.academic_year_id)},
+            {"student_id": fresh, "class_id": str(school_class.id),
+             "academic_year_id": str(academic_term.academic_year_id)},
+        ]
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json() == {"enrolled": 1, "skipped": 1}
 
 
 # ── Transfer requests ─────────────────────────────────────────────────────────

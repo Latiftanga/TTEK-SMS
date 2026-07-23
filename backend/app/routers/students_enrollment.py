@@ -30,6 +30,7 @@ from app.schemas.students import (
 )
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
+from app.services import student_subject_registration as subject_reg_svc
 from app.services import student_transfer as transfer_svc
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -88,7 +89,7 @@ async def register_subjects(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await enroll_svc.register_subjects(te_id, items, school_id, db)
+    return await subject_reg_svc.register_subjects(te_id, items, school_id, db)
 
 
 @router.get("/term-enrollments/{te_id}/subjects", response_model=list[SubjectRegistrationRead])
@@ -98,7 +99,7 @@ async def list_subjects(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await enroll_svc.list_subject_registrations(te_id, school_id, db)
+    return await subject_reg_svc.list_subject_registrations(te_id, school_id, db)
 
 
 @router.delete("/term-enrollments/{te_id}/subjects/{reg_id}", status_code=204)
@@ -109,7 +110,7 @@ async def delete_subject(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    await enroll_svc.delete_subject_registration(te_id, reg_id, school_id, db)
+    await subject_reg_svc.delete_subject_registration(te_id, reg_id, school_id, db)
 
 
 # ── Transfer management (declared before /{student_id}) ──────────────────────
