@@ -54,6 +54,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Run migrations
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          APP_ENV: development
+          APP_SECRET_KEY: ci-test-secret-key
+          DATABASE_URL: postgresql+asyncpg://ttek:testpass@localhost:5432/ttek_sms_test
+          REDIS_URL: redis://localhost:6379/0
+          HMAC_SECRET_KEY: ci-test-hmac-key
+          SENTRY_DSN: ""
+        run: alembic upgrade head
+
+      - name: Seed reference data
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          APP_ENV: development
+          APP_SECRET_KEY: ci-test-secret-key
+          DATABASE_URL: postgresql+asyncpg://ttek:testpass@localhost:5432/ttek_sms_test
+          REDIS_URL: redis://localhost:6379/0
+          HMAC_SECRET_KEY: ci-test-hmac-key
+          SENTRY_DSN: ""
+        run: python scripts/seed_reference_data.py
+
       - name: Run tests
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
