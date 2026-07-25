@@ -1,4 +1,8 @@
-"""Staff router — profiles, contacts, qualifications, promotions, and leave.
+"""Staff router — core profile CRUD, import, invite, and password reset.
+
+HR sub-records (contacts, qualifications, promotions, leave, responsibilities)
+live in routers/staff_records.py; exports and personal permission overrides
+live in routers/staff_admin.py — both split out to stay under the 300-line cap.
 
 ACCESS CONTROL
 --------------
@@ -6,13 +10,7 @@ GET  /staff, /staff/{id}               staff.view
 POST /staff                            staff.create
 PATCH /staff/{id}                      staff.edit
 POST /staff/{id}/invite                school.manage_users
-POST/PATCH/DELETE contacts & qualifications  staff.edit
-POST/PATCH/DELETE /staff/{id}/promotions     staff.edit
-GET  /staff/{id}/promotions                  staff.view
-POST /staff/{id}/leave                 staff.edit
-GET  /staff/{id}/leave                 staff.view
-GET  /staff/leave/pending              staff.edit
-PATCH /staff/leave/{id}/review         staff.edit
+POST /staff/{id}/reset-password        staff.edit
 """
 from __future__ import annotations
 import uuid
@@ -24,34 +22,18 @@ from app.core.dependencies import assert_self_or_permission, require_auth, requi
 from fastapi import File, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.schemas.auth import InvitationCreate, StaffPermissionRead, StaffPermissionUpsert
+from app.schemas.auth import InvitationCreate
 from app.schemas.documents import ImportBatchResult
 from app.schemas.staff import (
-    EmergencyContactCreate,
-    EmergencyContactRead,
-    LeaveCreate,
-    LeaveRead,
-    LeaveReview,
-    PromotionCreate,
-    PromotionRead,
-    PromotionUpdate,
-    QualificationCreate,
-    QualificationRead,
-    QualificationUpdate,
     StaffMemberCreate,
     StaffMemberDetail,
     StaffMemberSummary,
     StaffMemberUpdate,
-    StaffResponsibilities,
     TempPasswordResult,
 )
 from app.services import auth_invite as invite_svc
 from app.services import staff as staff_svc
-from app.services import staff_contacts as contacts_svc
 from app.services import staff_import as import_svc
-from app.services import staff_leave as leave_svc
-from app.services import staff_permissions as perms_svc
-from app.services import staff_responsibilities as responsibilities_svc
 from app.services.staff_import_template import build_template
 
 router = APIRouter(prefix="/staff", tags=["staff"])
@@ -182,38 +164,6 @@ async def reset_staff_password(
     return TempPasswordResult(temporary_password=temp, display_name=display)
 
 
-@router.get("/leave/pending", response_model=list[LeaveRead])
-async def list_pending_leave(
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return await leave_svc.list_pending_leave(school_id, db)
-
-
-@router.patch("/leave/{leave_id}/review", response_model=LeaveRead)
-async def review_leave(
-    leave_id: uuid.UUID,
-    req: LeaveReview,
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    leave = await leave_svc.review_leave(leave_id, req, school_id, db, reviewed_by_id=user_id)
-    return LeaveRead.model_validate(leave)
-
-
-@router.get("/{staff_id}/responsibilities", response_model=StaffResponsibilities)
-async def get_staff_responsibilities(
-    staff_id: uuid.UUID,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
-    return await responsibilities_svc.get_responsibilities(staff_id, school_id, db)
-
-
 @router.get("/{staff_id}", response_model=StaffMemberDetail)
 async def get_staff(
     staff_id: uuid.UUID,
@@ -315,247 +265,3 @@ async def invite_staff_to_platform(
         )
 
     return {"invitation_token": token, "invite_link": invite_link, "sms_sent": sms_sent}
-
-
-@router.post("/{staff_id}/emergency-contacts", response_model=EmergencyContactRead, status_code=201)
-async def add_emergency_contact(
-    staff_id: uuid.UUID,
-    req: EmergencyContactCreate,
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    contact = await contacts_svc.add_emergency_contact(staff_id, req, school_id, db)
-    return EmergencyContactRead.model_validate(contact)
-
-
-@router.delete("/{staff_id}/emergency-contacts/{contact_id}", status_code=204)
-async def delete_emergency_contact(
-    staff_id: uuid.UUID,
-    contact_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    await contacts_svc.delete_emergency_contact(staff_id, contact_id, school_id, db)
-
-
-@router.post("/{staff_id}/qualifications", response_model=QualificationRead, status_code=201)
-async def add_qualification(
-    staff_id: uuid.UUID,
-    req: QualificationCreate,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
-    qual = await contacts_svc.add_qualification(staff_id, req, school_id, db)
-    return QualificationRead.model_validate(qual)
-
-
-@router.patch("/{staff_id}/qualifications/{qual_id}", response_model=QualificationRead)
-async def update_qualification(
-    staff_id: uuid.UUID,
-    qual_id: uuid.UUID,
-    req: QualificationUpdate,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
-    qual = await contacts_svc.update_qualification(staff_id, qual_id, req, school_id, db)
-    return QualificationRead.model_validate(qual)
-
-
-@router.delete("/{staff_id}/qualifications/{qual_id}", status_code=204)
-async def delete_qualification(
-    staff_id: uuid.UUID,
-    qual_id: uuid.UUID,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
-    await contacts_svc.delete_qualification(staff_id, qual_id, school_id, db)
-
-
-@router.patch("/{staff_id}/promotions/{promotion_id}", response_model=PromotionRead)
-async def update_promotion(
-    staff_id: uuid.UUID,
-    promotion_id: uuid.UUID,
-    req: PromotionUpdate,
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return await leave_svc.update_promotion(staff_id, promotion_id, req, school_id, db)
-
-
-@router.delete("/{staff_id}/promotions/{promotion_id}", status_code=204)
-async def delete_promotion(
-    staff_id: uuid.UUID,
-    promotion_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    await leave_svc.delete_promotion(staff_id, promotion_id, school_id, db)
-
-
-@router.post("/{staff_id}/promotions", response_model=PromotionRead, status_code=201)
-async def record_promotion(
-    staff_id: uuid.UUID,
-    req: PromotionCreate,
-    ids=Depends(require_permission("staff", "edit")),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    return await leave_svc.record_promotion(staff_id, req, school_id, db, approved_by_id=user_id)
-
-
-@router.get("/{staff_id}/promotions", response_model=list[PromotionRead])
-async def list_promotions(
-    staff_id: uuid.UUID,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
-    return await leave_svc.list_promotions(staff_id, school_id, db)
-
-
-@router.post("/{staff_id}/leave", response_model=LeaveRead, status_code=201)
-async def submit_leave(
-    staff_id: uuid.UUID,
-    req: LeaveCreate,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "edit", db)
-    leave = await leave_svc.submit_leave(staff_id, req, school_id, db)
-    return LeaveRead.model_validate(leave)
-
-
-@router.get("/{staff_id}/leave", response_model=list[LeaveRead])
-async def list_leave(
-    staff_id: uuid.UUID,
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    await assert_self_or_permission(user_id, staff_id, "staff", "view", db)
-    leaves = await leave_svc.list_leave(staff_id, school_id, db)
-    return [LeaveRead.model_validate(l) for l in leaves]
-
-
-@router.get("/export/excel")
-async def export_staff_excel(
-    category_id: uuid.UUID | None = Query(None),
-    active_only: bool = Query(True),
-    search: str | None = Query(None),
-    gender: str | None = Query(None),
-    ids=Depends(require_permission("staff", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Export the staff register as an Excel workbook (.xlsx)."""
-    from app.services.staff_export import export_excel
-    _, school_id = ids
-    xlsx = await export_excel(school_id, db, category_id=category_id, active_only=active_only, search=search, gender=gender)
-    return StreamingResponse(
-        iter([xlsx]),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="staff_register.xlsx"'},
-    )
-
-
-@router.get("/export/custom")
-async def export_staff_custom(
-    fields: str = Query(""),
-    fmt: str = Query("csv", pattern="^(csv|excel)$"),
-    active_only: bool = Query(True),
-    category_id: uuid.UUID | None = Query(None),
-    search: str | None = Query(None),
-    gender: str | None = Query(None),
-    ids=Depends(require_permission("staff", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Export staff with caller-selected fields as CSV or Excel."""
-    from app.services.staff_custom_export import export_staff_custom as _export
-    _, school_id = ids
-    field_list = [f.strip() for f in fields.split(",") if f.strip()]
-    data = await _export(
-        school_id, db,
-        fields=field_list, fmt=fmt,
-        active_only=active_only, category_id=category_id,
-        search=search, gender=gender,
-    )
-    if fmt == "excel":
-        return StreamingResponse(
-            iter([data]),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="staff.xlsx"'},
-        )
-    return StreamingResponse(
-        iter([data]),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="staff.csv"'},
-    )
-
-
-@router.get("/export/pdf")
-async def export_staff_pdf(
-    category_id: uuid.UUID | None = Query(None),
-    active_only: bool = Query(True),
-    search: str | None = Query(None),
-    gender: str | None = Query(None),
-    ids=Depends(require_permission("staff", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Export the staff register as a PDF (A4 landscape)."""
-    from app.services.staff_export import export_pdf
-    _, school_id = ids
-    pdf = await export_pdf(school_id, db, category_id=category_id, active_only=active_only, search=search, gender=gender)
-    return StreamingResponse(
-        iter([pdf]),
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="staff_register.pdf"'},
-    )
-
-
-# ── Personal permission overrides ─────────────────────────────────────────────
-
-@router.get("/{staff_id}/permissions", response_model=list[StaffPermissionRead])
-async def list_staff_permissions(
-    staff_id: uuid.UUID,
-    ids=Depends(require_permission("school", "manage_users")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Return all 29 permissions with resolved source for a staff member."""
-    _, school_id = ids
-    return await perms_svc.list_permissions(staff_id, school_id, db)
-
-
-@router.post("/{staff_id}/permissions", response_model=list[StaffPermissionRead])
-async def set_staff_permission(
-    staff_id: uuid.UUID,
-    req: StaffPermissionUpsert,
-    ids=Depends(require_permission("school", "manage_users")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upsert a personal permission override for a staff member."""
-    _, school_id = ids
-    return await perms_svc.set_permission(staff_id, school_id, req, db)
-
-
-@router.delete("/{staff_id}/permissions/{module}/{action}", response_model=list[StaffPermissionRead])
-async def clear_staff_permission(
-    staff_id: uuid.UUID,
-    module: str,
-    action: str,
-    ids=Depends(require_permission("school", "manage_users")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Remove a personal permission override, reverting to the position default."""
-    _, school_id = ids
-    return await perms_svc.clear_permission(staff_id, school_id, module, action, db)

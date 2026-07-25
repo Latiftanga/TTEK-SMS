@@ -18,7 +18,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 # All models must be imported so SQLAlchemy can resolve cross-file FK references
-from app.models import academic, assessments, attendance, auth, documents, fees, housing, school, staff, students  # noqa: F401
+from app.models import academic, assessments, attendance, auth, documents, fees, housing, school, staff, staff_history, students  # noqa: F401
 from app.models.academic import SchoolLevel, SHSProgramme, SubjectCatalogue, SubjectType
 
 # ── GES SHS Programmes ────────────────────────────────────────────────────────

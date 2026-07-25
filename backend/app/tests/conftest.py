@@ -24,7 +24,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 # All models must be imported so SQLAlchemy resolves FK references across files
-from app.models import school, auth, staff, academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
+from app.models import school, auth, staff, staff_history, academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
 from app.models.academic import AcademicTerm, AcademicYear, Class
 from app.models.attendance import DayType, SchoolCalendar
 from app.models.school import SmsConfig, SmsProvider

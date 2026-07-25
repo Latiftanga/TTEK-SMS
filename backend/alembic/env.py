@@ -13,6 +13,7 @@ from app.models.base import Base  # noqa: F401
 from app.models import school       # noqa: F401
 from app.models import auth         # noqa: F401
 from app.models import staff        # noqa: F401
+from app.models import staff_history  # noqa: F401
 from app.models import academic     # noqa: F401
 from app.models import students     # noqa: F401
 from app.models import housing      # noqa: F401

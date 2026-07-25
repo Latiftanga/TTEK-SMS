@@ -9,7 +9,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.staff import StaffEmergencyContact, StaffMember, StaffQualification
+from app.models.staff import StaffEmergencyContact, StaffMember
+from app.models.staff_history import StaffQualification
 from app.schemas.staff import EmergencyContactCreate, QualificationCreate, QualificationUpdate
 
 

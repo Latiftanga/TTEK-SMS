@@ -27,7 +27,7 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.core.auth import hash_password
 # All models must be imported so SQLAlchemy resolves FK references
-from app.models import school as _sm, auth as _am, staff as _stm  # noqa: F401
+from app.models import school as _sm, auth as _am, staff as _stm, staff_history as _sth  # noqa: F401
 from app.models import academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
 from app.models.school import School, SchoolType, SchoolOwnership, GhanaRegion, GhanaDistrict
 from app.models.auth import User, LoginType, StaffPosition, PositionPermission

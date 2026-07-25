@@ -2,7 +2,8 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from pydantic import BaseModel, field_validator
-from app.models.staff import EmploymentType, Gender, LeaveStatus, MaritalStatus, StaffType
+from app.models.staff import EmploymentType, Gender, MaritalStatus, StaffType
+from app.models.staff_history import LeaveStatus
 
 
 class StaffCategoryCreate(BaseModel):

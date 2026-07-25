@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select, tuple_
 from app.core.database import AsyncSessionLocal
 # Import all models so SQLAlchemy resolves FK references
-from app.models import school, auth, staff, academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
+from app.models import school, auth, staff, staff_history, academic, students, housing, attendance, assessments, fees, documents  # noqa: F401
 from app.models.school import GhanaRegion, GhanaDistrict
 from app.models.attendance import GhanaPublicHoliday
 from app.models.auth import StaffPosition, PositionPermission

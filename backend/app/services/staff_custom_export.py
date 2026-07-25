@@ -14,7 +14,8 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.school import School, SchoolOwnership
-from app.models.staff import StaffMember, StaffPromotion
+from app.models.staff import StaffMember
+from app.models.staff_history import StaffPromotion
 
 
 def _full_name(m: StaffMember) -> str:

@@ -22,7 +22,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.staff import LeaveStatus, StaffLeave, StaffMember, StaffPromotion, StaffRank
+from app.models.staff import StaffMember, StaffRank
+from app.models.staff_history import LeaveStatus, StaffLeave, StaffPromotion
 from app.schemas.staff import LeaveCreate, LeaveRead, LeaveReview, PromotionCreate, PromotionRead, PromotionUpdate
 
 
