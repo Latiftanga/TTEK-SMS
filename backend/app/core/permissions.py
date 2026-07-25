@@ -196,14 +196,20 @@ async def resolve_permissions(
                 if row.is_allowed or key not in perms:
                     perms[key] = row.is_allowed
 
-    # Layer 1: apply personal overrides — these always win.
-    override_rows = await db.execute(
-        select(StaffPermission).where(
-            StaffPermission.staff_member_id == staff_member_id
+    # Layer 1: apply personal overrides — these always win. Scoped to the
+    # staff member's own school_id as defense in depth: the write path
+    # (services/staff_permissions.py) already enforces this, but a mismatched
+    # school_id here would otherwise still be picked up by staff_member_id
+    # alone, letting a stray or historical cross-school row apply.
+    if staff:
+        override_rows = await db.execute(
+            select(StaffPermission).where(
+                StaffPermission.staff_member_id == staff_member_id,
+                StaffPermission.school_id == staff.school_id,
+            )
         )
-    )
-    for row in override_rows.scalars():
-        perms[f"{row.module}.{row.action}"] = row.is_allowed
+        for row in override_rows.scalars():
+            perms[f"{row.module}.{row.action}"] = row.is_allowed
 
     await _write_cache(staff_member_id, perms)
     return perms

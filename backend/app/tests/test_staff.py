@@ -12,9 +12,9 @@ import pytest_asyncio
 
 from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class, ClassTeacher
-from app.models.auth import LoginType, StaffPosition, User
-from app.models.school import School
-from app.models.staff import StaffCategory, StaffRank, StaffType
+from app.models.auth import LoginType, StaffPermission, StaffPosition, User
+from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
+from app.models.staff import StaffCategory, StaffMember, StaffRank, StaffType
 from sqlalchemy import select
 
 
@@ -395,3 +395,95 @@ async def test_list_staff_category_filter(client: AsyncClient, auth: dict, db_se
     resp = await client.get(f"/staff?category_id={cat_id}", headers=auth)
     assert resp.headers["x-total-count"] == "1"
     assert resp.json()[0]["staff_number"] == "TST201"
+
+
+# ── Personal permission overrides ────────────────────────────────────────────
+
+async def _other_school_staff(db_session: AsyncSession) -> StaffMember:
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Other Test School", school_code="OTHERSCH",
+        school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+    staff = StaffMember(
+        school_id=other_school.id, staff_number="OTH001",
+        first_name="Foreign", last_name="Staff", is_active=True,
+    )
+    db_session.add(staff)
+    await db_session.flush()
+    return staff
+
+
+@pytest.mark.asyncio
+async def test_staff_permissions_reject_cross_school_read(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    other_staff = await _other_school_staff(db_session)
+    resp = await client.get(f"/staff/{other_staff.id}/permissions", headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_staff_permissions_reject_cross_school_write(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, redis_permissions,
+):
+    """A caller with school.manage_users at one school must not be able to
+    grant a permission override to a staff member at a different school —
+    resolve_permissions() applies overrides by staff_member_id alone, so an
+    unguarded write here would silently change a real staff member's live
+    permissions at another school."""
+    other_staff = await _other_school_staff(db_session)
+    resp = await client.post(f"/staff/{other_staff.id}/permissions", json={
+        "module": "fees", "action": "manage", "is_allowed": True,
+    }, headers=auth)
+    assert resp.status_code == 404
+
+    from app.core.permissions import resolve_permissions
+    perms = await resolve_permissions(other_staff.id, db_session)
+    assert perms.get("fees.manage", False) is False
+
+
+@pytest.mark.asyncio
+async def test_staff_permissions_reject_cross_school_clear(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    other_staff = await _other_school_staff(db_session)
+    resp = await client.delete(f"/staff/{other_staff.id}/permissions/fees/manage", headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_resolve_permissions_ignores_mismatched_school_override(
+    db_session: AsyncSession, school: School, redis_permissions,
+):
+    """Defense in depth: even if a StaffPermission row somehow exists with a
+    school_id that doesn't match the staff member's own school, resolve_permissions()
+    must not apply it."""
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Mismatch Test School", school_code="MISMATCH",
+        school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+    staff = StaffMember(
+        school_id=school.id, staff_number="MIS001",
+        first_name="Mismatch", last_name="Test", is_active=True,
+    )
+    db_session.add(staff)
+    await db_session.flush()
+    db_session.add(StaffPermission(
+        school_id=other_school.id,  # wrong school on purpose
+        staff_member_id=staff.id, module="fees", action="manage", is_allowed=True,
+    ))
+    await db_session.flush()
+
+    from app.core.permissions import resolve_permissions
+    perms = await resolve_permissions(staff.id, db_session)
+    assert perms.get("fees.manage", False) is False

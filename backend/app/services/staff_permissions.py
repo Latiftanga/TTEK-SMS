@@ -8,8 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import invalidate_permissions
 from app.models.auth import PositionPermission, StaffPermission
-from app.models.staff import staff_member_positions
+from app.models.staff import StaffMember, staff_member_positions
 from app.schemas.auth import StaffPermissionRead, StaffPermissionUpsert
+
+
+async def _assert_owns(staff_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> None:
+    """Every function here must be scoped to a staff member at the caller's
+    own school — without this, a caller with school.manage_users at ANY
+    school could grant/revoke/inspect permissions for a staff member at a
+    completely different school (resolve_permissions() applies overrides by
+    staff_member_id alone, with no school check of its own)."""
+    member = await db.get(StaffMember, staff_id)
+    if not member or member.school_id != school_id:
+        raise HTTPException(status_code=404, detail="Staff member not found.")
 
 # Full catalogue — mirrors the docstring in core/permissions.py
 ALL_PERMISSIONS: list[tuple[str, str]] = [
@@ -31,6 +42,7 @@ async def list_permissions(
     db: AsyncSession,
 ) -> list[StaffPermissionRead]:
     """Return all 29 permissions with their resolved source for this staff member."""
+    await _assert_owns(staff_id, school_id, db)
     # Load position-level defaults (Layer 2)
     pos_id_rows = await db.execute(
         select(staff_member_positions.c.position_id).where(
@@ -88,6 +100,7 @@ async def set_permission(
     req: StaffPermissionUpsert,
     db: AsyncSession,
 ) -> list[StaffPermissionRead]:
+    await _assert_owns(staff_id, school_id, db)
     existing = await db.scalar(
         select(StaffPermission).where(
             StaffPermission.staff_member_id == staff_id,
@@ -118,6 +131,7 @@ async def clear_permission(
     action: str,
     db: AsyncSession,
 ) -> list[StaffPermissionRead]:
+    await _assert_owns(staff_id, school_id, db)
     result = await db.execute(
         delete(StaffPermission).where(
             StaffPermission.staff_member_id == staff_id,
