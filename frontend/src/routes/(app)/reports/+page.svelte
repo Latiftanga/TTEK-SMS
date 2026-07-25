@@ -66,6 +66,9 @@
   let bulkStatus  = $state<'idle' | 'queued' | 'polling' | 'ready' | 'error'>('idle');
   let pollTimer   = $state<ReturnType<typeof setTimeout> | null>(null);
 
+  const POLL_INTERVAL_MS = 5000;
+  const MAX_POLL_ATTEMPTS = 60; // ~5 minutes — a large class's worth of PDFs can take a while
+
   const bulkMut = createMutation({
     mutationFn: () => queueBulkReport(classId, termId, format),
     onSuccess: (job) => {
@@ -79,7 +82,9 @@
 
   function pollForZip(jobId: string) {
     bulkStatus = 'polling';
+    let attempts = 0;
     const attempt = async () => {
+      attempts += 1;
       try {
         const blob = await downloadBulkReport(jobId);
         const url = URL.createObjectURL(blob);
@@ -90,9 +95,22 @@
         setTimeout(() => URL.revokeObjectURL(url), 5000);
         bulkStatus = 'ready';
         bulkJobId  = null;
-      } catch {
-        // 404 = still processing — retry in 5s
-        pollTimer = setTimeout(attempt, 5000);
+      } catch (e: unknown) {
+        const status = (e as { response?: { status?: number } })?.response?.status;
+        if (status !== 404) {
+          // Not "still processing" — a real failure. Stop and let the user retry.
+          bulkStatus = 'error';
+          bulkJobId  = null;
+          toast.error('Bulk generation failed. Try again.');
+          return;
+        }
+        if (attempts >= MAX_POLL_ATTEMPTS) {
+          bulkStatus = 'error';
+          bulkJobId  = null;
+          toast.error('Bulk generation is taking too long — it may have failed. Try again.');
+          return;
+        }
+        pollTimer = setTimeout(attempt, POLL_INTERVAL_MS);
       }
     };
     attempt();
