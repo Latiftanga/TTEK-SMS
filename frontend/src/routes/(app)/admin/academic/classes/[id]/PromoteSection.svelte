@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
-  import { listStudents, bulkAssignStudentsToClass, bulkEnrollStudents } from '$lib/api/students';
+  import { listStudents, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
 
   interface Props { classId: string; classData: SchoolClass; }
@@ -59,19 +59,25 @@
     repeat:  { label: 'Repeat year', color: 'text-amber-600 dark:text-amber-400', desc: 'Re-enroll in the same class for a new year' },
     demote:  { label: 'Demote',      color: 'text-red-600 dark:text-red-400',     desc: 'Move down to a lower year group' },
   };
+  const ACTION_TO_TYPE: Record<ActionType, PromotionRecordCreate['graduation_type']> = {
+    promote: 'PROMOTED', repeat: 'REPEATED', demote: 'DEMOTED',
+  };
 
   const promoteMut = createMutation({
-    mutationFn: async () => {
-      const ids = [...selected];
-      const result = await bulkAssignStudentsToClass(ids.map(sid => ({ student_id: sid, class_id: toClassId, academic_year_id: toYearId })));
-      if (alsoEnroll && firstTerm)
-        await bulkEnrollStudents(ids.map(sid => ({ student_id: sid, academic_term_id: firstTerm.id })));
-      return result;
+    mutationFn: () => {
+      const records: PromotionRecordCreate[] = [...selected].map(sid => ({
+        student_id: sid, class_id: toClassId, graduation_type: ACTION_TO_TYPE[actionType],
+      }));
+      return bulkPromoteStudents({
+        academic_year_id: toYearId,
+        academic_term_id: alsoEnroll && firstTerm ? firstTerm.id : null,
+        records,
+      });
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['students', 'class', classId] });
       const label = ACTION[actionType].label;
-      toast.success(`${label}: ${res.enrolled} student(s). Skipped: ${res.skipped}.`);
+      toast.success(`${label}: ${res.processed} student(s). Skipped: ${res.skipped} (already processed for this year).`);
       selected = new Set(); confirmOpen = false; error = '';
     },
     onError: (e: unknown) => {
