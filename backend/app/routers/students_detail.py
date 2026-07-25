@@ -70,8 +70,8 @@ async def update_student(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await svc.update_student(student_id, req, school_id, db)
+    user_id, school_id = ids
+    return await svc.update_student(student_id, req, school_id, user_id, db)
 
 
 @router.put("/{student_id}/medical", response_model=MedicalRecordRead)

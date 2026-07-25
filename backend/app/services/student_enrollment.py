@@ -225,14 +225,34 @@ async def create_term_enrollment(
         fee_waived_by_id=fee_waived_by_id,
         fee_waiver_reason=fee_waiver_reason,
     )
-    db.add(te)
     try:
-        await db.flush()
+        async with db.begin_nested():
+            db.add(te)
+            await db.flush()
     except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Student is already enrolled for this term.",
+        # A row for (student, term) already exists — if it's a stale inactive
+        # one (e.g. the student withdrew and is now returning), reactivate it
+        # in place with the freshly computed fee-gate outcome above, rather
+        # than hard-blocking with a 409.
+        existing = await db.scalar(
+            select(TermEnrollment).where(
+                TermEnrollment.student_id == req.student_id,
+                TermEnrollment.academic_term_id == req.academic_term_id,
+                TermEnrollment.school_id == school_id,
+            )
         )
+        if not existing or existing.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Student is already enrolled for this term.",
+            )
+        existing.is_active = True
+        existing.enrolled_by_id = user_id
+        existing.fee_waived = fee_waived
+        existing.fee_waived_by_id = fee_waived_by_id
+        existing.fee_waiver_reason = fee_waiver_reason
+        await db.flush()
+        te = existing
 
     rows = await db.execute(_te_query(TermEnrollment.id == te.id))
     return _to_te_read(rows.one())

@@ -43,6 +43,7 @@ from app.schemas.students import (
     StudentUpdate,
 )
 from app.services.student_display import _class_display, _display_name, _photo_url
+from app.services.student_lifecycle import deactivate_student, reactivate_student
 
 
 def _to_summary(
@@ -233,6 +234,7 @@ async def update_student(
     student_id: uuid.UUID,
     req: StudentUpdate,
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
 ) -> StudentDetail:
     student = await db.scalar(
@@ -245,8 +247,23 @@ async def update_student(
     )
     if not student:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found.")
-    for field, val in req.model_dump(exclude_unset=True).items():
+
+    data = req.model_dump(exclude_unset=True)
+    new_active = data.pop("is_active", None)
+    for field, val in data.items():
         setattr(student, field, val)
+
+    # Student.is_active alone isn't the whole picture — class assignment,
+    # term enrollment, and portal login all need to move with it. Route
+    # through the same cascades transfer approval / bulk graduation use,
+    # rather than a bare setattr, so this page's Deactivate/Reactivate
+    # buttons behave consistently with every other path that changes this.
+    if new_active is not None and new_active != student.is_active:
+        if new_active:
+            await reactivate_student(student_id, school_id, user_id, db)
+        else:
+            await deactivate_student(student_id, school_id, db)
+
     await db.flush()
     return _to_detail(student)
 

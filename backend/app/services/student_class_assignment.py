@@ -83,14 +83,31 @@ async def create_class_assignment(
         assigned_by_id=user_id,
         is_active=True,
     )
-    db.add(sca)
     try:
-        await db.flush()
+        async with db.begin_nested():
+            db.add(sca)
+            await db.flush()
     except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Student already has a class assignment for this academic year.",
+        # A row for (student, academic_year) already exists — if it's a stale
+        # inactive one (e.g. the student withdrew and is now returning),
+        # reactivate it in place rather than hard-blocking with a 409.
+        existing = await db.scalar(
+            select(StudentClassAssignment).where(
+                StudentClassAssignment.student_id == req.student_id,
+                StudentClassAssignment.academic_year_id == req.academic_year_id,
+                StudentClassAssignment.school_id == school_id,
+            )
         )
+        if not existing or existing.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Student already has a class assignment for this academic year.",
+            )
+        existing.class_id = req.class_id
+        existing.assigned_by_id = user_id
+        existing.is_active = True
+        await db.flush()
+        sca = existing
 
     rows = await db.execute(_sca_query(StudentClassAssignment.id == sca.id))
     return _to_sca_read(rows.one())
