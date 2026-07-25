@@ -662,3 +662,33 @@ async def test_upload_student_photo_rejects_non_image(client: AsyncClient, auth:
         headers=auth,
     )
     assert resp.status_code == 415
+
+
+# ── Graduated filter ──────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_students_graduated_filter(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, school_admin: User, academic_year: AcademicYear,
+):
+    from datetime import datetime
+    from app.models.documents import GraduationRecord, GraduationType
+
+    sid = (await client.post("/students", json=_student(num="GRAD001"), headers=auth)).json()["id"]
+
+    resp = await client.get("/students?graduated=true", headers=auth)
+    assert resp.status_code == 200
+    assert not any(s["id"] == sid for s in resp.json())
+
+    db_session.add(GraduationRecord(
+        school_id=school.id, student_id=uuid.UUID(sid), academic_year_id=academic_year.id,
+        graduation_type=GraduationType.GRADUATED,
+        processed_at=datetime(2026, 7, 1), processed_by_id=school_admin.id,
+    ))
+    await db_session.flush()
+    # Graduation only marks GraduationRecord — deactivation is a separate,
+    # independent step (see student_lifecycle.py), so active_only must be
+    # relaxed here the same way the frontend's "Graduated" pill forces it.
+    resp = await client.get("/students?graduated=true&active_only=false", headers=auth)
+    assert resp.status_code == 200
+    assert any(s["id"] == sid for s in resp.json())

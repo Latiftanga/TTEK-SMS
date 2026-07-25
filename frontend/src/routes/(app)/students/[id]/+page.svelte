@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getStudent, updateStudent, listTransfersForStudent } from '$lib/api/students';
+  import { getTranscriptBlob } from '$lib/api/reports';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import ProfileTab    from './ProfileTab.svelte';
@@ -57,6 +58,22 @@
     onError: () => { confirmDeactivate = false; confirmReactivate = false; toast.error('Could not update status.'); },
   });
 
+  let downloadingTranscript = $state(false);
+  async function downloadTranscript() {
+    if (downloadingTranscript) return;
+    downloadingTranscript = true;
+    try {
+      const blob = await getTranscriptBlob(studentId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch {
+      toast.error('Could not generate the transcript. Try again in a moment.');
+    } finally {
+      downloadingTranscript = false;
+    }
+  }
+
   $effect(() => setPageTitle($query.data?.display_name ?? 'Student'));
 </script>
 
@@ -107,6 +124,10 @@
       </div>
 
       <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+        <button onclick={downloadTranscript} disabled={downloadingTranscript}
+          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+          {downloadingTranscript ? 'Generating…' : 'Download transcript'}
+        </button>
         {#if s.is_active}
           {#if confirmDeactivate}
             <span class="text-xs text-[var(--fg-muted)]">Deactivate this student?</span>

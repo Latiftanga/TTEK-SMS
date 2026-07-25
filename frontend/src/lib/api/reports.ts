@@ -31,3 +31,6 @@ export const queueBulkReport = (class_id: string, academic_term_id: string, form
 
 export const downloadBulkReport = (job_id: string): Promise<Blob> =>
   api.get(`/report-cards/bulk/${job_id}/download`, { responseType: 'blob' }).then(r => r.data);
+
+export const getTranscriptBlob = (student_id: string): Promise<Blob> =>
+  api.get(`/students/${student_id}/transcript`, { responseType: 'blob' }).then(r => r.data);

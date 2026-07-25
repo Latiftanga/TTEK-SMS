@@ -45,3 +45,14 @@ def render_report_card(context: dict, format: str) -> bytes:
     tmpl = _env.get_template(template_name)
     html_str = tmpl.render(**context)
     return HTML(string=html_str, base_url=str(TEMPLATE_DIR)).write_pdf()
+
+
+def render_transcript(context: dict) -> bytes:
+    """Render a student's full multi-term transcript to PDF bytes.
+
+    Unlike render_report_card, there's no format branching — one unified
+    template spans a student's whole history regardless of BASIC/SHS.
+    """
+    tmpl = _env.get_template("transcript.html")
+    html_str = tmpl.render(**context)
+    return HTML(string=html_str, base_url=str(TEMPLATE_DIR)).write_pdf()

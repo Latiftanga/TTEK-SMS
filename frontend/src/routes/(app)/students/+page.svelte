@@ -10,6 +10,7 @@
   import StudentForm         from './StudentForm.svelte';
   import StudentImportDrawer from './StudentImportDrawer.svelte';
   import StudentTable        from './StudentTable.svelte';
+  import StudentFilterBar    from './StudentFilterBar.svelte';
   import BulkActionModal     from './BulkActionModal.svelte';
   import EmptyState          from '$lib/components/EmptyState.svelte';
   import PageHeader          from '$lib/components/PageHeader.svelte';
@@ -27,7 +28,22 @@
   const yearKey = $derived(sp.get('year')   ?? '');   // e.g. "B::3"
   const gender  = $derived((sp.get('gender') ?? '') as 'MALE' | 'FEMALE' | '');
   const activeOnly = $derived(sp.get('active') !== 'false');
+  const graduated  = $derived(sp.get('graduated') === 'true');
   const pageNum = $derived(Math.max(1, Number(sp.get('page')) || 1));
+
+  // Most graduated students are is_active=false — selecting "Graduated" must
+  // force active=false in the same click, or the list shows zero results.
+  function toggleGraduated() {
+    const url = new URL($page.url);
+    if (graduated) {
+      url.searchParams.delete('graduated');
+    } else {
+      url.searchParams.set('graduated', 'true');
+      url.searchParams.set('active', 'false');
+    }
+    url.searchParams.delete('page');
+    goto(url.toString(), { replaceState: true, noScroll: true });
+  }
 
   // Parse yearKey → { level, year_group } for the API
   const yearFilter = $derived.by(() => {
@@ -59,12 +75,12 @@
     return () => clearTimeout(t);
   });
 
-  const hasFilters = $derived(!!(searchInput || gender || classId || yearKey));
+  const hasFilters = $derived(!!(searchInput || gender || classId || yearKey || graduated));
 
   function clearFilters() {
     searchInput = '';
     const url = new URL($page.url);
-    ['q', 'class', 'year', 'gender', 'page'].forEach(k => url.searchParams.delete(k));
+    ['q', 'class', 'year', 'gender', 'graduated', 'page'].forEach(k => url.searchParams.delete(k));
     goto(url.toString(), { replaceState: true, noScroll: true });
   }
 
@@ -91,6 +107,7 @@
     // When a specific class is chosen it already implies the year — skip the broader filter
     level:       classId ? undefined : yearFilter.level,
     year_group:  classId ? undefined : yearFilter.year_group,
+    graduated:   graduated || undefined,
   });
 
   const studentsQ = reactiveQuery<StudentListPage>(() => ({
@@ -152,8 +169,6 @@
       a.click(); URL.revokeObjectURL(url);
     } finally { exporting = false; }
   }
-
-  const selClass = 'min-w-[7rem] rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition';
 </script>
 
 <PageHeader
@@ -185,57 +200,13 @@
   {/if}
 </PageHeader>
 
-<!-- Filters + result count -->
-<div class="mb-4 flex flex-wrap items-center gap-2">
-  <div class="relative min-w-48 flex-1">
-    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--fg-muted)]"
-         fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z"/>
-    </svg>
-    <input bind:value={searchInput} placeholder="Search name or admission no…"
-      class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2 pl-9 pr-4
-             text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)]
-             focus:border-[var(--brand)] focus:outline-none transition" />
-  </div>
-
-  <select value={yearKey} onchange={(e) => setFilter('year', e.currentTarget.value)} class={selClass}>
-    <option value="">All years</option>
-    {#each yearOptions as opt}<option value={opt.key}>{opt.label}</option>{/each}
-  </select>
-
-  <select value={classId} onchange={(e) => setFilter('class', e.currentTarget.value)} class={selClass}>
-    <option value="">{yearKey ? 'All streams' : 'All classes'}</option>
-    {#each filteredClasses as c}<option value={c.id}>{c.display_name}</option>{/each}
-  </select>
-
-  <div class="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--card)] p-1">
-    {#each [['', 'All'], ['MALE', 'Boys'], ['FEMALE', 'Girls']] as [val, label]}
-      <button onclick={() => setFilter('gender', val === gender ? '' : val as string)}
-        class="rounded-lg px-3 py-1 text-xs font-semibold transition
-               {gender === val ? 'bg-[var(--brand)] text-white' : 'text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
-        {label}
-      </button>
-    {/each}
-  </div>
-
-  <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-    <input type="checkbox" checked={activeOnly} onchange={(e) => setFilter('active', e.currentTarget.checked ? '' : 'false')} class="accent-[var(--brand)]" />
-    Active only
-  </label>
-
-  <!-- Result count — live, near filters so users see impact immediately -->
-  {#if !$studentsQ.isPending}
-    <span class="rounded-lg border border-[var(--border)] bg-[var(--hover)] px-2.5 py-1.5 text-xs font-semibold tabular-nums text-[var(--fg-muted)]">
-      {total} student{total !== 1 ? 's' : ''}
-    </span>
-  {/if}
-
-  {#if hasFilters}
-    <button onclick={clearFilters} class="text-xs text-[var(--fg-muted)] underline hover:text-[var(--fg)] transition">
-      Clear filters
-    </button>
-  {/if}
-</div>
+<StudentFilterBar
+  {searchInput} onSearchInput={(v) => searchInput = v}
+  {yearKey} {classId} {gender} {activeOnly} {graduated}
+  {yearOptions} {filteredClasses}
+  total={total} isPending={$studentsQ.isPending} {hasFilters}
+  {setFilter} onToggleGraduated={toggleGraduated} onClearFilters={clearFilters}
+/>
 
 <!-- Table states -->
 {#if $studentsQ.isPending}

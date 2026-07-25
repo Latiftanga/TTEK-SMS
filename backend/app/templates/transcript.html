@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #111; }
+
+  .header { border-bottom: 2px solid #1e40af; padding-bottom: 8px; margin-bottom: 10px; overflow: hidden; }
+  .header img { float: left; width: 55px; height: 55px; margin-right: 10px; }
+  .header h1 { font-size: 14pt; color: #1e40af; margin-top: 4px; }
+  .header p { font-size: 8.5pt; color: #555; }
+  .header-clear { clear: both; }
+
+  .title { text-align: center; font-size: 12pt; font-weight: bold; margin: 8px 0 3px; text-transform: uppercase; }
+
+  .meta { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  .meta td { border: 1px solid #ccc; padding: 4px 7px; width: 33%; }
+  .meta .lbl { font-size: 7.5pt; color: #888; display: block; }
+  .meta .val { font-size: 9.5pt; font-weight: bold; }
+
+  .year-title { font-size: 11pt; font-weight: bold; color: #1e40af; margin: 14px 0 4px; border-bottom: 1px solid #1e40af; padding-bottom: 2px; }
+  .term-block { margin-bottom: 10px; page-break-inside: avoid; }
+  .term-title { font-size: 9.5pt; font-weight: bold; margin-bottom: 3px; }
+  .term-class { font-size: 8pt; color: #555; margin-bottom: 4px; }
+
+  table.scores { width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 8.5pt; }
+  table.scores th { background: #1e40af; color: #fff; padding: 4px 6px; text-align: left; font-size: 8pt; }
+  table.scores td { padding: 3px 6px; border-bottom: 1px solid #e5e7eb; }
+  table.scores tr:nth-child(even) td { background: #f8fafc; }
+
+  .term-stats { font-size: 8pt; color: #444; margin-bottom: 4px; }
+  .term-stats span { margin-right: 14px; }
+
+  table.behaviour th { background: #374151; color: #fff; padding: 4px 6px; text-align: left; font-size: 8pt; }
+  table.behaviour td { padding: 3px 6px; border-bottom: 1px solid #e5e7eb; font-size: 8pt; }
+
+  .footer { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  .footer td { border-top: 1px solid #555; padding-top: 4px; font-size: 8pt; color: #555; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  {% if logo_url %}<img src="{{ logo_url }}" alt="">{% endif %}
+  <h1>{{ school_name }}</h1>
+  <p>Academic Transcript</p>
+  <div class="header-clear"></div>
+</div>
+
+<div class="title">Full Academic Transcript</div>
+
+<table class="meta">
+  <tr>
+    <td><span class="lbl">Student Name</span><span class="val">{{ student_name }}</span></td>
+    <td><span class="lbl">Admission No.</span><span class="val">{{ admission_number }}</span></td>
+    <td><span class="lbl">Terms on Record</span><span class="val">{{ years | map(attribute='terms') | map('length') | sum }}</span></td>
+  </tr>
+</table>
+
+{% for year in years %}
+<div class="year-title">{{ year.academic_year_name }}</div>
+{% for term in year.terms %}
+<div class="term-block">
+  <div class="term-title">{{ term.term_name }}</div>
+  <div class="term-class">Class: {{ term.class_name or "—" }}</div>
+
+  <table class="scores">
+    <thead>
+      <tr><th>Subject</th><th style="text-align:right">Score (of 100)</th></tr>
+    </thead>
+    <tbody>
+      {% for subj, val in term.subject_weighted.items() %}
+      <tr><td>{{ subj }}</td><td style="text-align:right">{{ val }}</td></tr>
+      {% else %}
+      <tr><td colspan="2" style="text-align:center;color:#888;">No published scores for this term.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="term-stats">
+    <span>Total: {{ term.total_score }} / {{ term.max_possible }}</span>
+    <span>
+      Attendance:
+      {% if term.total_school_days > 0 %}{{ ((term.days_present / term.total_school_days) * 100) | round(1) }}%{% else %}—{% endif %}
+      ({{ term.days_present }}/{{ term.total_school_days }} days)
+    </span>
+  </div>
+
+  {% if term.behaviour_records %}
+  <table class="behaviour">
+    <thead><tr><th>Date</th><th>Type</th><th>Severity</th><th>Description</th></tr></thead>
+    <tbody>
+      {% for b in term.behaviour_records %}
+      <tr>
+        <td>{{ b.incident_date }}</td><td>{{ b.incident_type }}</td>
+        <td>{{ b.severity }}</td><td>{{ b.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p style="text-align:center;color:#888;margin-top:20px;">No term enrollment history on record.</p>
+{% endfor %}
+
+<table class="footer">
+  <tr>
+    <td>Registrar / Academic Office</td>
+    <td>Headmaster / Headmistress</td>
+  </tr>
+</table>
+
+</body>
+</html>

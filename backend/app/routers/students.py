@@ -63,6 +63,7 @@ async def list_students(
     gender: str | None = Query(None),
     level: str | None = Query(None),
     year_group: int | None = Query(None),
+    graduated: bool | None = Query(None),
     sort_by: Literal["name", "admission", "class"] = Query("name"),
     sort_dir: Literal["asc", "desc"] = Query("asc"),
     ids=Depends(require_permission("students", "view")),
@@ -96,7 +97,7 @@ async def list_students(
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
         gender=gender, level=level, year_group=year_group,
-        staff_member_id=staff_member_id,
+        staff_member_id=staff_member_id, graduated=graduated,
         sort_by=sort_by, sort_dir=sort_dir,
     )
     response.headers["X-Total-Count"] = str(total)

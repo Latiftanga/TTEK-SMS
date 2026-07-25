@@ -9,6 +9,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class, ClassTeacher, SubjectTeacher
+from app.models.documents import GraduationRecord, GraduationType
 from app.models.housing import HouseMaster, StudentHouseAssignment
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.schemas.students import StudentSummary
@@ -34,10 +35,20 @@ async def list_students(
     level: str | None = None,
     year_group: int | None = None,
     staff_member_id: uuid.UUID | None = None,
+    graduated: bool | None = None,
     sort_by: str = "name",
     sort_dir: str = "asc",
 ) -> tuple[list[StudentSummary], int]:
     q = select(Student).where(Student.school_id == school_id)
+
+    if graduated is not None:
+        graduated_ids = select(GraduationRecord.student_id).where(
+            GraduationRecord.school_id == school_id,
+            GraduationRecord.graduation_type == GraduationType.GRADUATED,
+        )
+        # Lifetime check, not scoped to one academic year — a student graduated
+        # in any past year should still surface under this filter.
+        q = q.where(Student.id.in_(graduated_ids) if graduated else Student.id.not_in(graduated_ids))
 
     if staff_member_id is not None:
         # Restrict to students the staff member is directly responsible for:

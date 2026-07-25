@@ -186,6 +186,7 @@ export interface StudentListParams {
   gender?: string;
   level?: string;
   year_group?: number;
+  graduated?: boolean;
   sort_by?: 'name' | 'admission' | 'class';
   sort_dir?: 'asc' | 'desc';
 }
