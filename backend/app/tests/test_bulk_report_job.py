@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -77,6 +78,47 @@ async def test_bulk_generate_report_cards_creates_zip_for_every_student(
         names = _read_zip_names(job_id)
         assert len(names) == 2
         assert all(name.endswith(".pdf") for name in names)
+    finally:
+        (Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip").unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_bulk_generate_report_cards_excludes_withdrawn_student(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User, student: Student,
+):
+    """A withdrawn/transferred student (StudentClassAssignment deactivated,
+    not deleted, by student_lifecycle.py) must not end up in a class's bulk
+    report ZIP alongside current students."""
+    withdrawn = Student(
+        school_id=school.id, admission_number="STU004",
+        first_name="Kojo", last_name="Nyarko", is_active=False,
+    )
+    db_session.add(withdrawn)
+    await db_session.flush()
+
+    await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+    await _make_enrollment(db_session, school, withdrawn, school_class, academic_term, school_admin)
+
+    sca = await db_session.scalar(
+        select(StudentClassAssignment).where(StudentClassAssignment.student_id == withdrawn.id)
+    )
+    sca.is_active = False
+    te = await db_session.scalar(
+        select(TermEnrollment).where(TermEnrollment.student_id == withdrawn.id)
+    )
+    te.is_active = False
+    await db_session.flush()
+
+    job_id = f"test-{uuid.uuid4()}"
+    result = await _run(
+        db_session, job_id=job_id, class_id=school_class.id,
+        academic_term_id=academic_term.id, school_id=school.id, format="BASIC",
+    )
+    try:
+        assert result == {"job_id": job_id, "generated": 1, "failed": 0}
+        names = _read_zip_names(job_id)
+        assert len(names) == 1
     finally:
         (Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip").unlink(missing_ok=True)
 

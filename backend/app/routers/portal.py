@@ -15,6 +15,7 @@ class+term (Assessment.is_published = True) — see
 services/portal.py::is_report_published.
 """
 from __future__ import annotations
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -143,7 +144,9 @@ async def portal_get_report_card(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Report card has not been published yet.")
 
     context = await rc_svc.assemble(enrollment_id, school_id, format, db)
-    pdf_bytes = render_report_card(context, format)
+    # WeasyPrint is synchronous and CPU-heavy — off the event loop, or every
+    # report card generated blocks every other concurrent request.
+    pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

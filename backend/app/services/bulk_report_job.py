@@ -8,6 +8,7 @@ The API router queues this job and returns the job_id.
 The download endpoint streams the ZIP once it exists.
 """
 from __future__ import annotations
+import asyncio
 import io
 import uuid
 import zipfile
@@ -59,7 +60,8 @@ async def _run(
             StudentClassAssignment,
             (StudentClassAssignment.student_id == TermEnrollment.student_id)
             & (StudentClassAssignment.academic_year_id == term.academic_year_id)
-            & (StudentClassAssignment.class_id == class_id),
+            & (StudentClassAssignment.class_id == class_id)
+            & (StudentClassAssignment.is_active.is_(True)),
         )
         .where(
             TermEnrollment.academic_term_id == academic_term_id,
@@ -75,7 +77,9 @@ async def _run(
         for te in enrollments:
             try:
                 context = await assemble(te.id, school_id, format, db)
-                pdf_bytes = render_report_card(context, format)
+                # WeasyPrint is synchronous and CPU-heavy — off the event loop,
+                # or this job blocks every other job on the same ARQ worker.
+                pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
                 filename = f"{context['admission_number']}_{context['student_name'].replace(' ', '_')}.pdf"
                 zf.writestr(filename, pdf_bytes)
                 generated += 1

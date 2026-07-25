@@ -10,6 +10,7 @@ from datetime import date
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, Class
@@ -136,6 +137,41 @@ async def test_report_card_pdf_generated(
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert len(resp.content) > 1000   # non-trivial PDF
+
+
+# ── Class enrollment list (report card selection) ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_class_enrollments_excludes_withdrawn_student(
+    client: AsyncClient, auth: dict,
+    db_session: AsyncSession,
+    school: School, student: Student, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User,
+):
+    """A withdrawn/transferred student (StudentClassAssignment/TermEnrollment
+    deactivated, not deleted, by student_lifecycle.py) must not appear in the
+    'select students to generate report cards for' list."""
+    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+
+    resp = await client.get(
+        f"/report-cards/enrollments?class_id={school_class.id}&term_id={academic_term.id}", headers=auth,
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["enrollment_id"] == str(te.id)
+
+    sca = await db_session.scalar(
+        select(StudentClassAssignment).where(StudentClassAssignment.student_id == student.id)
+    )
+    sca.is_active = False
+    te.is_active = False
+    await db_session.flush()
+
+    resp_after = await client.get(
+        f"/report-cards/enrollments?class_id={school_class.id}&term_id={academic_term.id}", headers=auth,
+    )
+    assert resp_after.status_code == 200
+    assert resp_after.json() == []
 
 
 @pytest.mark.asyncio

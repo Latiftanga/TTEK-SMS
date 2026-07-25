@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -97,7 +98,9 @@ async def list_class_enrollments(
         .where(
             TermEnrollment.academic_term_id == term_id,
             TermEnrollment.school_id == school_id,
+            TermEnrollment.is_active.is_(True),
             StudentClassAssignment.class_id == class_id,
+            StudentClassAssignment.is_active.is_(True),
         )
         .order_by(Student.last_name, Student.first_name)
     )
@@ -105,7 +108,7 @@ async def list_class_enrollments(
     for row in rows:
         (enroll_id, stu_id, adm_no, first, last, gender,
          cls_id, level, yr_grp, stream, prog) = row
-        parts = [p for p in [level, yr_grp, prog, stream] if p]
+        parts = [str(p) for p in [level, yr_grp, prog, stream] if p]
         display_cls = " ".join(parts) if parts else None
         result.append(EnrollmentForReport(
             enrollment_id=enroll_id,
@@ -130,7 +133,9 @@ async def get_report_card(
 ):
     _, school_id = auth
     context = await rc_svc.assemble(enrollment_id, school_id, format, db)
-    pdf_bytes = render_report_card(context, format)
+    # WeasyPrint is synchronous and CPU-heavy — off the event loop, or every
+    # report card generated blocks every other concurrent request.
+    pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
