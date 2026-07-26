@@ -6,7 +6,7 @@
   } from '$lib/api/students';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
-  import TermRegistrationRow from './TermRegistrationRow.svelte';
+  import TermTimelineRow from './TermTimelineRow.svelte';
   import ClassActionPanel   from './ClassActionPanel.svelte';
 
   interface Props { studentId: string; }
@@ -37,19 +37,7 @@
   const activeAssignment = $derived(sortedAssignments.find(a => a.is_active) ?? sortedAssignments[0] ?? null);
   const activeClass      = $derived(activeAssignment ? classes.find(c => c.id === activeAssignment.class_id) ?? null : null);
 
-  // ── Expand / collapse class cards ─────────────────────────────────────────────
-  let expandedIds = $state(new Set<string>());
-  $effect(() => {
-    if (($assignmentsQ.data ?? []).length > 0 && expandedIds.size === 0) {
-      const active = ($assignmentsQ.data ?? []).find(a => a.is_active) ?? ($assignmentsQ.data ?? [])[0];
-      if (active) expandedIds = new Set([active.id]);
-    }
-  });
-  function toggleClass(id: string) {
-    const s = new Set(expandedIds); s.has(id) ? s.delete(id) : s.add(id); expandedIds = s;
-  }
-
-  // ── Term registration ─────────────────────────────────────────────────────────
+  // ── Term registration (shared across every "Not registered" row) ─────────────
   // A 422 here means the term's fee gate blocked this student (the other 422
   // case — no class assignment — can't happen from this button, since we're
   // already inside an assigned class's term list). Offer an inline waiver
@@ -98,13 +86,17 @@
 
   const firstAssignMut = createMutation({
     mutationFn: () => assignStudentToClass({ student_id: studentId, class_id: caClassId, academic_year_id: caYearId }),
-    onSuccess: (a) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['student-class-assignments', studentId] });
-      expandedIds = new Set([a.id]); showFirstForm = false; caYearId = ''; caClassId = ''; caError = '';
+      showFirstForm = false; caYearId = ''; caClassId = ''; caError = '';
       toast.success('Class assigned.');
     },
     onError: (e: unknown) => { caError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not assign.'; },
   });
+
+  // ── Year-end actions — collapsed by default; routine registration above is the
+  // common path, promote/repeat/demote/transfer is a rare, year-end-only action.
+  let yearEndOpen = $state(false);
 </script>
 
 <!-- Loading -->
@@ -113,21 +105,21 @@
 
 <!-- No class yet -->
 {:else if sortedAssignments.length === 0}
-  <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/30">
-    <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">No class assigned</p>
-    <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">Assign this student to a class before registering them for a term.</p>
+  <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+    <p class="text-sm font-semibold text-[var(--fg)]">No class assigned</p>
+    <p class="mt-1 text-xs text-[var(--fg-muted)]">Assign this student to a class before registering them for a term.</p>
     {#if !showFirstForm}
       <button onclick={() => showFirstForm = true}
         class="mt-3 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
         style="background: var(--brand)">Assign to class</button>
     {:else}
-      <div class="mt-4 space-y-3 border-t border-amber-200 pt-4 dark:border-amber-800">
+      <div class="mt-4 space-y-3 border-t border-[var(--border)] pt-4">
         <div class="grid gap-2 sm:grid-cols-2">
-          <select bind:value={caYearId} class="sel-amber">
+          <select bind:value={caYearId} class="sel">
             <option value="">Academic year…</option>
             {#each years as y}<option value={y.id}>{y.name}</option>{/each}
           </select>
-          <select bind:value={caClassId} class="sel-amber">
+          <select bind:value={caClassId} class="sel">
             <option value="">Class…</option>
             {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
           </select>
@@ -139,104 +131,75 @@
             class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
             style="background: var(--brand)">{$firstAssignMut.isPending ? 'Assigning…' : 'Assign'}</button>
           <button onclick={() => { showFirstForm = false; caError = ''; }}
-            class="text-sm text-amber-700 hover:text-amber-900 transition dark:text-amber-400">Cancel</button>
+            class="text-sm text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
         </div>
       </div>
     {/if}
   </div>
 
-<!-- Class → Term → Subject tree -->
+<!-- Timeline: one row per term, across every year the student has been assigned a class in -->
 {:else}
-  <div class="space-y-2">
+  <div class="space-y-4">
     {#each sortedAssignments as assignment (assignment.id)}
       {@const year      = yearMap.get(assignment.academic_year_id)}
-      {@const yearTerms = [...(year?.terms ?? [])].sort((a, b) => a.start_date.localeCompare(b.start_date))}
-      {@const isOpen    = expandedIds.has(assignment.id)}
-      <div class="overflow-hidden rounded-2xl border bg-[var(--card)] {isOpen ? 'border-[var(--brand)]/40' : 'border-[var(--border)]'}">
-        <button onclick={() => toggleClass(assignment.id)}
-          class="flex w-full items-center gap-3 px-5 py-4 text-left transition hover:bg-[var(--hover)]">
-          <svg class="h-4 w-4 shrink-0 text-[var(--fg-muted)] transition-transform duration-200 {isOpen ? 'rotate-90' : ''}"
-            fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
-          </svg>
-          <div class="flex min-w-0 flex-1 items-center gap-2.5">
-            <span class="font-semibold text-[var(--fg)]">{assignment.class_display_name}</span>
-            <span class="text-xs text-[var(--fg-muted)]">{year?.name ?? '—'}</span>
-          </div>
-          {#if assignment.is_active}
-            <span class="shrink-0 flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-500">
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-              Active
-            </span>
+      {@const yearTerms = [...(year?.terms ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date))}
+      <div>
+        <div class="mb-1.5 flex items-center gap-2 px-1">
+          <p class="text-xs font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">{year?.name ?? '—'}</p>
+          {#if year?.is_current}
+            <span class="rounded-full bg-[var(--brand)]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--brand)]">current</span>
           {/if}
-        </button>
-        {#if isOpen}
-          <div class="border-t border-[var(--border)] px-4 pb-3 pt-2">
-            {#if yearTerms.length === 0}
-              <p class="py-3 text-sm text-[var(--fg-muted)]">No terms configured for this academic year.</p>
-            {:else}
-              <div class="space-y-0.5 border-l-2 border-[var(--border)] pl-3">
-                {#each yearTerms as term}
-                  {#if termRegMap.has(term.id)}
-                    <TermRegistrationRow enrollment={termRegMap.get(term.id)!} termLabel={term.name} termLocked={term.results_locked} inline={true} />
-                  {:else}
-                    <div class="py-2 pl-1 pr-3">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                          <div class="h-1.5 w-1.5 rounded-full bg-[var(--border)]"></div>
-                          <span class="text-sm text-[var(--fg-muted)]">{term.name}</span>
-                        </div>
-                        <div class="flex flex-col items-end gap-0.5">
-                          <button onclick={() => { regError = ''; $registerMut.mutate(term.id); }}
-                            disabled={$registerMut.isPending && $registerMut.variables === term.id}
-                            class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
-                            style="background: var(--brand)">
-                            {$registerMut.isPending && $registerMut.variables === term.id ? 'Registering…' : 'Register'}
-                          </button>
-                          {#if regError && $registerMut.variables === term.id}
-                            <p class="text-[10px] text-red-500">{regError}</p>
-                          {/if}
-                        </div>
-                      </div>
-                      {#if blocked?.termId === term.id}
-                        <div class="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 dark:border-amber-800 dark:bg-amber-950/20">
-                          <p class="text-xs text-amber-800 dark:text-amber-300">{blocked.message}</p>
-                          <div class="mt-2 flex items-center gap-2">
-                            <input bind:value={waiverReason} placeholder="Waiver reason (requires fees.manage)"
-                              class="flex-1 rounded-lg border border-amber-300 bg-white/70 px-2 py-1 text-xs text-amber-900 placeholder:text-amber-500/70 focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100" />
-                            <button
-                              onclick={() => { waiverError = ''; if (!waiverReason.trim()) { waiverError = 'Reason required.'; return; } $waiveMut.mutate(term.id); }}
-                              disabled={$waiveMut.isPending}
-                              class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50">
-                              {$waiveMut.isPending ? '…' : 'Push through'}
-                            </button>
-                            <button onclick={() => blocked = null}
-                              class="shrink-0 text-xs text-amber-700 transition hover:text-amber-900 dark:text-amber-400">
-                              Cancel
-                            </button>
-                          </div>
-                          {#if waiverError}<p class="mt-1 text-[10px] text-red-600">{waiverError}</p>{/if}
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                {/each}
-              </div>
-            {/if}
+        </div>
+        {#if yearTerms.length === 0}
+          <p class="px-1 text-sm text-[var(--fg-muted)]">No terms configured for this academic year.</p>
+        {:else}
+          <div class="space-y-1.5">
+            {#each yearTerms as term (term.id)}
+              <TermTimelineRow
+                {term}
+                classDisplayName={assignment.class_display_name}
+                assignmentActive={assignment.is_active}
+                enrollment={termRegMap.get(term.id) ?? null}
+                isRegistering={$registerMut.isPending && $registerMut.variables === term.id}
+                registerError={regError && $registerMut.variables === term.id ? regError : ''}
+                isBlocked={blocked?.termId === term.id}
+                blockedMessage={blocked?.termId === term.id ? blocked.message : ''}
+                {waiverReason}
+                waiverError={blocked?.termId === term.id ? waiverError : ''}
+                onRegister={() => { regError = ''; $registerMut.mutate(term.id); }}
+                onWaiverReasonChange={(v) => waiverReason = v}
+                onWaive={() => { waiverError = ''; if (!waiverReason.trim()) { waiverError = 'Reason required.'; return; } $waiveMut.mutate(term.id); }}
+                onCancelWaiver={() => blocked = null}
+              />
+            {/each}
           </div>
         {/if}
       </div>
     {/each}
 
-    <!-- Year-end / transfer actions -->
-    <ClassActionPanel
-      {studentId} {activeClass} {classes} {years}
-      onDone={(id) => expandedIds = new Set([id])}
-    />
+    <!-- Year-end / transfer actions — collapsed by default; year-round students never need this -->
+    {#if !yearEndOpen}
+      <button onclick={() => yearEndOpen = true}
+        class="flex w-full items-center justify-between rounded-2xl border border-dashed border-[var(--border)]
+               px-5 py-4 text-left transition hover:border-[var(--brand)]/40 hover:bg-[var(--brand)]/5">
+        <div>
+          <p class="text-sm font-semibold text-[var(--fg)]">Manage year-end status</p>
+          <p class="mt-0.5 text-xs text-[var(--fg-muted)]">Promote, repeat, demote, or transfer this student</p>
+        </div>
+        <svg class="h-4 w-4 shrink-0 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
+        </svg>
+      </button>
+    {:else}
+      <ClassActionPanel
+        {studentId} {activeClass} {classes} {years}
+        onDone={() => yearEndOpen = false}
+      />
+    {/if}
   </div>
 {/if}
 
 <style>
   @reference "tailwindcss";
-  .sel-amber { @apply w-full rounded-xl border border-amber-300 bg-white/60 px-3 py-2 text-sm text-amber-900 focus:border-amber-500 focus:outline-none transition dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100; }
+  .sel { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>
