@@ -29,10 +29,18 @@
 
   let expanded = $state(false);
 
+  // An inactive TermEnrollment (student withdrew from this specific term) still
+  // exists as a row but can't take subject registrations — register_subjects()
+  // filters TermEnrollment.is_active server-side, so treat it like "not
+  // registered" for that purpose. The Register button still works: creating a
+  // term enrollment against an existing inactive row reactivates it in place
+  // (services/student_enrollment.py::create_term_enrollment).
+  const isRegistered = $derived(!!enrollment && enrollment.is_active);
+
   const subjectRegsQ = createQuery({
     queryKey: ['term-subject-regs', enrollment?.id ?? 'none'],
     queryFn:  () => listSubjectRegistrations(enrollment!.id),
-    enabled:  !!enrollment,
+    enabled:  isRegistered,
     staleTime: 60_000,
   });
   const subjectCount = $derived($subjectRegsQ.data?.length);
@@ -68,7 +76,7 @@
         </span>
       {/if}
 
-      {#if enrollment}
+      {#if isRegistered}
         <button onclick={() => expanded = !expanded}
           class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
           {subjectCount === undefined ? '…' : `${subjectCount} subject${subjectCount === 1 ? '' : 's'}`}
@@ -78,7 +86,7 @@
           </svg>
         </button>
       {:else}
-        <span class="text-xs text-[var(--fg-subtle)]">Not registered</span>
+        <span class="text-xs text-[var(--fg-subtle)]">{enrollment ? 'Withdrawn from this term' : 'Not registered'}</span>
         <button onclick={onRegister} disabled={isRegistering}
           class="rounded-lg px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
           style="background: var(--brand)">
@@ -92,7 +100,7 @@
     <p class="border-t border-[var(--border)] px-4 py-1.5 text-[10px] text-red-500">{registerError}</p>
   {/if}
 
-  {#if enrollment && expanded}
+  {#if enrollment && enrollment.is_active && expanded}
     <div class="border-t border-[var(--border)] px-4 pb-3 pt-2.5">
       <SubjectRegistrationPanel {enrollment} compact={true} />
     </div>
