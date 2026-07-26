@@ -30,12 +30,15 @@ router = APIRouter(prefix="/students", tags=["students"])
 @router.get("/graduation", response_model=list[GraduationRecordRead])
 async def list_graduation_records(
     academic_year_id: uuid.UUID | None = Query(None),
+    student_id: uuid.UUID | None = Query(None),
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    """List graduation records, optionally filtered by academic year."""
+    """List graduation records, optionally filtered by academic year and/or student."""
     _, school_id = ids
-    return await graduation_svc.list_graduation_records(school_id, db, academic_year_id=academic_year_id)
+    return await graduation_svc.list_graduation_records(
+        school_id, db, academic_year_id=academic_year_id, student_id=student_id,
+    )
 
 
 @router.post("/graduation/bulk", response_model=BulkGraduateResult, status_code=201)

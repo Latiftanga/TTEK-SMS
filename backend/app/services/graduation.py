@@ -91,9 +91,12 @@ async def list_graduation_records(
     school_id: uuid.UUID,
     db: AsyncSession,
     academic_year_id: uuid.UUID | None = None,
+    student_id: uuid.UUID | None = None,
 ) -> list[GraduationRecordRead]:
     stmt = select(GraduationRecord).where(GraduationRecord.school_id == school_id)
     if academic_year_id:
         stmt = stmt.where(GraduationRecord.academic_year_id == academic_year_id)
+    if student_id:
+        stmt = stmt.where(GraduationRecord.student_id == student_id)
     rows = await db.execute(stmt.order_by(GraduationRecord.processed_at.desc()))
     return [GraduationRecordRead.model_validate(r) for r in rows.scalars()]

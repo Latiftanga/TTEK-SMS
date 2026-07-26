@@ -365,8 +365,8 @@ export interface BulkGraduateResult {
   records: GraduationRecord[];
 }
 
-export const listGraduationRecords = (academic_year_id?: string): Promise<GraduationRecord[]> =>
-  api.get('/students/graduation', { params: academic_year_id ? { academic_year_id } : {} }).then(r => r.data);
+export const listGraduationRecords = (params: { academic_year_id?: string; student_id?: string } = {}): Promise<GraduationRecord[]> =>
+  api.get('/students/graduation', { params }).then(r => r.data);
 
 export const bulkGraduate = (req: {
   academic_year_id: string;

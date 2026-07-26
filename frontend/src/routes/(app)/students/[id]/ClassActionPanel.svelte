@@ -1,6 +1,9 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { assignStudentToClass, createTransferRequest, listTransfersForStudent } from '$lib/api/students';
+  import {
+    createTransferRequest, listTransfersForStudent, listClassAssignments,
+    listGraduationRecords, bulkPromoteStudents, type PromotionRecordCreate,
+  } from '$lib/api/students';
   import { type SchoolClass } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
   import { isSchoolAdmin } from '$lib/stores/permissions';
@@ -24,17 +27,40 @@
   const pendingTransfer = $derived(($transfersQ.data ?? []).find(t => t.status === 'PENDING') ?? null);
   const lastTransfer    = $derived(($transfersQ.data ?? [])[0] ?? null);
 
-  type ActionMode = 'promote' | 'repeat' | 'demote' | 'first' | null;
+  // Year-end progression already writes a GraduationRecord via the bulk endpoint
+  // (services/promotion.py) — fetch this student's own history so the panel can
+  // show "already processed" instead of presenting Promote/Repeat/Demote as if
+  // nothing has happened yet, and warn before a duplicate submission that the
+  // server would just silently skip.
+  const graduationRecordsQ = createQuery({
+    queryKey: ['student-graduation-records', studentId],
+    queryFn:  () => listGraduationRecords({ student_id: studentId }),
+    staleTime: 30_000,
+  });
+  const currentYear = $derived(years.find(y => y.is_current) ?? null);
+  const currentYearRecord = $derived(
+    currentYear ? ($graduationRecordsQ.data ?? []).find(r => r.academic_year_id === currentYear.id) ?? null : null
+  );
+  const OUTCOME_LABEL: Record<string, string> = { PROMOTED: 'Promoted', REPEATED: 'Repeated', DEMOTED: 'Demoted' };
+
+  type ActionMode = 'promote' | 'repeat' | 'demote' | null;
   let actionMode     = $state<ActionMode>(null);
   let showTransfer   = $state(false);
   let caYearId       = $state('');
   let caClassId      = $state('');
   let caError        = $state('');
+  let alsoEnroll     = $state(true);
   let transferReason = $state('');
   let transferErr    = $state('');
 
+  const targetYear = $derived(years.find(y => y.id === caYearId) ?? null);
+  const firstTerm  = $derived([...(targetYear?.terms ?? [])].sort((a, b) => a.start_date.localeCompare(b.start_date))[0] ?? null);
+  const targetYearRecord = $derived(
+    caYearId ? ($graduationRecordsQ.data ?? []).find(r => r.academic_year_id === caYearId) ?? null : null
+  );
+
   function openAction(mode: ActionMode) {
-    actionMode = mode; caYearId = ''; caError = '';
+    actionMode = mode; caYearId = ''; caError = ''; alsoEnroll = true;
     if (!activeClass) { caClassId = ''; return; }
     if (mode === 'promote') {
       caClassId = classes.find(
@@ -57,13 +83,33 @@
     }
   }
 
+  const ACTION_TO_TYPE: Record<'promote' | 'repeat' | 'demote', PromotionRecordCreate['graduation_type']> = {
+    promote: 'PROMOTED', repeat: 'REPEATED', demote: 'DEMOTED',
+  };
+
   const assignMut = createMutation({
-    mutationFn: () => assignStudentToClass({ student_id: studentId, class_id: caClassId, academic_year_id: caYearId }),
-    onSuccess: (a) => {
-      qc.invalidateQueries({ queryKey: ['student-class-assignments', studentId] });
-      const labels: Record<string, string> = { promote: 'Promoted', repeat: 'Re-enrolled', demote: 'Demoted', first: 'Assigned' };
-      toast.success(`${labels[actionMode ?? 'first'] ?? 'Done'}.`);
-      onDone(a.id); actionMode = null; caYearId = ''; caClassId = ''; caError = '';
+    mutationFn: () => bulkPromoteStudents({
+      academic_year_id: caYearId,
+      academic_term_id: alsoEnroll && firstTerm ? firstTerm.id : null,
+      records: [{ student_id: studentId, class_id: caClassId, graduation_type: ACTION_TO_TYPE[actionMode ?? 'promote'] }],
+    }),
+    onSuccess: async (res) => {
+      qc.invalidateQueries({ queryKey: ['student-term-enrollments', studentId] });
+      qc.invalidateQueries({ queryKey: ['student-graduation-records', studentId] });
+      const labels: Record<string, string> = { promote: 'Promoted', repeat: 'Re-enrolled', demote: 'Demoted' };
+      if (res.skipped > 0) {
+        toast.success(`Already processed for this year — no change made.`);
+      } else {
+        toast.success(`${labels[actionMode ?? 'promote'] ?? 'Done'}.`);
+      }
+      const targetYearId = caYearId;
+      actionMode = null; caYearId = ''; caClassId = ''; caError = '';
+      // bulkPromoteStudents returns GraduationRecords, not the new class
+      // assignment — fetch fresh to find its id and expand that card.
+      const assignments = await listClassAssignments(studentId);
+      qc.setQueryData(['student-class-assignments', studentId], assignments);
+      const newAssignment = assignments.find(a => a.academic_year_id === targetYearId);
+      if (newAssignment) onDone(newAssignment.id);
     },
     onError: (e: unknown) => { caError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not assign.'; },
   });
@@ -95,6 +141,15 @@
   <!-- Year-end action cards -->
   <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
     <p class="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Year-end actions</p>
+    {#if currentYearRecord}
+      <div class="mb-3 flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
+        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+        <span>
+          Already {(OUTCOME_LABEL[currentYearRecord.graduation_type] ?? currentYearRecord.graduation_type).toLowerCase()} for {currentYear?.name}
+          (processed {new Date(currentYearRecord.processed_at).toLocaleDateString()}). Using the same year again below will be skipped, not reapplied.
+        </span>
+      </div>
+    {/if}
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {#each Object.entries(CARD) as [key, meta]}
         <button onclick={() => openAction(key as ActionMode)}
@@ -169,12 +224,23 @@
         </select>
       </div>
     </div>
+    {#if caYearId && firstTerm}
+      <label class="mt-3 flex cursor-pointer items-center gap-2 text-xs {meta.text}">
+        <input type="checkbox" bind:checked={alsoEnroll} class="accent-current" />
+        Also register in {firstTerm.name} (first term)
+      </label>
+    {/if}
+    {#if targetYearRecord}
+      <p class="mt-3 rounded-lg bg-amber-100/60 px-3 py-1.5 text-xs font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+        Already {(OUTCOME_LABEL[targetYearRecord.graduation_type] ?? targetYearRecord.graduation_type).toLowerCase()} for {targetYear?.name} — confirming again will be skipped, not reapplied.
+      </p>
+    {/if}
     {#if caError}<p class="mt-2 text-xs text-red-600">{caError}</p>{/if}
     <div class="mt-4 flex gap-2">
       <button onclick={handleAssign} disabled={$assignMut.isPending}
         class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
         style="background: {isDemote ? '#dc2626' : 'var(--brand)'}">
-        {$assignMut.isPending ? 'Saving…' : `Confirm ${meta.label}`}
+        {$assignMut.isPending ? 'Saving…' : targetYearRecord ? 'Already processed' : `Confirm ${meta.label}`}
       </button>
       <button onclick={() => { actionMode = null; caError = ''; }}
         class="rounded-xl border border-[var(--border)] bg-white/60 px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-white/80 transition dark:bg-white/5">

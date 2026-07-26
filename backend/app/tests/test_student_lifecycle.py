@@ -132,6 +132,34 @@ async def test_bulk_promote_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_list_graduation_records_filters_by_student(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_year: AcademicYear,
+    next_class: Class, next_year: AcademicYear,
+):
+    """GET /students/graduation?student_id=... — used by the student profile's
+    year-end actions panel to show "already processed" status for one student,
+    without pulling every record for the whole school."""
+    sid_a = await _create_student(client, auth, num="ADM-A")
+    sid_b = await _create_student(client, auth, num="ADM-B")
+    await _assign_class(client, auth, sid_a, school_class, academic_year)
+    await _assign_class(client, auth, sid_b, school_class, academic_year)
+
+    for sid in (sid_a, sid_b):
+        resp = await client.post("/students/promotions/bulk", json={
+            "academic_year_id": str(next_year.id),
+            "records": [{"student_id": sid, "graduation_type": "PROMOTED", "class_id": str(next_class.id)}],
+        }, headers=auth)
+        assert resp.status_code == 201
+
+    resp = await client.get(f"/students/graduation?student_id={sid_a}", headers=auth)
+    assert resp.status_code == 200
+    records = resp.json()
+    assert len(records) == 1
+    assert records[0]["student_id"] == sid_a
+
+
+@pytest.mark.asyncio
 async def test_bulk_promote_also_enrolls_term(
     client: AsyncClient, auth: dict,
     school_class: Class, academic_year: AcademicYear,
