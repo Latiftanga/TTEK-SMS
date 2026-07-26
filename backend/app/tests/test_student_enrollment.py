@@ -220,9 +220,9 @@ async def test_register_subjects(
         "academic_term_id": str(academic_term.id),
     }, headers=auth)).json()["id"]
 
-    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
         {"subject_id": str(sub.id), "registration_type": "CORE"},
-    ], headers=auth)
+    ]}, headers=auth)
     assert resp.status_code == 201
     assert len(resp.json()) == 1
     assert resp.json()[0]["registration_type"] == "CORE"
@@ -248,13 +248,13 @@ async def test_duplicate_subject_skipped_silently(
         "academic_term_id": str(academic_term.id),
     }, headers=auth)).json()["id"]
 
-    await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+    await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
         {"subject_id": str(sub.id), "registration_type": "CORE"},
-    ], headers=auth)
+    ]}, headers=auth)
     # Register same subject again — should silently skip
-    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
         {"subject_id": str(sub.id), "registration_type": "CORE"},
-    ], headers=auth)
+    ]}, headers=auth)
     assert resp.status_code == 201
     assert resp.json() == []   # nothing new registered
 
@@ -280,9 +280,9 @@ async def test_register_subject_not_on_class_rejected(
         "academic_term_id": str(academic_term.id),
     }, headers=auth)).json()["id"]
 
-    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
         {"subject_id": str(orphan.id), "registration_type": "CORE"},
-    ], headers=auth)
+    ]}, headers=auth)
     assert resp.status_code == 422
     assert "not assigned" in resp.json()["detail"]
 
@@ -314,10 +314,142 @@ async def test_register_subjects_rejects_deactivated_term_enrollment(
     te.is_active = False
     await db_session.flush()
 
-    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json=[
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
         {"subject_id": str(sub.id), "registration_type": "CORE"},
-    ], headers=auth)
+    ]}, headers=auth)
     assert resp.status_code == 404
+
+
+@pytest.fixture
+async def locked_term_setup(client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm, db_session: AsyncSession, school: School):
+    """A registered subject, a term enrollment, and the term locked afterward —
+    the state every 'already past' term-lock test starts from."""
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="LOCK01", name="Locked Term Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+    reg_id = (await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=auth)).json()[0]["id"]
+
+    academic_term.results_locked = True
+    await db_session.flush()
+    return te_id, reg_id, sub
+
+
+@pytest.mark.asyncio
+async def test_register_subject_blocked_when_term_locked_without_reason(
+    client: AsyncClient, auth: dict, locked_term_setup, db_session: AsyncSession,
+    school: School, school_class: Class,
+):
+    """It shouldn't be possible to add a subject to a term enrollment that's
+    already been finalized — mirrors scoring.py's own term-lock behaviour."""
+    from app.models.academic import ClassSubject, Subject
+    te_id, _reg_id, _sub = locked_term_setup
+    other = Subject(school_id=school.id, code="LOCK02", name="Another Subject", is_active=True)
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=other.id, is_active=True))
+    await db_session.flush()
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(other.id), "registration_type": "CORE"},
+    ]}, headers=auth)
+    assert resp.status_code == 423
+
+
+@pytest.mark.asyncio
+async def test_register_subject_allowed_when_locked_with_reason_and_permission(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_term: AcademicTerm, redis_permissions: None,
+):
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="LOCK03", name="Override Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    academic_term.results_locked = True
+    await db_session.flush()
+
+    hod_auth = await _login_as_position(client, auth, db_session, school, "HOD")
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={
+        "items": [{"subject_id": str(sub.id), "registration_type": "CORE"}],
+        "override_reason": "Late correction approved by exams office",
+    }, headers=hod_auth)
+    assert resp.status_code == 201
+    assert len(resp.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_register_subject_reason_alone_insufficient_without_permission(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_term: AcademicTerm, redis_permissions: None,
+):
+    """A class teacher (students.edit, no assessments.approve_scores) can't
+    push a reason through on their own — matches submit_scores' behaviour."""
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="LOCK04", name="No Permission Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    academic_term.results_locked = True
+    await db_session.flush()
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={
+        "items": [{"subject_id": str(sub.id), "registration_type": "CORE"}],
+        "override_reason": "I really need to add this",
+    }, headers=teacher_auth)
+    assert resp.status_code == 423
+
+
+@pytest.mark.asyncio
+async def test_delete_subject_registration_blocked_when_term_locked(
+    client: AsyncClient, auth: dict, locked_term_setup,
+):
+    """Removing a subject from an already-finalized term is just as
+    nonsensical as adding one — same lock applies both directions."""
+    te_id, reg_id, _sub = locked_term_setup
+    resp = await client.delete(f"/students/term-enrollments/{te_id}/subjects/{reg_id}", headers=auth)
+    assert resp.status_code == 423
+
+
+@pytest.mark.asyncio
+async def test_delete_subject_registration_allowed_with_override(
+    client: AsyncClient, auth: dict, locked_term_setup, db_session: AsyncSession, school: School,
+    redis_permissions: None,
+):
+    te_id, reg_id, _sub = locked_term_setup
+    hod_auth = await _login_as_position(client, auth, db_session, school, "HOD")
+    resp = await client.delete(
+        f"/students/term-enrollments/{te_id}/subjects/{reg_id}?override_reason=Correction+approved",
+        headers=hod_auth,
+    )
+    assert resp.status_code == 204
 
 
 # ── Bulk class assignment ─────────────────────────────────────────────────────

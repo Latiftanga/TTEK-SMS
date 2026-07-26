@@ -221,6 +221,11 @@ class SubjectRegistrationItem(BaseModel):
         return v
 
 
+class SubjectRegistrationBulkCreate(BaseModel):
+    items: list[SubjectRegistrationItem]
+    override_reason: str | None = None
+
+
 class SubjectRegistrationRead(BaseModel):
     id: uuid.UUID
     subject_id: uuid.UUID

@@ -8,15 +8,15 @@ POST /students/class-assignments                  students.edit
 POST /students/class-assignments/bulk              students.edit
 POST /students/bulk-term-enrollments                students.edit
 POST /students/term-enrollments                     students.edit
-POST /students/term-enrollments/{id}/subjects        students.edit
+POST /students/term-enrollments/{id}/subjects        students.edit (+ assessments.approve_scores to override a locked term)
 GET  /students/term-enrollments/{id}/subjects        students.view
-DELETE /students/term-enrollments/{id}/subjects/{id} students.edit
+DELETE /students/term-enrollments/{id}/subjects/{id} students.edit (+ assessments.approve_scores to override a locked term)
 GET  /students/transfers/pending                    students.delete
 PATCH /students/transfers/{id}/review               students.delete
 """
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -24,7 +24,7 @@ from app.core.dependencies import require_permission
 from app.schemas.students import (
     BulkEnrollResult, BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
     StudentClassAssignmentCreate, StudentClassAssignmentRead,
-    SubjectRegistrationItem, SubjectRegistrationRead,
+    SubjectRegistrationBulkCreate, SubjectRegistrationRead,
     TermEnrollmentCreate, TermEnrollmentRead,
     TransferRequestRead, TransferRequestReview,
 )
@@ -84,12 +84,14 @@ async def create_term_enrollment(
 @router.post("/term-enrollments/{te_id}/subjects", response_model=list[SubjectRegistrationRead], status_code=201)
 async def register_subjects(
     te_id: uuid.UUID,
-    items: list[SubjectRegistrationItem],
+    req: SubjectRegistrationBulkCreate,
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await subject_reg_svc.register_subjects(te_id, items, school_id, db)
+    user_id, school_id = ids
+    return await subject_reg_svc.register_subjects(
+        te_id, req.items, school_id, user_id, db, override_reason=req.override_reason,
+    )
 
 
 @router.get("/term-enrollments/{te_id}/subjects", response_model=list[SubjectRegistrationRead])
@@ -106,11 +108,12 @@ async def list_subjects(
 async def delete_subject(
     te_id: uuid.UUID,
     reg_id: uuid.UUID,
+    override_reason: str | None = Query(None),
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    await subject_reg_svc.delete_subject_registration(te_id, reg_id, school_id, db)
+    user_id, school_id = ids
+    await subject_reg_svc.delete_subject_registration(te_id, reg_id, school_id, user_id, db, override_reason)
 
 
 # ── Transfer management (declared before /{student_id}) ──────────────────────

@@ -178,7 +178,7 @@
               <div class="space-y-0.5 border-l-2 border-[var(--border)] pl-3">
                 {#each yearTerms as term}
                   {#if termRegMap.has(term.id)}
-                    <TermRegistrationRow enrollment={termRegMap.get(term.id)!} termLabel={term.name} inline={true} />
+                    <TermRegistrationRow enrollment={termRegMap.get(term.id)!} termLabel={term.name} termLocked={term.results_locked} inline={true} />
                   {:else}
                     <div class="py-2 pl-1 pr-3">
                       <div class="flex items-center justify-between">

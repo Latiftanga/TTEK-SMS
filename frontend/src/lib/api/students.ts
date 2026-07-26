@@ -234,8 +234,10 @@ export const updateGuardian = (studentId: string, guardianId: string, data: Guar
 export const removeGuardian = (studentId: string, guardianId: string): Promise<void> =>
   api.delete(`/students/${studentId}/guardians/${guardianId}`).then(r => r.data);
 
-export const removeSubjectRegistration = (teId: string, regId: string): Promise<void> =>
-  api.delete(`/students/term-enrollments/${teId}/subjects/${regId}`).then(() => undefined);
+export const removeSubjectRegistration = (teId: string, regId: string, overrideReason?: string): Promise<void> =>
+  api.delete(`/students/term-enrollments/${teId}/subjects/${regId}`, {
+    params: overrideReason ? { override_reason: overrideReason } : undefined,
+  }).then(() => undefined);
 
 export const upsertMedical = (studentId: string, data: MedicalRecordUpsert): Promise<MedicalRecord> =>
   api.put(`/students/${studentId}/medical`, data).then(r => r.data);
@@ -266,8 +268,12 @@ export const enrollStudent = (req: {
 export const listSubjectRegistrations = (teId: string): Promise<SubjectRegistrationRead[]> =>
   api.get(`/students/term-enrollments/${teId}/subjects`).then(r => r.data);
 
-export const registerSubjects = (teId: string, items: { subject_id: string; registration_type: string }[]): Promise<SubjectRegistrationRead[]> =>
-  api.post(`/students/term-enrollments/${teId}/subjects`, items).then(r => r.data);
+export const registerSubjects = (
+  teId: string,
+  items: { subject_id: string; registration_type: string }[],
+  overrideReason?: string,
+): Promise<SubjectRegistrationRead[]> =>
+  api.post(`/students/term-enrollments/${teId}/subjects`, { items, override_reason: overrideReason }).then(r => r.data);
 
 export const bulkEnrollStudents = (items: { student_id: string; academic_term_id: string }[]) =>
   api.post('/students/bulk-term-enrollments', { items }).then(r => r.data);

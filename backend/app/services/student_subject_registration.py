@@ -6,6 +6,17 @@ cap).
 A student can only be registered for a subject actually offered to their
 class (ClassSubject) — mirrors the same check on assessment creation
 (services/subject_roster.py::class_subject_exists, added in 12q).
+
+TERM LOCK
+---------
+Registering or removing a subject against a term that's already been
+finalized (AcademicTerm.results_locked) doesn't make sense — the term's
+report cards may already be generated, and a newly added subject would show
+up with no scores. Gated by the same check_term_lock_override() used by
+scoring/assessment edits; both routes here are gated at students.edit (a
+weaker permission than assessments.approve_scores), so the override itself
+still requires the caller to hold assessments.approve_scores, same shape as
+submit_scores in scoring.py.
 """
 from __future__ import annotations
 import uuid
@@ -15,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import check_term_lock_override
 from app.models.academic import AcademicTerm, Subject
 from app.models.students import StudentClassAssignment, SubjectRegistration, TermEnrollment
 from app.schemas.students import SubjectRegistrationItem, SubjectRegistrationRead
@@ -25,7 +37,9 @@ async def register_subjects(
     te_id: uuid.UUID,
     items: list[SubjectRegistrationItem],
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
+    override_reason: str | None = None,
 ) -> list[SubjectRegistrationRead]:
     te = await db.scalar(
         select(TermEnrollment).where(
@@ -51,6 +65,7 @@ async def register_subjects(
             status_code=422,
             detail="Student has no class assignment for this academic year — cannot register subjects.",
         )
+    await check_term_lock_override(term.id, override_reason, user_id, db)
     for item in items:
         if not await class_subject_exists(sca.class_id, item.subject_id, school_id, db):
             subject = await db.get(Subject, item.subject_id)
@@ -100,7 +115,9 @@ async def delete_subject_registration(
     te_id: uuid.UUID,
     reg_id: uuid.UUID,
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
+    override_reason: str | None = None,
 ) -> None:
     reg = await db.scalar(
         select(SubjectRegistration).where(
@@ -111,5 +128,8 @@ async def delete_subject_registration(
     )
     if not reg:
         raise HTTPException(status_code=404, detail="Subject registration not found.")
+    te = await db.get(TermEnrollment, te_id)
+    if te:
+        await check_term_lock_override(te.academic_term_id, override_reason, user_id, db)
     await db.delete(reg)
     await db.flush()
