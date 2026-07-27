@@ -5,8 +5,10 @@ grouped by academic year, spanning active/withdrawn/graduated students alike.
 Unlike report_card.py::assemble() (one TermEnrollment at a time), this batches
 across every term the student has so the query count stays constant (~6)
 regardless of how many terms are in their history — the same shape as
-report_card.py::_load_scores()/_load_attendance(), just widened from
-`== term_id` to `.in_(term_ids)` and grouped by term in Python afterward.
+report_card.py::_load_scores(), just widened from `== term_id` to
+`.in_(term_ids)` and grouped by term in Python afterward. Attendance uses the
+shared services/attendance_stats.py::compute_attendance_stats(), which is
+already built around a term_ids list — a direct fit, no batching needed here.
 
 Deliberately omits per-term class rank (report_card_rank.py::compute_rank is
 an expensive per-class query; calling it once per term would reintroduce the
@@ -20,14 +22,14 @@ from collections import defaultdict
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, AcademicYear, Class, SHSProgramme, Subject
 from app.models.assessments import Assessment, AssessmentType, Score, StudentBehaviourRecord
-from app.models.attendance import AttendanceRecord, SchoolCalendar
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
+from app.services.attendance_stats import compute_attendance_stats
 from app.services.report_card_scoring import _compute_weighted_scores
 
 
@@ -111,22 +113,9 @@ async def assemble_transcript(student_id: uuid.UUID, school_id: uuid.UUID, db: A
         d = dict(row)
         scores_by_term[d.pop("academic_term_id")].append(d)
 
-    # Attendance for every term in one grouped query.
-    attendance_rows = (await db.execute(
-        select(
-            SchoolCalendar.academic_term_id,
-            func.count().label("total"),
-            func.sum(case((AttendanceRecord.status == "PRESENT", 1), else_=0)).label("present"),
-        )
-        .join(SchoolCalendar, SchoolCalendar.id == AttendanceRecord.school_calendar_id)
-        .where(
-            AttendanceRecord.student_id == student_id,
-            AttendanceRecord.school_id == school_id,
-            SchoolCalendar.academic_term_id.in_(term_ids),
-        )
-        .group_by(SchoolCalendar.academic_term_id)
-    )).all()
-    attendance_by_term = {row.academic_term_id: (row.present or 0, row.total or 0) for row in attendance_rows}
+    # Attendance for every term in one grouped query (shared with report_card.py
+    # so both use the exact same present/total definition).
+    attendance_by_term = await compute_attendance_stats(student_id, term_ids, school_id, db)
 
     # Behaviour records for every term in one query, grouped by term_id in Python.
     behaviour_rows = (await db.scalars(

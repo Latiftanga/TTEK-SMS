@@ -22,6 +22,7 @@ export interface CalendarDay {
   day_type: DayType;
   notes: string | null;
   academic_term_id: string | null;
+  is_manual_override: boolean;
 }
 
 export interface AttendanceRecord {
@@ -87,6 +88,7 @@ export const markAttendance = (data: {
   school_calendar_id: string;
   class_id: string;
   records: { student_id: string; status: string; notes?: string }[];
+  override_reason?: string;
 }): Promise<AttendanceRecord[]> =>
   api.post('/attendance/mark', data).then(r => r.data);
 

@@ -36,6 +36,7 @@ class CalendarDayRead(BaseModel):
     day_type: DayType
     notes: str | None
     academic_term_id: uuid.UUID | None
+    is_manual_override: bool
     model_config = {"from_attributes": True}
 
 
@@ -54,6 +55,7 @@ class AttendanceMarkRequest(BaseModel):
     school_calendar_id: uuid.UUID
     class_id: uuid.UUID
     records: list[AttendanceMark]
+    override_reason: str | None = None
 
 
 class AttendanceRecordRead(BaseModel):

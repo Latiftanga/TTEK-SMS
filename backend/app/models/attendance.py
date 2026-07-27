@@ -97,6 +97,9 @@ class SchoolCalendar(Base, UUIDPrimaryKey, SchoolScopedMixin):
     academic_term_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=True
     )
+    # Set by override_calendar_day() — protects this day's day_type from being
+    # silently recomputed/overwritten by generate_calendar(force=True).
+    is_manual_override: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class SchoolPeriod(Base, UUIDPrimaryKey, SchoolScopedMixin):

@@ -13,16 +13,16 @@ import uuid
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.academic import AcademicTerm, AcademicYear, Class, ClassTeacher, Subject
 from app.models.assessments import Assessment, AssessmentType, Score, StudentBehaviourRecord
-from app.models.attendance import AttendanceRecord, SchoolCalendar
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
+from app.services.attendance_stats import compute_attendance_stats
 from app.services.qr import generate_qr_image, generate_token
 from app.services.report_card_rank import compute_rank
 from app.services.report_card_scoring import _compute_weighted_scores
@@ -62,34 +62,6 @@ async def _load_scores(
         .order_by(Subject.name, AssessmentType.name)
     )).mappings().all()
     return [dict(r) for r in rows]
-
-
-async def _load_attendance(
-    student_id: uuid.UUID, term_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
-) -> tuple[int, int]:
-    """Returns (days_present, total_school_days)."""
-    total = await db.scalar(
-        select(func.count())
-        .select_from(AttendanceRecord)
-        .join(SchoolCalendar, SchoolCalendar.id == AttendanceRecord.school_calendar_id)
-        .where(
-            AttendanceRecord.student_id == student_id,
-            AttendanceRecord.school_id == school_id,
-            SchoolCalendar.academic_term_id == term_id,
-        )
-    ) or 0
-    present = await db.scalar(
-        select(func.count())
-        .select_from(AttendanceRecord)
-        .join(SchoolCalendar, SchoolCalendar.id == AttendanceRecord.school_calendar_id)
-        .where(
-            AttendanceRecord.student_id == student_id,
-            AttendanceRecord.school_id == school_id,
-            SchoolCalendar.academic_term_id == term_id,
-            AttendanceRecord.status == "PRESENT",
-        )
-    ) or 0
-    return present, total
 
 
 async def assemble(
@@ -145,9 +117,10 @@ async def assemble(
         teacher_name = f"{sm.first_name} {sm.last_name}" if sm else None
 
     scores = await _load_scores(te.student_id, te.academic_term_id, school_id, db)
-    days_present, total_days = await _load_attendance(
-        te.student_id, te.academic_term_id, school_id, db
+    attendance_stats = await compute_attendance_stats(
+        te.student_id, [te.academic_term_id], school_id, db
     )
+    days_present, total_days = attendance_stats.get(te.academic_term_id, (0, 0))
     rank, class_size = await compute_rank(
         te.student_id, cls.id, te.academic_term_id, term.academic_year_id, school_id, db
     )

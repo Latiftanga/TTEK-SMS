@@ -68,8 +68,12 @@
           onclick={() => cal && canManage ? onDayClick(cal) : null}
           class="relative flex min-h-[2.5rem] items-start justify-end rounded-lg p-1 text-right text-xs font-medium transition
             {cal ? TYPE_STYLES[cal.day_type] : 'bg-[var(--hover)] text-[var(--fg-subtle)] opacity-40'}
-            {canManage && cal ? 'cursor-pointer' : 'cursor-default'}"
-          title={cal?.notes ?? cal?.day_type ?? ''}>
+            {canManage && cal ? 'cursor-pointer' : 'cursor-default'}
+            {cal?.is_manual_override ? 'ring-1 ring-inset ring-[var(--fg-subtle)]' : ''}"
+          title="{cal?.notes ?? cal?.day_type ?? ''}{cal?.is_manual_override ? ' (manually overridden — survives Regenerate)' : ''}">
+          {#if cal?.is_manual_override}
+            <span class="absolute left-1 top-1 text-[8px] leading-none text-[var(--fg-subtle)]" aria-hidden="true">&#9679;</span>
+          {/if}
           <span>{cell}</span>
           {#if dot}
             <span class="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full {dot}"></span>

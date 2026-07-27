@@ -6,6 +6,11 @@ MARKING RULES
 - school_calendar.day_type must be SCHOOL_DAY, EXAM_DAY, or HALF_DAY.
 - Re-submitting attendance for the same student+calendar+period updates the record.
 - period_id is NULL for daily (whole-day) attendance; non-NULL for period-level.
+- class_id and every student_id must belong to the calling school (mirrors the
+  ownership checks elsewhere, e.g. create_assessment's ClassSubject check).
+- If the calendar day's term has AcademicTerm.results_locked set, marking
+  requires assessments.approve_scores + a non-blank override_reason — same
+  mechanism as scoring.py/behaviour.py/student_subject_registration.py.
 """
 from __future__ import annotations
 import uuid
@@ -16,10 +21,13 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import check_term_lock_override
+from app.models.academic import Class
 from app.models.attendance import (
     AttendanceRecord, AttendanceStatus, DayType, SchoolCalendar,
 )
 from app.models.school import School
+from app.models.students import Student
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
     CalendarDayRead, StudentAbsenceSummary, TodayStatusRead,
@@ -52,6 +60,25 @@ async def mark_attendance(
     )
     if not cal:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Calendar day not found.")
+
+    cls = await db.get(Class, req.class_id)
+    if not cls or cls.school_id != school_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Class not found.")
+
+    student_ids = {m.student_id for m in req.records}
+    valid_ids = set(await db.scalars(
+        select(Student.id).where(Student.id.in_(student_ids), Student.school_id == school_id)
+    ))
+    invalid_ids = student_ids - valid_ids
+    if invalid_ids:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Student(s) not found in this school: {', '.join(str(i) for i in invalid_ids)}",
+        )
+
+    if cal.academic_term_id is not None:
+        await check_term_lock_override(cal.academic_term_id, req.override_reason, user_id, db)
+
     if cal.day_type not in _MARKABLE_TYPES:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -154,7 +181,11 @@ async def get_summary(
         )
     ) or 0
 
-    # Single GROUP BY instead of 4 separate COUNT queries
+    # Single GROUP BY instead of 4 separate COUNT queries. Filtered by the same
+    # day_type set as `total` above — a day reclassified after attendance was
+    # marked on it (override_calendar_day / generate_calendar force=True) must
+    # not keep counting once it's no longer markable, or the rate can drift
+    # inconsistent with `total` (even exceed 100%).
     rows = await db.execute(
         select(AttendanceRecord.status, func.count().label("n"))
         .join(SchoolCalendar, SchoolCalendar.id == AttendanceRecord.school_calendar_id)
@@ -162,6 +193,7 @@ async def get_summary(
             AttendanceRecord.student_id == student_id,
             AttendanceRecord.school_id == school_id,
             SchoolCalendar.academic_term_id == term_id,
+            SchoolCalendar.day_type.in_([t.value for t in _MARKABLE_TYPES]),
             AttendanceRecord.period_id.is_(None),
         )
         .group_by(AttendanceRecord.status)
@@ -242,6 +274,7 @@ async def get_class_summaries(
             AttendanceRecord.class_id == class_id,
             AttendanceRecord.school_id == school_id,
             SchoolCalendar.academic_term_id == term_id,
+            SchoolCalendar.day_type.in_([t.value for t in _MARKABLE_TYPES]),
             AttendanceRecord.period_id.is_(None),
         )
         .group_by(AttendanceRecord.student_id, AttendanceRecord.status)

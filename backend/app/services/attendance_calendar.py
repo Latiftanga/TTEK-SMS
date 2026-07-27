@@ -10,6 +10,10 @@ For a given term, iterates every date between term.start_date and term.end_date:
 
 If no SchoolSchedule rows exist for the school, Mon–Fri is assumed as the default.
 Existing calendar entries for a date are never overwritten by generation — re-run is idempotent.
+
+force=True recomputes every day against the current schedule/holidays, EXCEPT a day
+with is_manual_override=True (set by override_calendar_day) — a staff member's manual
+correction always survives a force-regeneration.
 """
 from __future__ import annotations
 import uuid
@@ -115,8 +119,10 @@ async def generate_calendar(
             day_type = DayType.WEEKEND
 
         if current in existing_map:
-            if req.force:
-                # Update in-place — preserves the row ID so AttendanceRecord FKs survive
+            if req.force and not existing_map[current].is_manual_override:
+                # Update in-place — preserves the row ID so AttendanceRecord FKs survive.
+                # A manually-overridden day (see override_calendar_day) is left
+                # untouched even under force — it's not appended to `touched`.
                 existing_map[current].day_type = day_type
                 touched.append(existing_map[current])
         else:
@@ -161,5 +167,6 @@ async def override_calendar_day(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Calendar day not found.")
     cal.day_type = req.day_type
     cal.notes = req.notes
+    cal.is_manual_override = True
     await db.flush()
     return cal

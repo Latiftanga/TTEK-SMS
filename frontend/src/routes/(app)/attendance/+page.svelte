@@ -10,7 +10,15 @@
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import { userRole } from '$lib/stores/permissions';
+  import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
   setPageTitle('Attendance');
+
+  function detailOf(e: unknown): string | undefined {
+    return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+  }
+  function isLocked(e: unknown): boolean {
+    return (e as { response?: { status?: number } })?.response?.status === 423;
+  }
 
   const qc = useQueryClient();
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
@@ -105,27 +113,31 @@
 
   function handleSave() {
     if (unmarkedCount > 0) { showUnmarkedWarning = true; return; }
-    $markMut.mutate();
+    $markMut.mutate(undefined);
   }
 
   // ── Mutation ──────────────────────────────────────────────────────────────────
+  let markOverrideNeeded = $state(false);
+  let markError = $state('');
+
   const markMut = createMutation({
-    mutationFn: () => {
+    mutationFn: (overrideReason: string | undefined) => {
       const records = ($studentsQ.data ?? [])
         .filter(s => markInputs[s.id])
         .map(s => ({ student_id: s.id, status: markInputs[s.id] as string }));
       if (!records.length) throw new Error('Select a status for at least one student.');
-      return markAttendance({ school_calendar_id: calDay!.id, class_id: classId, records });
+      return markAttendance({ school_calendar_id: calDay!.id, class_id: classId, records, override_reason: overrideReason });
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['att-records'] });
       qc.invalidateQueries({ queryKey: ['att-summaries'] });
-      showUnmarkedWarning = false;
+      showUnmarkedWarning = false; markOverrideNeeded = false; markError = '';
       toast.success(`${res.length} record(s) saved.`);
     },
-    onError: (e: unknown) => toast.error(
-      e instanceof Error ? e.message : ((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not save.')
-    ),
+    onError: (e: unknown) => {
+      if (isLocked(e)) { markOverrideNeeded = true; markError = detailOf(e) ?? 'This term is locked.'; return; }
+      toast.error(e instanceof Error ? e.message : (detailOf(e) ?? 'Could not save.'));
+    },
   });
 
   // ── Status helpers ─────────────────────────────────────────────────────────────
@@ -272,13 +284,21 @@
         <p class="text-sm font-medium text-amber-800 dark:text-amber-200">{unmarkedCount} student(s) have no status selected and won't be saved.</p>
         <div class="mt-2 flex flex-wrap gap-2">
           <button onclick={markRemainingPresent} class="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition">Mark remaining as Present</button>
-          <button onclick={() => { showUnmarkedWarning = false; $markMut.mutate(); }} class="rounded-lg px-3 py-1.5 text-xs font-semibold border border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Save anyway</button>
+          <button onclick={() => { showUnmarkedWarning = false; $markMut.mutate(undefined); }} class="rounded-lg px-3 py-1.5 text-xs font-semibold border border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Save anyway</button>
           <button onclick={() => showUnmarkedWarning = false} class="rounded-lg px-3 py-1.5 text-xs text-[var(--fg-subtle)] hover:text-[var(--fg)] transition">Cancel</button>
         </div>
       </div>
     {/if}
   {/if}
 {/if}
+
+<OverrideReasonModal
+  open={markOverrideNeeded}
+  errorMessage={markError}
+  isPending={$markMut.isPending}
+  onSubmit={(reason) => $markMut.mutate(reason)}
+  onCancel={() => { markOverrideNeeded = false; markError = ''; }}
+/>
 
 <style>
   @reference "tailwindcss";
