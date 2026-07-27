@@ -9,6 +9,7 @@
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import { portal } from '$lib/actions/portal';
   setPageTitle('Attendance Calendar');
   import CalendarGrid from './CalendarGrid.svelte';
 
@@ -72,6 +73,8 @@
   function openOverride(d: CalendarDay) {
     overrideDay = d; overrideType = d.day_type; overrideNote = d.notes ?? '';
   }
+  function closeOverride() { overrideDay = null; }
+  function onModalKeydown(e: KeyboardEvent) { if (e.key === 'Escape') closeOverride(); }
 
   const overrideMut = createMutation({
     mutationFn: () => overrideCalendarDay(overrideDay!.id, { day_type: overrideType, notes: overrideNote || null }),
@@ -103,7 +106,7 @@
     <select id="cal-term" bind:value={termId} class="sel">
       <option value="">Select term…</option>
       {#each allTerms as t (t.id)}
-        <option value={t.id}>{t.yearName} · {t.name}</option>
+        <option value={t.id}>{t.yearName} · {t.name}{t.is_current ? ' (current)' : ''}</option>
       {/each}
     </select>
   </div>
@@ -120,7 +123,7 @@
         </button>
       {:else}
         <div class="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30">
-          <span class="text-xs text-amber-700 dark:text-amber-300">Re-evaluate all days against current schedule?</span>
+          <span class="text-xs text-amber-700 dark:text-amber-300">Re-evaluate all days against the current schedule? Days you've manually overridden (marked <span aria-hidden="true">&#9679;</span>) are protected and won't change.</span>
           <button onclick={() => $genMut.mutate(true)} disabled={$genMut.isPending}
             class="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition">
             {$genMut.isPending ? '…' : 'Yes, regenerate'}
@@ -132,39 +135,16 @@
   {/if}
 </div>
 
-<!-- Override form -->
-{#if overrideDay && canManage}
-  <div class="mb-5 rounded-2xl border border-[var(--brand)] bg-[var(--card)] p-4">
-    <p class="mb-3 text-sm font-semibold text-[var(--fg)]">Override {overrideDay.date}</p>
-    <div class="flex flex-wrap items-end gap-3">
-      <div>
-        <label class="label" for="ov-type">Day type</label>
-        <select id="ov-type" bind:value={overrideType} class="sel">
-          {#each DAY_TYPES as t}
-            <option value={t}>{t.replace(/_/g, ' ')}</option>
-          {/each}
-        </select>
-      </div>
-      <div>
-        <label class="label" for="ov-note">Notes (optional)</label>
-        <input id="ov-note" bind:value={overrideNote} placeholder="e.g. Sports Day" class="sel w-52" />
-      </div>
-      <button onclick={() => $overrideMut.mutate()} disabled={$overrideMut.isPending}
-        class="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
-        {$overrideMut.isPending ? 'Saving…' : 'Save'}
-      </button>
-      <button onclick={() => overrideDay = null} class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
-    </div>
-  </div>
-{/if}
-
 <!-- Legend -->
-<div class="mb-5 flex flex-wrap gap-2">
+<div class="mb-5 flex flex-wrap items-center gap-2">
   {#each LEGEND as l}
     <span class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-medium text-[var(--fg-muted)] {l.cls}">
       <span class="h-2.5 w-2.5 rounded-sm {l.cls}"></span>{l.label}
     </span>
   {/each}
+  <span class="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[10px] font-medium text-[var(--fg-muted)]" title="Protected from Regenerate">
+    <span aria-hidden="true">&#9679;</span> Manually overridden
+  </span>
 </div>
 
 {#if !termId}
@@ -183,6 +163,43 @@
         <CalendarGrid {year} {month} {days} {canManage} onDayClick={openOverride} />
       </div>
     {/each}
+  </div>
+{/if}
+
+<!-- Override modal -->
+{#if overrideDay && canManage}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div use:portal role="dialog" aria-modal="true"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    onkeydown={onModalKeydown}>
+    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
+      <h2 class="text-base font-semibold text-[var(--fg)]">Override {overrideDay.date}</h2>
+      <p class="mt-1 text-sm text-[var(--fg-muted)]">This day will be protected from future "Regenerate" runs.</p>
+      <div class="mt-4 space-y-3">
+        <div>
+          <label class="label" for="ov-type">Day type</label>
+          <select id="ov-type" bind:value={overrideType} class="sel w-full">
+            {#each DAY_TYPES as t}
+              <option value={t}>{t.replace(/_/g, ' ')}</option>
+            {/each}
+          </select>
+        </div>
+        <div>
+          <label class="label" for="ov-note">Notes (optional)</label>
+          <input id="ov-note" bind:value={overrideNote} placeholder="e.g. Sports Day" class="sel w-full" />
+        </div>
+      </div>
+      <div class="mt-5 flex justify-end gap-3">
+        <button onclick={closeOverride} disabled={$overrideMut.isPending}
+          class="rounded-lg px-4 py-2 text-sm text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+          Cancel
+        </button>
+        <button onclick={() => $overrideMut.mutate()} disabled={$overrideMut.isPending}
+          class="rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background:var(--brand)">
+          {$overrideMut.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
   </div>
 {/if}
 
