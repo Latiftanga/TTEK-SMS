@@ -1,7 +1,8 @@
 """
 Seed reference data: GhanaRegion, GhanaDistrict, GhanaPublicHoliday,
 StaffPosition templates with PositionPermission,
-StaffCategory + StaffRank GES templates.
+StaffCategory + StaffRank GES templates,
+GES Standard Grading Scale (shared default — see resolve_grade()).
 
 Run from backend/ directory:
     python scripts/seed_reference_data.py
@@ -12,6 +13,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from decimal import Decimal
 from sqlalchemy import select, tuple_
 from app.core.database import AsyncSessionLocal
 # Import all models so SQLAlchemy resolves FK references
@@ -20,6 +22,7 @@ from app.models.school import GhanaRegion, GhanaDistrict
 from app.models.attendance import GhanaPublicHoliday
 from app.models.auth import StaffPosition, PositionPermission
 from app.models.staff import StaffCategory, StaffRank, StaffType
+from app.models.assessments import GradingScale, Grade
 from datetime import date
 
 
@@ -457,6 +460,22 @@ GES_RANKS = [
     ("GENERAL_LABOUR", "Cleaner"),
 ]
 
+# GES Standard Grading Scale — shared default (school_id=NULL). resolve_grade()
+# falls back to this when a school hasn't created its own default scale.
+# (min_score, max_score, letter_grade, label)
+GES_GRADING_SCALE_NAME = "GES Standard Grading Scale"
+GES_GRADING_SCALE_BANDS = [
+    (Decimal("80.00"), Decimal("100.00"), "A1", "Excellent"),
+    (Decimal("75.00"), Decimal("79.99"),  "B2", "Very Good"),
+    (Decimal("70.00"), Decimal("74.99"),  "B3", "Good"),
+    (Decimal("65.00"), Decimal("69.99"),  "C4", "Credit"),
+    (Decimal("60.00"), Decimal("64.99"),  "C5", "Credit"),
+    (Decimal("55.00"), Decimal("59.99"),  "C6", "Credit"),
+    (Decimal("50.00"), Decimal("54.99"),  "D7", "Pass"),
+    (Decimal("45.00"), Decimal("49.99"),  "E8", "Pass"),
+    (Decimal("0.00"),  Decimal("44.99"),  "F9", "Fail"),
+]
+
 
 async def seed():
     async with AsyncSessionLocal() as db:
@@ -570,6 +589,28 @@ async def seed():
                 added += 1
         await db.flush()
         print(f"  Ranks seeded: {added} new (of {len(GES_RANKS)} total)")
+
+        # GES Standard Grading Scale — shared default (school_id=NULL)
+        scale = await db.scalar(
+            select(GradingScale).where(
+                GradingScale.name == GES_GRADING_SCALE_NAME, GradingScale.school_id.is_(None),
+            )
+        )
+        if not scale:
+            scale = GradingScale(
+                school_id=None, name=GES_GRADING_SCALE_NAME, is_default=True, is_active=True,
+            )
+            db.add(scale)
+            await db.flush()
+            for min_score, max_score, letter_grade, label in GES_GRADING_SCALE_BANDS:
+                db.add(Grade(
+                    grading_scale_id=scale.id, min_score=min_score, max_score=max_score,
+                    letter_grade=letter_grade, label=label,
+                ))
+            await db.flush()
+            print(f"  Grading scale: {GES_GRADING_SCALE_NAME} ({len(GES_GRADING_SCALE_BANDS)} bands)")
+        else:
+            print(f"  Grading scale: {GES_GRADING_SCALE_NAME} already exists")
 
         await db.commit()
         print("Seed complete.")

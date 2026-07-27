@@ -12,7 +12,7 @@ import uuid
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,11 +53,16 @@ async def create_grading_scale(
 
 
 async def list_grading_scales(school_id: uuid.UUID, db: AsyncSession) -> list[GradingScale]:
+    """A school's own scales, then the shared system default(s) — see
+    resolve_grade() for the matching fallback used when scoring."""
     rows = await db.scalars(
         select(GradingScale)
-        .where(GradingScale.school_id == school_id, GradingScale.is_active.is_(True))
+        .where(
+            or_(GradingScale.school_id == school_id, GradingScale.school_id.is_(None)),
+            GradingScale.is_active.is_(True),
+        )
         .options(selectinload(GradingScale.grades))
-        .order_by(GradingScale.is_default.desc(), GradingScale.name)
+        .order_by(GradingScale.school_id.is_(None), GradingScale.is_default.desc(), GradingScale.name)
     )
     return list(rows)
 
@@ -163,6 +168,10 @@ async def resolve_grade(
     as percentage ranges (e.g. GES A1 = 80-100), not raw marks. Callers scoring
     against a non-100 max_score (see services/scoring.py::approve_scores) must
     convert before calling this.
+
+    Falls back to the shared system default scale (school_id IS NULL, seeded
+    by scripts/seed_reference_data.py) if the school hasn't created its own —
+    a school's own default scale, once created, always takes priority.
     """
     scale = await db.scalar(
         select(GradingScale).where(
@@ -171,6 +180,14 @@ async def resolve_grade(
             GradingScale.is_active.is_(True),
         )
     )
+    if not scale:
+        scale = await db.scalar(
+            select(GradingScale).where(
+                GradingScale.school_id.is_(None),
+                GradingScale.is_default.is_(True),
+                GradingScale.is_active.is_(True),
+            )
+        )
     if not scale:
         return None
     await db.refresh(scale, ["grades"])

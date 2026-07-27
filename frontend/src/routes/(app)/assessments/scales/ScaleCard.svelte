@@ -18,6 +18,13 @@
     [...scale.grades].sort((a, b) => Number(b.min_score) - Number(a.min_score))
   );
 
+  // A shared system-default scale (school_id=NULL, seeded — see
+  // services/grading.py::resolve_grade) is read-only here: every edit/delete
+  // endpoint already requires an exact school_id match, so it can't be
+  // reached through this UI regardless — a school overrides it by creating
+  // and defaulting their own scale instead.
+  const isShared = $derived(scale.school_id === null);
+
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   const updateMut = createMutation({
@@ -111,7 +118,9 @@
 
     <!-- Badges + actions -->
     <div class="flex shrink-0 items-center gap-2">
-      {#if scale.is_default}
+      {#if isShared}
+        <span class="rounded-full bg-[var(--hover)] px-2.5 py-0.5 text-[10px] font-bold text-[var(--fg-muted)] ring-1 ring-inset ring-[var(--border)]" title="Applies to every school until they create their own">System default</span>
+      {:else if scale.is_default}
         <span class="rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-950/30 dark:text-blue-400">Default</span>
       {:else}
         <button
@@ -124,13 +133,15 @@
       {/if}
       <span class="text-xs text-[var(--fg-subtle)]">{scale.grades.length} bands</span>
       <!-- Edit button -->
-      <button onclick={startEdit}
-        class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]"
-        title="Edit scale">
-        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
-        </svg>
-      </button>
+      {#if !isShared}
+        <button onclick={startEdit}
+          class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]"
+          title="Edit scale">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
+          </svg>
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -172,7 +183,7 @@
               <th class="px-3 py-2">Grade</th>
               <th class="px-3 py-2">Label</th>
               <th class="hidden px-3 py-2 sm:table-cell">GPA</th>
-              <th class="px-3 py-2"></th>
+              {#if !isShared}<th class="px-3 py-2"></th>{/if}
             </tr></thead>
             <tbody>
               {#each sortedGrades as g (g.id)}
@@ -181,14 +192,16 @@
                   <td class="px-3 py-2 font-bold text-[var(--fg)]">{g.letter_grade}</td>
                   <td class="px-3 py-2 text-[var(--fg-muted)]">{g.label}</td>
                   <td class="hidden px-3 py-2 font-mono text-[var(--fg-subtle)] sm:table-cell">{g.gpa_points ?? '—'}</td>
-                  <td class="px-3 py-2 text-right">
-                    <button onclick={() => $deleteMut.mutate(g.id)} disabled={$deleteMut.isPending}
-                      class="rounded p-0.5 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30">
-                      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                      </svg>
-                    </button>
-                  </td>
+                  {#if !isShared}
+                    <td class="px-3 py-2 text-right">
+                      <button onclick={() => $deleteMut.mutate(g.id)} disabled={$deleteMut.isPending}
+                        class="rounded p-0.5 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30">
+                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </td>
+                  {/if}
                 </tr>
               {/each}
             </tbody>
@@ -199,7 +212,7 @@
       {/if}
 
       <!-- Add band form -->
-      {#if showAddForm}
+      {#if !isShared && showAddForm}
         <div class="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3 space-y-2.5">
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div><label class="label-xs">Min</label><input type="number" step="0.5" bind:value={bandForm.min_score} placeholder="50" class="inp" /></div>
@@ -219,7 +232,7 @@
               class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
           </div>
         </div>
-      {:else}
+      {:else if !isShared}
         <button onclick={() => showAddForm = true}
           class="text-xs font-semibold transition hover:underline" style="color: var(--brand)">
           + Add grade band

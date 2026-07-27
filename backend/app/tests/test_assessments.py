@@ -51,6 +51,47 @@ async def test_list_grading_scales(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
+async def test_list_grading_scales_includes_shared_default(client: AsyncClient, auth: dict):
+    """A school with no grading scale of its own must still see the shared
+    system default (school_id=NULL, seeded by scripts/seed_reference_data.py)
+    — otherwise the Grading Scales page looks empty even though scoring
+    already falls back to it."""
+    resp = await client.get("/assessments/grading-scales", headers=auth)
+    assert resp.status_code == 200
+    shared = next((s for s in resp.json() if s["school_id"] is None), None)
+    assert shared is not None, "Run scripts/seed_reference_data.py first"
+    assert shared["name"] == "GES Standard Grading Scale"
+    assert len(shared["grades"]) == 9
+
+
+@pytest.mark.asyncio
+async def test_resolve_grade_falls_back_to_shared_default(db_session: AsyncSession, school):
+    """A school with no grading scale of its own still gets a letter grade,
+    from the seeded shared scale."""
+    from app.services.grading import resolve_grade
+    result = await resolve_grade(Decimal("85"), school.id, db_session)
+    assert result == "A1"
+    result_low = await resolve_grade(Decimal("30"), school.id, db_session)
+    assert result_low == "F9"
+
+
+@pytest.mark.asyncio
+async def test_resolve_grade_prefers_school_own_scale_over_shared(
+    db_session: AsyncSession, school, grading_scale: GradingScale,
+):
+    """Once a school creates its own default scale, it wins over the shared
+    system default — the fallback only fires when the school has none."""
+    from app.services.grading import resolve_grade
+    # The `grading_scale` fixture's own top band is A1 = 80-100, same letter
+    # as the shared scale's — use a percentage only the school's *own* bands
+    # (60-69.99 = "B3") would label differently from the shared scale's
+    # equivalent range (70-74.99 = "B3", 65-69.99 = "C4") to prove which
+    # scale actually resolved.
+    result = await resolve_grade(Decimal("65"), school.id, db_session)
+    assert result == "B3"  # grading_scale fixture's band, not the shared scale's "C4"
+
+
+@pytest.mark.asyncio
 async def test_grade_band_min_max_validation(client: AsyncClient, auth: dict):
     scale_resp = await client.post("/assessments/grading-scales", json={
         "name": "Bad Scale",
