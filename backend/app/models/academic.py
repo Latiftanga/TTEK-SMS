@@ -186,9 +186,13 @@ class ClassTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
 
 
 class SubjectTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """Who teaches a subject in a class — scoped to the academic year, like
+    ClassTeacher, not the term: a subject-teacher assignment lasts the whole
+    year, not per-semester. A mid-year teacher change is an update to the
+    same row (see services/academic_teachers.py::assign_subject_teacher)."""
     __tablename__ = "subject_teacher"
     __table_args__ = (
-        UniqueConstraint("class_id", "subject_id", "academic_term_id", name="uq_subject_teacher_term"),
+        UniqueConstraint("class_id", "subject_id", "academic_year_id", name="uq_subject_teacher_year"),
     )
 
     class_id: Mapped[uuid.UUID] = mapped_column(
@@ -200,7 +204,7 @@ class SubjectTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
     staff_member_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("staff_member.id", ondelete="CASCADE"), nullable=False
     )
-    academic_term_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("academic_term.id", ondelete="CASCADE"), nullable=False
+    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("academic_year.id", ondelete="CASCADE"), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

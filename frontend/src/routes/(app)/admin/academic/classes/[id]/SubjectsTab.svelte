@@ -20,21 +20,21 @@
   const allSubjQ = createQuery({ queryKey: ['subjects'],                queryFn: listSubjects,                                     staleTime: 5 * 60_000 });
   const staffQ   = createQuery({ queryKey: ['staff'],                   queryFn: () => listStaff({ limit: 200, active_only: true }), staleTime: 5 * 60_000 });
 
-  // ── Term selection ────────────────────────────────────────────────────────────
-  let termId = $state('');
+  // ── Year selection ───────────────────────────────────────────────────────────
+  // SubjectTeacher is scoped to the academic year, not the term — one
+  // assignment covers the whole year, matching ClassTeacher's convention.
+  let yearId = $state('');
   $effect(() => {
-    if (termId) return;
-    for (const y of $yearsQ.data ?? []) {
-      const cur = y.terms.find(t => t.is_current);
-      if (cur) { termId = cur.id; break; }
-    }
+    if (yearId) return;
+    const cur = ($yearsQ.data ?? []).find(y => y.is_current);
+    if (cur) yearId = cur.id;
   });
 
   // Writable store pattern — avoids TanStack's queryKey validation on mount
   const subjTeachersOpts = writable({ queryKey: ['subject-teachers', classId, ''] as string[], queryFn: () => listSubjectTeachers(classId, ''), enabled: false, staleTime: 60_000 });
   $effect(() => {
-    const t = termId;
-    subjTeachersOpts.set({ queryKey: ['subject-teachers', classId, t], queryFn: () => listSubjectTeachers(classId, t), enabled: !!t, staleTime: 60_000 });
+    const y = yearId;
+    subjTeachersOpts.set({ queryKey: ['subject-teachers', classId, y], queryFn: () => listSubjectTeachers(classId, y), enabled: !!y, staleTime: 60_000 });
   });
   const subjTeachersQ = createQuery(subjTeachersOpts);
 
@@ -42,9 +42,13 @@
   const classSubjects    = $derived($clsSubjQ.data ?? []);
   const subjectMap       = $derived(new Map(($allSubjQ.data ?? []).map(s => [s.id, s])));
   const staffMap         = $derived(new Map(($staffQ.data ?? []).map(s => [s.id, s])));
+  // Only teaching staff can be assigned to teach a subject — StaffCategory.staff_type
+  // exists specifically for this. staffMap above stays unfiltered so a legacy/edge-case
+  // assignment to a non-teaching staff member still displays their name correctly.
+  const teachingStaff    = $derived(($staffQ.data ?? []).filter(s => s.staff_type === 'TEACHING'));
   const teacherBySubject = $derived(new Map(($subjTeachersQ.data ?? []).map(st => [st.subject_id, st.staff_member_id])));
   const unassignedSubjs  = $derived(($allSubjQ.data ?? []).filter(s => s.is_active && !classSubjects.some(cs => cs.subject_id === s.id)));
-  const unassignedCount  = $derived(classSubjects.filter(cs => termId && !teacherBySubject.has(cs.subject_id)).length);
+  const unassignedCount  = $derived(classSubjects.filter(cs => yearId && !teacherBySubject.has(cs.subject_id)).length);
 
   // ── Add subject + teacher ─────────────────────────────────────────────────────
   let showAdd      = $state(false);
@@ -52,17 +56,17 @@
   let newTeacherId = $state('');
   let addError     = $state('');
 
-  const canAdd = $derived(!!newSubjectId && (!termId || !!newTeacherId));
+  const canAdd = $derived(!!newSubjectId && (!yearId || !!newTeacherId));
 
   const addMut = createMutation({
     mutationFn: async () => {
       await assignSubjects(classId, [newSubjectId]);
-      if (termId && newTeacherId)
-        await assignSubjectTeacher(classId, { subject_id: newSubjectId, staff_member_id: newTeacherId, academic_term_id: termId });
+      if (yearId && newTeacherId)
+        await assignSubjectTeacher(classId, { subject_id: newSubjectId, staff_member_id: newTeacherId, academic_year_id: yearId });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['class-subjects', classId] });
-      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, termId] });
+      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
       showAdd = false; newSubjectId = ''; newTeacherId = ''; addError = '';
       toast.success('Subject assigned.');
     },
@@ -81,9 +85,9 @@
   }
 
   const changeMut = createMutation({
-    mutationFn: () => assignSubjectTeacher(classId, { subject_id: changingId, staff_member_id: changeStaffId, academic_term_id: termId }),
+    mutationFn: () => assignSubjectTeacher(classId, { subject_id: changingId, staff_member_id: changeStaffId, academic_year_id: yearId }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, termId] });
+      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
       changingId = ''; changeStaffId = ''; changeError = '';
       toast.success('Teacher updated.');
     },
@@ -96,7 +100,7 @@
     mutationFn: (subjectId: string) => removeClassSubject(classId, subjectId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['class-subjects', classId] });
-      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, termId] });
+      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
       toast.success('Subject removed.');
     },
     onError: (e) => toast.error(apiError(e, 'Failed to remove subject.')),
@@ -140,24 +144,18 @@
           <p class="text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
             {classSubjects.length} subject{classSubjects.length !== 1 ? 's' : ''}
           </p>
-          {#if termId && unassignedCount > 0}
+          {#if yearId && unassignedCount > 0}
             <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
               {unassignedCount} without teacher
             </span>
           {/if}
         </div>
-        <!-- Term selector (compact, inline) -->
+        <!-- Year selector (compact, inline) -->
         <div class="relative shrink-0">
-          <select bind:value={termId} class={selSm}>
-            <option value="">No term</option>
+          <select bind:value={yearId} class={selSm}>
+            <option value="">No year</option>
             {#each $yearsQ.data ?? [] as y (y.id)}
-              {#if y.terms.length}
-                <optgroup label={y.name}>
-                  {#each y.terms as t (t.id)}
-                    <option value={t.id}>{t.name}{t.is_current ? ' ✓' : ''}</option>
-                  {/each}
-                </optgroup>
-              {/if}
+              <option value={y.id}>{y.name}{y.is_current ? ' ✓' : ''}</option>
             {/each}
           </select>
           <svg class="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -191,7 +189,7 @@
             </div>
 
             <!-- Teacher chip -->
-            {#if !termId}
+            {#if !yearId}
               <span class="shrink-0 text-xs text-[var(--fg-subtle)]">—</span>
             {:else if $subjTeachersQ.isPending}
               <div class="h-4 w-28 animate-pulse rounded-full bg-[var(--hover)]"></div>
@@ -208,7 +206,7 @@
             {/if}
 
             <!-- Actions -->
-            {#if termId && !editing}
+            {#if yearId && !editing}
               <button onclick={() => startChange(cs.subject_id)}
                 class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
                 {teacher ? 'Change' : 'Assign'}
@@ -228,7 +226,7 @@
               </p>
               <select bind:value={changeStaffId} class={sel}>
                 <option value="">Select teacher…</option>
-                {#each $staffQ.data ?? [] as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
+                {#each teachingStaff as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
               </select>
               {#if changeError}<p class="text-xs text-red-500">{changeError}</p>{/if}
               <div class="flex gap-2">
@@ -265,11 +263,11 @@
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
-              Teacher{termId ? ' *' : ' (select a term first)'}
+              Teacher{yearId ? ' *' : ' (select a year first)'}
             </label>
-            <select bind:value={newTeacherId} disabled={!termId} class={sel}>
+            <select bind:value={newTeacherId} disabled={!yearId} class={sel}>
               <option value="">Select teacher…</option>
-              {#each $staffQ.data ?? [] as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
+              {#each teachingStaff as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
             </select>
           </div>
         </div>

@@ -251,12 +251,12 @@ async def assign_class_teacher(
 @router.get("/classes/{class_id}/subject-teachers", response_model=list[SubjectTeacherRead])
 async def list_subject_teachers(
     class_id: uuid.UUID,
-    term_id: uuid.UUID = Query(...),
+    year_id: uuid.UUID = Query(...),
     ids=Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    rows = await teacher_svc.list_subject_teachers(class_id, term_id, school_id, db)
+    rows = await teacher_svc.list_subject_teachers(class_id, year_id, school_id, db)
     return [SubjectTeacherRead.model_validate(st) for st in rows]
 
 

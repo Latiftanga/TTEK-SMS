@@ -86,7 +86,7 @@
       list.push({ key: `ct:${ct.class_id}`, label: 'Class Teacher', detail: `${ct.class_name} · ${ct.academic_year_name}`, active: ct.is_active });
     }
     for (const s of d?.subject_assignments ?? [])
-      list.push({ key: `st:${s.subject_id}:${s.class_id}:${s.academic_term_id}`, label: s.subject_name, detail: `${s.class_name} · ${s.term_name}`, active: s.is_active });
+      list.push({ key: `st:${s.subject_id}:${s.class_id}:${s.academic_year_id}`, label: s.subject_name, detail: `${s.class_name} · ${s.academic_year_name}`, active: s.is_active });
     for (const h of d?.house_assignments ?? [])
       list.push({ key: `hm:${h.house_id}:${h.academic_year_id}`, label: 'House Master', detail: `${h.house_name} · ${h.academic_year_name}`, active: h.is_active });
     return list;

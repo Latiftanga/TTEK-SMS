@@ -280,8 +280,7 @@ class SubjectAssignment(BaseModel):
     class_name: str
     subject_id: uuid.UUID
     subject_name: str
-    academic_term_id: uuid.UUID
-    term_name: str
+    academic_year_id: uuid.UUID
     academic_year_name: str
     is_active: bool
 

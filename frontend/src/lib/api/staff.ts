@@ -420,8 +420,7 @@ export interface SubjectAssignment {
   class_name: string;
   subject_id: string;
   subject_name: string;
-  academic_term_id: string;
-  term_name: string;
+  academic_year_id: string;
   academic_year_name: string;
   is_active: boolean;
 }

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import (
-    AcademicTerm, AcademicYear, Class, ClassTeacher,
+    AcademicYear, Class, ClassTeacher,
     SHSProgramme, Subject, SubjectTeacher,
 )
 from app.models.housing import House, HouseMaster
@@ -59,11 +59,10 @@ async def get_responsibilities(
 
     # ── Subject assignments ───────────────────────────────────────────────────
     st_rows = (await db.execute(
-        select(SubjectTeacher, Class, Subject, AcademicTerm, AcademicYear, SHSProgramme)
+        select(SubjectTeacher, Class, Subject, AcademicYear, SHSProgramme)
         .join(Class, SubjectTeacher.class_id == Class.id)
         .join(Subject, SubjectTeacher.subject_id == Subject.id)
-        .join(AcademicTerm, SubjectTeacher.academic_term_id == AcademicTerm.id)
-        .join(AcademicYear, AcademicTerm.academic_year_id == AcademicYear.id)
+        .join(AcademicYear, SubjectTeacher.academic_year_id == AcademicYear.id)
         .outerjoin(SHSProgramme, Class.programme_id == SHSProgramme.id)
         .where(
             SubjectTeacher.staff_member_id == staff_id,
@@ -72,7 +71,6 @@ async def get_responsibilities(
         .order_by(
             SubjectTeacher.is_active.desc(),
             AcademicYear.start_date.desc(),
-            AcademicTerm.term_number,
             Class.year_group,
         )
     )).all()
@@ -83,12 +81,11 @@ async def get_responsibilities(
             class_name=_class_name(cls.level, cls.year_group, prog.name if prog else None, cls.stream),
             subject_id=st.subject_id,
             subject_name=subj.name,
-            academic_term_id=st.academic_term_id,
-            term_name=term.name,
+            academic_year_id=st.academic_year_id,
             academic_year_name=year.name,
             is_active=st.is_active,
         )
-        for st, cls, subj, term, year, prog in st_rows
+        for st, cls, subj, year, prog in st_rows
     ]
 
     # ── House master assignments ──────────────────────────────────────────────

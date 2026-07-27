@@ -193,7 +193,7 @@ class ClassTeacherRead(BaseModel):
 class SubjectTeacherAssign(BaseModel):
     subject_id: uuid.UUID
     staff_member_id: uuid.UUID
-    academic_term_id: uuid.UUID
+    academic_year_id: uuid.UUID
 
 
 class SubjectTeacherRead(BaseModel):
@@ -202,7 +202,7 @@ class SubjectTeacherRead(BaseModel):
     class_id: uuid.UUID
     subject_id: uuid.UUID
     staff_member_id: uuid.UUID
-    academic_term_id: uuid.UUID
+    academic_year_id: uuid.UUID
     is_active: bool
 
     model_config = {"from_attributes": True}

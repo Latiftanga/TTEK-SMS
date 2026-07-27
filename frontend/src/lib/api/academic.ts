@@ -89,7 +89,7 @@ export interface SubjectTeacher {
   class_id: string;
   subject_id: string;
   staff_member_id: string;
-  academic_term_id: string;
+  academic_year_id: string;
   is_active: boolean;
 }
 
@@ -234,10 +234,10 @@ export async function getClassTeacher(classId: string, yearId: string): Promise<
   return data;
 }
 
-export async function listSubjectTeachers(classId: string, termId: string): Promise<SubjectTeacher[]> {
+export async function listSubjectTeachers(classId: string, yearId: string): Promise<SubjectTeacher[]> {
   const { data } = await client.get<SubjectTeacher[]>(
     `/academic/classes/${classId}/subject-teachers`,
-    { params: { term_id: termId } }
+    { params: { year_id: yearId } }
   );
   return data;
 }
@@ -259,7 +259,7 @@ export async function assignClassTeacher(
 
 export async function assignSubjectTeacher(
   classId: string,
-  req: { subject_id: string; staff_member_id: string; academic_term_id: string }
+  req: { subject_id: string; staff_member_id: string; academic_year_id: string }
 ): Promise<unknown> {
   const { data } = await client.post(`/academic/classes/${classId}/subject-teachers`, req);
   return data;

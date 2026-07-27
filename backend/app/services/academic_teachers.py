@@ -48,7 +48,7 @@ async def assign_subject_teacher(
         select(SubjectTeacher).where(
             SubjectTeacher.class_id == class_id,
             SubjectTeacher.subject_id == req.subject_id,
-            SubjectTeacher.academic_term_id == req.academic_term_id,
+            SubjectTeacher.academic_year_id == req.academic_year_id,
         )
     )
     if existing:
@@ -62,7 +62,7 @@ async def assign_subject_teacher(
         class_id=class_id,
         subject_id=req.subject_id,
         staff_member_id=req.staff_member_id,
-        academic_term_id=req.academic_term_id,
+        academic_year_id=req.academic_year_id,
         is_active=True,
     )
     db.add(st)
@@ -87,14 +87,14 @@ async def get_class_teacher(
 
 async def list_subject_teachers(
     class_id: uuid.UUID,
-    term_id: uuid.UUID,
+    year_id: uuid.UUID,
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[SubjectTeacher]:
     rows = await db.scalars(
         select(SubjectTeacher).where(
             SubjectTeacher.class_id == class_id,
-            SubjectTeacher.academic_term_id == term_id,
+            SubjectTeacher.academic_year_id == year_id,
             SubjectTeacher.school_id == school_id,
         )
     )

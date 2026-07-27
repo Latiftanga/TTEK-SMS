@@ -4,6 +4,8 @@ Run inside Docker: docker compose exec api pytest app/tests/test_academic.py -v
 
 Fixtures (school, school_admin, auth) are defined in conftest.py.
 """
+from datetime import date
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -392,6 +394,120 @@ async def test_assign_subject_rejects_other_schools_subject(
         "subject_ids": [other_subject_id],
     }, headers=auth)
     assert resp.status_code == 404
+
+
+# ── Subject teachers ──────────────────────────────────────────────────────────
+# SubjectTeacher is scoped to academic_year_id, matching ClassTeacher — one
+# assignment per class+subject+year, not re-done every term.
+
+async def _class_with_subject(client: AsyncClient, auth: dict) -> tuple[str, str]:
+    class_id = (await client.post("/academic/classes", json={
+        "level": "SHS", "year_group": 1, "stream": "A",
+    }, headers=auth)).json()["id"]
+    subject_id = (await client.post("/academic/subjects", json={
+        "code": "PHY", "name": "Physics",
+    }, headers=auth)).json()["id"]
+    resp = await client.post(f"/academic/classes/{class_id}/subjects", json={
+        "subject_ids": [subject_id],
+    }, headers=auth)
+    assert resp.status_code == 201
+    return class_id, subject_id
+
+
+@pytest.mark.asyncio
+async def test_assign_subject_teacher_scoped_to_year(
+    client: AsyncClient, auth: dict, staff_member, academic_year,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+
+    resp = await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["academic_year_id"] == str(academic_year.id)
+
+    listed = await client.get(
+        f"/academic/classes/{class_id}/subject-teachers?year_id={academic_year.id}", headers=auth,
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["staff_member_id"] == str(staff_member.id)
+
+
+@pytest.mark.asyncio
+async def test_reassign_subject_teacher_same_year_updates_in_place(
+    client: AsyncClient, auth: dict, staff_member, academic_year, db_session: AsyncSession, school,
+):
+    """A mid-year teacher change updates the existing row rather than
+    creating a second one for the same class+subject+year."""
+    from app.models.staff import StaffMember
+    class_id, subject_id = await _class_with_subject(client, auth)
+
+    other = StaffMember(school_id=school.id, staff_number="TCH002", first_name="Ama", last_name="Boateng", is_active=True)
+    db_session.add(other)
+    await db_session.flush()
+
+    await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    resp = await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(other.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["staff_member_id"] == str(other.id)
+
+    listed = await client.get(
+        f"/academic/classes/{class_id}/subject-teachers?year_id={academic_year.id}", headers=auth,
+    )
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["staff_member_id"] == str(other.id)
+
+
+@pytest.mark.asyncio
+async def test_list_subject_teachers_filters_by_year(
+    client: AsyncClient, auth: dict, staff_member, academic_year, db_session: AsyncSession, school,
+):
+    from app.models.academic import AcademicYear
+    class_id, subject_id = await _class_with_subject(client, auth)
+
+    other_year = AcademicYear(school_id=school.id, name="2099/2100", start_date=date(2099, 9, 1), end_date=date(2100, 7, 31), is_current=False)
+    db_session.add(other_year)
+    await db_session.flush()
+
+    await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    same_year = await client.get(
+        f"/academic/classes/{class_id}/subject-teachers?year_id={academic_year.id}", headers=auth,
+    )
+    other_year_resp = await client.get(
+        f"/academic/classes/{class_id}/subject-teachers?year_id={other_year.id}", headers=auth,
+    )
+    assert len(same_year.json()) == 1
+    assert other_year_resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_responsibilities_shows_subject_assignment_by_year(
+    client: AsyncClient, auth: dict, staff_member, academic_year,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+    await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    resp = await client.get(f"/staff/{staff_member.id}/responsibilities", headers=auth)
+    assert resp.status_code == 200
+    assignment = resp.json()["subject_assignments"][0]
+    assert assignment["academic_year_id"] == str(academic_year.id)
+    assert assignment["academic_year_name"] == academic_year.name
+    assert "academic_term_id" not in assignment
 
 
 # ── SHS / BASIC guards ────────────────────────────────────────────────────────
