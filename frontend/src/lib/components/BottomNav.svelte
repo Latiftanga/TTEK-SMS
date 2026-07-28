@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { createQuery } from '@tanstack/svelte-query';
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
+  import { getMySchool } from '$lib/api/schools';
   import { userRole, isClassTeacher } from '$lib/stores/permissions';
   import { NAV_GROUPS, type NavItem, type NavRole, type SchoolType } from '$lib/nav';
 
@@ -30,7 +32,7 @@
   const ALL_TABS: Tab[] = NAV_GROUPS.flatMap(g => g.items)
     .flatMap((i): Tab[] => [
       { href: i.href, label: i.label, icon: i.icon, exact: i.exact, roles: i.roles, schoolTypes: i.schoolTypes,
-        classTeacherOnly: i.classTeacherOnly },
+        requiresBoarding: i.requiresBoarding, classTeacherOnly: i.classTeacherOnly },
       ...(i.children ?? [])
         .filter((c): c is typeof c & { icon: string } => !!c.icon)
         .map(c => ({ href: c.href, label: c.label, icon: c.icon, roles: c.roles, schoolTypes: c.schoolTypes })),
@@ -53,15 +55,25 @@
     return exact ? p === href : p.startsWith(href);
   }
 
+  // has_boarding isn't in the lightweight `school` store (branding only) — fetched
+  // separately, deduped via TanStack Query against the same ['my-school'] key
+  // Sidebar.svelte and the /housing page itself use.
+  const schoolQ = createQuery({
+    queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000,
+    enabled: () => !($currentUser?.is_superadmin ?? false) && !!$userRole,
+  });
+
   const eligible = $derived.by(() => {
     const role       = $userRole as NavRole | null;
     const isSuperadmin = $currentUser?.is_superadmin ?? false;
     const sType      = $school?.schoolType as SchoolType | undefined;
+    const hasBoarding = $schoolQ.data?.has_boarding as boolean | undefined;
     const classTeacherOk = isSuperadmin || $isClassTeacher;
     return ALL_TABS.filter(t => {
       const roleOk = isSuperadmin || !t.roles || (role !== null && t.roles.includes(role));
       const typeOk = !t.schoolTypes || !sType || t.schoolTypes.includes(sType);
-      return roleOk && typeOk && (!t.classTeacherOnly || classTeacherOk);
+      const boardingOk = !t.requiresBoarding || isSuperadmin || hasBoarding === undefined || hasBoarding;
+      return roleOk && typeOk && boardingOk && (!t.classTeacherOnly || classTeacherOk);
     });
   });
 

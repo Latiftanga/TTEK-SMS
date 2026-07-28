@@ -26,6 +26,7 @@ from app.schemas.housing import (
     RoomCreate, RoomRead, RoomUpdate, StudentInHouseRead,
 )
 from app.services import housing as svc
+from app.services import housing_assignment as assignment_svc
 from app.services import housing_events as event_svc
 
 
@@ -173,7 +174,7 @@ async def list_house_students(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.list_house_students(house_id, school_id, db)
+    return await assignment_svc.list_house_students(house_id, school_id, db)
 
 
 @router.get("/houses/{house_id}/master", response_model=HouseMasterRead | None)
@@ -196,7 +197,7 @@ async def assign_student(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.assign_student(req, school_id, db)
+    return await assignment_svc.assign_student(req, school_id, db)
 
 
 @router.patch("/assignments/{assignment_id}/vacate", response_model=AssignmentRead)
@@ -207,7 +208,7 @@ async def vacate_assignment(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.vacate_assignment(assignment_id, req, school_id, db)
+    return await assignment_svc.vacate_assignment(assignment_id, req, school_id, db)
 
 
 @router.get("/students/{student_id}/assignment", response_model=AssignmentRead | None)
@@ -218,7 +219,7 @@ async def get_student_assignment(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await svc.get_student_current_assignment(student_id, year_id, school_id, db)
+    return await assignment_svc.get_student_current_assignment(student_id, year_id, school_id, db)
 
 
 # ── Roll calls ────────────────────────────────────────────────────────────────

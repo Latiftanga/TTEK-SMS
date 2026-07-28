@@ -1,8 +1,10 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
+  import { createQuery } from '@tanstack/svelte-query';
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
+  import { getMySchool } from '$lib/api/schools';
   import { userRole, isClassTeacher } from '$lib/stores/permissions';
   import { NAV_GROUPS, IC, type NavRole, type SchoolType, type NavItem, type ChildNavItem } from '$lib/nav';
   import SidebarFooter from './SidebarFooter.svelte';
@@ -23,6 +25,15 @@
   const schoolType   = $derived($school?.schoolType as SchoolType | undefined);
   const classTeacher = $derived($isClassTeacher);
 
+  // has_boarding isn't in the lightweight `school` store (branding only) — fetched
+  // separately, deduped via TanStack Query against the same ['my-school'] key the
+  // /housing page itself uses.
+  const schoolQ = createQuery({
+    queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000,
+    enabled: () => !isSuperadmin && !!role,
+  });
+  const hasBoarding = $derived($schoolQ.data?.has_boarding as boolean | undefined);
+
   function canSee(roles: NavRole[] | undefined): boolean {
     if (isSuperadmin || !roles) return true;
     if (!role) return false;
@@ -32,6 +43,11 @@
   function canSeeType(types: SchoolType[] | undefined): boolean {
     if (!types || !schoolType) return true;   // no restriction, or type not yet known
     return types.includes(schoolType);
+  }
+
+  function canSeeBoarding(flag: boolean | undefined): boolean {
+    if (!flag) return true;
+    return isSuperadmin || hasBoarding === undefined || hasBoarding;
   }
 
   function canSeeClassTeacherOnly(flag: boolean | undefined): boolean {
@@ -44,7 +60,7 @@
       .map(g => ({
         ...g,
         items: g.items
-          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes) && canSeeClassTeacherOnly(i.classTeacherOnly))
+          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes) && canSeeBoarding(i.requiresBoarding) && canSeeClassTeacherOnly(i.classTeacherOnly))
           .map(i => ({
             ...i,
             children: i.children?.filter(c => canSee(c.roles) && canSeeType(c.schoolTypes)),

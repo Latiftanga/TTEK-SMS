@@ -19,9 +19,9 @@ async def _make_house(client: AsyncClient, auth: dict, code: str = "HAA", gender
     return r.json()
 
 
-async def _make_student(client: AsyncClient, auth: dict, adm: str = "STU001") -> dict:
+async def _make_student(client: AsyncClient, auth: dict, adm: str = "STU001", gender: str = "MALE") -> dict:
     r = await client.post("/students", json={
-        "admission_number": adm, "first_name": "Test", "last_name": "Student",
+        "admission_number": adm, "first_name": "Test", "last_name": "Student", "gender": gender,
     }, headers=auth)
     assert r.status_code == 201, r.text
     return r.json()
@@ -206,6 +206,66 @@ async def test_assign_student_to_house(
     d = r.json()
     assert d["student_id"] == s["id"]
     assert d["vacated_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_assign_student_wrong_gender_rejected(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="SAH5", gender="MALE")
+    s = await _make_student(client, auth, adm="HSTU005", gender="FEMALE")
+    r = await client.post("/housing/assignments", json={
+        "student_id": s["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert r.status_code == 422
+    assert "female" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_assign_student_missing_gender_rejected(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="SAH6", gender="MALE")
+    r = await client.post("/students", json={
+        "admission_number": "HSTU006", "first_name": "Test", "last_name": "Student",
+    }, headers=auth)
+    s = r.json()
+    resp = await client.post("/housing/assignments", json={
+        "student_id": s["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_assign_student_to_mixed_house_any_gender(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="SAH7", gender="MIXED")
+    s = await _make_student(client, auth, adm="HSTU007", gender="FEMALE")
+    r = await client.post("/housing/assignments", json={
+        "student_id": s["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_assign_student_sets_is_boarding(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    """A student housed in a dorm must be flagged is_boarding — otherwise
+    boarding_only fee structures (services/fees.py) silently skip them."""
+    h = await _make_house(client, auth, code="SAH8")
+    s = await _make_student(client, auth, adm="HSTU008")
+    assert s["is_boarding"] is False
+    await client.post("/housing/assignments", json={
+        "student_id": s["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    r = await client.get(f"/students/{s['id']}", headers=auth)
+    assert r.json()["is_boarding"] is True
 
 
 @pytest.mark.asyncio

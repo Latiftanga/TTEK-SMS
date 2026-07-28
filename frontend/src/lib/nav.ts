@@ -1,8 +1,13 @@
 /**
  * Sidebar navigation configuration.
- * `roles`      — if set, item is only visible to those roles (superadmins always see all).
- * `schoolTypes`— if set, item is only visible to those school types.
- *                Omit to show for every school type.
+ * `roles`          — if set, item is only visible to those roles (superadmins always see all).
+ * `schoolTypes`    — if set, item is only visible to those school types.
+ *                    Omit to show for every school type.
+ * `requiresBoarding`— if set, item is only visible when the school has boarding
+ *                    enabled (School.has_boarding) — independent of school type,
+ *                    since a BASIC school can board students too and an SHS school
+ *                    can be day-only. Backend enforces the same flag on every
+ *                    /housing/* endpoint (see routers/housing.py::_require_boarding).
  */
 
 export type NavRole    = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster';
@@ -23,6 +28,7 @@ export interface NavItem {
   exact?: boolean;
   roles?: NavRole[];
   schoolTypes?: SchoolType[];
+  requiresBoarding?: boolean;
   classTeacherOnly?: boolean;   // requires isClassTeacher, on top of roles — see Sidebar/BottomNav
   children?: ChildNavItem[];
 }
@@ -82,7 +88,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/reports',     label: 'Report Cards', icon: IC.reports,     roles: ['teacher'], classTeacherOnly: true },
       { href: '/fees',        label: 'Fees',          icon: IC.fees,        roles: ['finance', 'admin'] },
       { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
-        schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
+        requiresBoarding: true },
     ],
   },
   {
