@@ -2,12 +2,16 @@
 Fee management integration tests — fee types, structures, bulk assign, records, summary.
 Run inside Docker: docker compose exec api pytest app/tests/test_fees.py -v
 """
+import uuid
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import AcademicTerm
+from app.models.academic import AcademicTerm, Class
 from app.models.fees import FeeStructure, FeeType, StudentFeeRecord
-from app.models.school import School
+from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.students import Student
 
 
@@ -111,6 +115,46 @@ async def test_fee_structure_negative_amount_rejected(
         "academic_term_id": str(academic_term.id),
         "fee_type_id": str(fee_type.id),
         "amount": "-100",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_fee_structure_rejects_cross_school_class(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    academic_term: AcademicTerm, fee_type: FeeType,
+):
+    """applies_to_class_id must belong to the calling school — not silently accepted."""
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Other Fee School", school_code="OTHERFEE", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+    other_class = Class(school_id=other_school.id, level="SHS", year_group=1, is_active=True)
+    db_session.add(other_class)
+    await db_session.flush()
+
+    resp = await client.post("/fees/structures", json={
+        "academic_term_id": str(academic_term.id),
+        "fee_type_id": str(fee_type.id),
+        "amount": "500.00",
+        "applies_to_class_id": str(other_class.id),
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_fee_structure_rejects_bogus_programme(
+    client: AsyncClient, auth: dict, academic_term: AcademicTerm, fee_type: FeeType,
+):
+    resp = await client.post("/fees/structures", json={
+        "academic_term_id": str(academic_term.id),
+        "fee_type_id": str(fee_type.id),
+        "amount": "500.00",
+        "applies_to_programme_id": str(uuid.uuid4()),
     }, headers=auth)
     assert resp.status_code == 422
 

@@ -133,7 +133,6 @@ class FeeSummaryRead(BaseModel):
 
 
 class FeePaymentCreate(BaseModel):
-    student_id: uuid.UUID
     fee_record_id: uuid.UUID
     amount_paid: Decimal
     payment_method: PaymentMethod
@@ -164,7 +163,6 @@ class FeePaymentRead(BaseModel):
 
 
 class FeeDiscountCreate(BaseModel):
-    student_id: uuid.UUID
     fee_record_id: uuid.UUID
     discount_type: DiscountType
     amount: Decimal | None = None

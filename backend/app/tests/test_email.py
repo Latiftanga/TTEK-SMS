@@ -241,7 +241,6 @@ async def test_fee_payment_sends_email_to_primary_guardian(
         self, transport=_MockTransport(), **{k: v for k, v in kw.items() if k != "transport"}
     )):
         resp = await client.post("/fees/payments", json={
-            "student_id": str(student.id),
             "fee_record_id": str(fee_record.id),
             "amount_paid": "200.00",
             "payment_method": "CASH",

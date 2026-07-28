@@ -62,7 +62,6 @@
 
   const payMut = createMutation({
     mutationFn: () => recordPayment({
-      student_id: studentId,
       fee_record_id: payRecord!.id,
       amount_paid: parseFloat(payAmount),
       payment_method: payMethod,
@@ -101,7 +100,6 @@
 
   const discMut = createMutation({
     mutationFn: () => applyDiscount({
-      student_id: studentId,
       fee_record_id: discRecord!.id,
       discount_type: discType,
       amount:     discMode === 'amount'      ? parseFloat(discValue) : undefined,

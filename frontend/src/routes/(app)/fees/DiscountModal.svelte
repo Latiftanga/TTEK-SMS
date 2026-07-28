@@ -6,12 +6,11 @@
 
   interface Props {
     record: FeeRecord;
-    studentId: string;
     termId: string;
     onClose: () => void;
     onSuccess: () => void;
   }
-  const { record, studentId, termId, onClose, onSuccess }: Props = $props();
+  const { record, termId, onClose, onSuccess }: Props = $props();
 
   type Mode = 'percentage' | 'amount';
   let discountType = $state<DiscountType>('BURSARY');
@@ -24,7 +23,6 @@
 
   const mut = createMutation({
     mutationFn: () => applyDiscount({
-      student_id:   studentId,
       fee_record_id: record.id,
       discount_type: discountType,
       percentage: mode === 'percentage' ? parseFloat(value) : undefined,

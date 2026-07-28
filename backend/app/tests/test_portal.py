@@ -277,7 +277,7 @@ async def test_portal_term_enrollment_reflects_fee_balance(
     # Staff records a partial payment — the portal view must reflect it live,
     # not a cached figure.
     await client.post("/fees/payments", json={
-        "student_id": str(student.id), "fee_record_id": str(fee_record.id),
+        "fee_record_id": str(fee_record.id),
         "amount_paid": "200.00", "payment_method": "CASH", "payment_date": "2024-10-01",
     }, headers=auth)
 

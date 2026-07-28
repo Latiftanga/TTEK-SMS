@@ -9,13 +9,12 @@
 
   interface Props {
     record: FeeRecord;
-    studentId: string;
     termId: string;
     remainingBalance: number;
     onClose: () => void;
     onSuccess: () => void;
   }
-  const { record, studentId, termId, remainingBalance, onClose, onSuccess }: Props = $props();
+  const { record, termId, remainingBalance, onClose, onSuccess }: Props = $props();
 
   const today = new Date().toISOString().slice(0, 10);
   let amount       = $state(remainingBalance.toFixed(2));
@@ -29,7 +28,6 @@
 
   const mut = createMutation({
     mutationFn: () => recordPayment({
-      student_id: studentId,
       fee_record_id: record.id,
       amount_paid: parseFloat(amount),
       payment_method: method,

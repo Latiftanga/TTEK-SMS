@@ -671,7 +671,7 @@ async def test_fee_gate_cleared_by_payment(
     await _enable_fee_gate(client, auth, academic_term.id)
 
     await client.post("/fees/payments", json={
-        "student_id": str(student.id), "fee_record_id": str(fee_record.id),
+        "fee_record_id": str(fee_record.id),
         "amount_paid": "500.00", "payment_method": "CASH", "payment_date": "2024-10-01",
     }, headers=auth)
 

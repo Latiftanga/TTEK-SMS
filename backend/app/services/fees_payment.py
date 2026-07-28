@@ -50,7 +50,7 @@ async def record_payment(
         raise HTTPException(409, "Cannot record a payment on a waived fee record.")
     payment = FeePayment(
         school_id=school_id,
-        student_id=req.student_id,
+        student_id=rec.student_id,
         academic_term_id=rec.academic_term_id,
         fee_record_id=req.fee_record_id,
         amount_paid=req.amount_paid,
@@ -131,7 +131,7 @@ async def apply_discount(
     rec = await _get_record(req.fee_record_id, school_id, db)
     discount = FeeDiscount(
         school_id=school_id,
-        student_id=req.student_id,
+        student_id=rec.student_id,
         academic_term_id=rec.academic_term_id,
         fee_record_id=req.fee_record_id,
         discount_type=req.discount_type,

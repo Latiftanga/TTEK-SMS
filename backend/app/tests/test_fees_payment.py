@@ -2,6 +2,7 @@
 Fee payments, discounts, instalment plans, and summary trigger integration tests.
 Run inside Docker: docker compose exec api pytest app/tests/test_fees_payment.py -v
 """
+import uuid
 from datetime import date
 
 import pytest
@@ -21,7 +22,6 @@ async def test_record_payment(
     student: Student, academic_term: AcademicTerm, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/payments", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "amount_paid": "200.00",
         "payment_method": "CASH",
@@ -35,6 +35,25 @@ async def test_record_payment(
 
 
 @pytest.mark.asyncio
+async def test_payment_ignores_client_supplied_student_id(
+    client: AsyncClient, auth: dict,
+    student: Student, academic_term: AcademicTerm, fee_record: StudentFeeRecord
+):
+    """student_id is derived from the fee record server-side — a caller-supplied
+    value (even a mismatched one) must never be trusted, since the DB trigger
+    that refreshes StudentFeeSummary keys off this column."""
+    resp = await client.post("/fees/payments", json={
+        "student_id": str(uuid.uuid4()),  # ignored — not part of the schema anymore
+        "fee_record_id": str(fee_record.id),
+        "amount_paid": "200.00",
+        "payment_method": "CASH",
+        "payment_date": "2024-10-01",
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["student_id"] == str(student.id)
+
+
+@pytest.mark.asyncio
 async def test_payment_on_waived_record_rejected(
     client: AsyncClient, auth: dict,
     db_session: AsyncSession,
@@ -43,7 +62,6 @@ async def test_payment_on_waived_record_rejected(
     fee_record.is_waived = True
     await db_session.flush()
     resp = await client.post("/fees/payments", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "amount_paid": "200.00",
         "payment_method": "CASH",
@@ -58,7 +76,6 @@ async def test_payment_negative_amount_rejected(
     student: Student, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/payments", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "amount_paid": "-50",
         "payment_method": "CASH",
@@ -73,7 +90,6 @@ async def test_list_payments(
     student: Student, academic_term: AcademicTerm, fee_record: StudentFeeRecord
 ):
     await client.post("/fees/payments", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "amount_paid": "100.00",
         "payment_method": "MOBILE_MONEY",
@@ -89,12 +105,28 @@ async def test_list_payments(
 # ── Discounts ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_discount_ignores_client_supplied_student_id(
+    client: AsyncClient, auth: dict,
+    student: Student, fee_record: StudentFeeRecord
+):
+    """Same derive-from-record guarantee as payments — see
+    test_payment_ignores_client_supplied_student_id."""
+    resp = await client.post("/fees/discounts", json={
+        "student_id": str(uuid.uuid4()),  # ignored — not part of the schema anymore
+        "fee_record_id": str(fee_record.id),
+        "discount_type": "SCHOLARSHIP",
+        "amount": "50.00",
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["student_id"] == str(student.id)
+
+
+@pytest.mark.asyncio
 async def test_apply_fixed_discount(
     client: AsyncClient, auth: dict,
     student: Student, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "SCHOLARSHIP",
         "amount": "100.00",
@@ -112,7 +144,6 @@ async def test_apply_percentage_discount(
     student: Student, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "BURSARY",
         "percentage": "20.00",
@@ -129,7 +160,6 @@ async def test_discount_both_amount_and_percentage_rejected(
     student: Student, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "SIBLING",
         "amount": "50.00",
@@ -144,7 +174,6 @@ async def test_discount_neither_amount_nor_percentage_rejected(
     student: Student, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "OTHER",
     }, headers=auth)
@@ -157,7 +186,6 @@ async def test_discount_percentage_over_100_rejected(
     student: Student, fee_record: StudentFeeRecord
 ):
     resp = await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "SCHOLARSHIP",
         "percentage": "110.00",
@@ -171,7 +199,6 @@ async def test_list_discounts(
     student: Student, academic_term: AcademicTerm, fee_record: StudentFeeRecord
 ):
     await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "STAFF_WARD",
         "amount": "75.00",
@@ -253,7 +280,6 @@ async def test_fee_summary_updated_after_payment(
 ):
     """The DB trigger fires on fee_payment INSERT, populating StudentFeeSummary."""
     await client.post("/fees/payments", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "amount_paid": "300.00",
         "payment_method": "BANK_TRANSFER",
@@ -276,7 +302,6 @@ async def test_fee_summary_balance_after_discount(
 ):
     """Percentage discount of 10% on 500 GHS = 50 GHS discounted; balance = 450."""
     await client.post("/fees/discounts", json={
-        "student_id": str(student.id),
         "fee_record_id": str(fee_record.id),
         "discount_type": "SCHOLARSHIP",
         "percentage": "10.00",

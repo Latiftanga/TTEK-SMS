@@ -143,7 +143,6 @@ export const getFeeSummary = (studentId: string, termId: string) =>
 
 // Payments
 export const recordPayment = (data: {
-  student_id: string;
   fee_record_id: string;
   amount_paid: number;
   payment_method: PaymentMethod;
@@ -157,7 +156,6 @@ export const listPayments = (studentId: string, termId: string) =>
 
 // Discounts
 export const applyDiscount = (data: {
-  student_id: string;
   fee_record_id: string;
   discount_type: DiscountType;
   amount?: number;

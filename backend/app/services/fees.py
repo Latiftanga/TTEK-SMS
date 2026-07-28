@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.academic import AcademicTerm, Class
+from app.models.academic import AcademicTerm, Class, SHSProgramme
 from app.models.fees import FeeStructure, FeeType, StudentFeeRecord, StudentFeeSummary
 from app.models.students import Student, StudentClassAssignment
 from app.schemas.fees import (
@@ -109,6 +109,20 @@ async def create_fee_structure(
     )
     if not fee_type:
         raise HTTPException(404, "Fee type not found.")
+    if req.applies_to_class_id:
+        cls = await db.scalar(
+            select(Class).where(Class.id == req.applies_to_class_id, Class.school_id == school_id)
+        )
+        if not cls:
+            raise HTTPException(404, "Class not found.")
+    if req.applies_to_programme_id:
+        programme = await db.scalar(
+            select(SHSProgramme).where(
+                SHSProgramme.id == req.applies_to_programme_id, SHSProgramme.school_id == school_id,
+            )
+        )
+        if not programme:
+            raise HTTPException(422, "Programme not found.")
     fs = FeeStructure(
         school_id=school_id,
         academic_term_id=req.academic_term_id,

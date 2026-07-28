@@ -237,7 +237,6 @@
 {#if payRecord && selected}
   <PaymentModal
     record={payRecord}
-    studentId={selected.id}
     {termId}
     remainingBalance={remaining(payRecord)}
     onClose={() => payRecord = null}
@@ -247,7 +246,6 @@
 {#if discountRecord && selected}
   <DiscountModal
     record={discountRecord}
-    studentId={selected.id}
     {termId}
     onClose={() => discountRecord = null}
     onSuccess={() => { discountRecord = null; afterMutation(); }}
