@@ -117,10 +117,6 @@ async def send_manual(
     except ValueError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
 
-    send_results = [
-        SmsSendResult(phone=r.provider.value, success=r.success, error=r.error)
-        for r in results
-    ]
     # Pair results with phones (same order)
     paired = [
         SmsSendResult(phone=phone, success=r.success, error=r.error)

@@ -199,7 +199,6 @@ class SmsConfigCreate(BaseModel):
     api_key: str
     api_secret: str | None = None
     sender_id: str
-    is_active: bool = False
 
 
 class SmsConfigRead(BaseModel):

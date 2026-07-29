@@ -233,6 +233,13 @@ _DRIVER_MAP: dict[SmsProvider, type[SmsDriver]] = {
     SmsProvider.TWILIO: TwilioDriver,
 }
 
+# Providers that cannot function without api_secret (see ENDPOINT NOTES above).
+# Checked by activate_sms_provider() — a provider missing this can be saved
+# (credentials are often gathered in stages) but must not be made active.
+PROVIDERS_REQUIRING_SECRET: frozenset[SmsProvider] = frozenset({
+    SmsProvider.AFRICAS_TALKING, SmsProvider.HUBTEL, SmsProvider.TWILIO,
+})
+
 
 def build_driver(
     provider: SmsProvider, api_key: str, api_secret: str | None, sender_id: str

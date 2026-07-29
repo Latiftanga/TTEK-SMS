@@ -45,7 +45,6 @@ async def test_upsert_sms_config(client: AsyncClient, auth: dict):
         "api_key": "test-api-key",
         "api_secret": "test-username",
         "sender_id": "PRESEC",
-        "is_active": False,
     }, headers=auth)
     assert resp.status_code == 201
     data = resp.json()
@@ -55,6 +54,33 @@ async def test_upsert_sms_config(client: AsyncClient, auth: dict):
     # Credentials must NOT appear in the response
     assert "api_key" not in data
     assert "api_secret" not in data
+
+
+@pytest.mark.asyncio
+async def test_upsert_sms_config_ignores_client_supplied_is_active(
+    client: AsyncClient, auth: dict,
+):
+    """is_active isn't a field on SmsConfigCreate — only /sms/configs/activate
+    may flip it, so that it always deactivates every other provider first.
+    A raw request smuggling is_active:true must not create a second active row."""
+    await client.post("/sms/configs", json={
+        "provider": "AFRICAS_TALKING", "api_key": "k1",
+        "api_secret": "s1", "sender_id": "SCHOOL",
+    }, headers=auth)
+    await client.post("/sms/configs/activate",
+        json={"provider": "AFRICAS_TALKING"}, headers=auth,
+    )
+    resp = await client.post("/sms/configs", json={
+        "provider": "ARKESEL", "api_key": "k2", "sender_id": "SCHOOL",
+        "is_active": True,
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["is_active"] is False
+
+    configs = (await client.get("/sms/configs", headers=auth)).json()
+    active = [c for c in configs if c["is_active"]]
+    assert len(active) == 1
+    assert active[0]["provider"] == "AFRICAS_TALKING"
 
 
 @pytest.mark.asyncio
@@ -102,7 +128,7 @@ async def test_list_sms_configs_shows_all_providers(client: AsyncClient, auth: d
 @pytest.mark.asyncio
 async def test_activate_provider_sets_active(client: AsyncClient, auth: dict):
     await client.post("/sms/configs", json={
-        "provider": "AFRICAS_TALKING", "api_key": "k", "sender_id": "SCHOOL",
+        "provider": "AFRICAS_TALKING", "api_key": "k", "api_secret": "s", "sender_id": "SCHOOL",
     }, headers=auth)
     resp = await client.post("/sms/configs/activate",
         json={"provider": "AFRICAS_TALKING"}, headers=auth,
@@ -113,10 +139,12 @@ async def test_activate_provider_sets_active(client: AsyncClient, auth: dict):
 
 @pytest.mark.asyncio
 async def test_activate_deactivates_others(client: AsyncClient, auth: dict):
-    for provider in ["AFRICAS_TALKING", "ARKESEL"]:
-        await client.post("/sms/configs", json={
-            "provider": provider, "api_key": "k", "sender_id": "SCHOOL",
-        }, headers=auth)
+    await client.post("/sms/configs", json={
+        "provider": "AFRICAS_TALKING", "api_key": "k", "api_secret": "s", "sender_id": "SCHOOL",
+    }, headers=auth)
+    await client.post("/sms/configs", json={
+        "provider": "ARKESEL", "api_key": "k", "sender_id": "SCHOOL",
+    }, headers=auth)
     await client.post("/sms/configs/activate",
         json={"provider": "AFRICAS_TALKING"}, headers=auth,
     )
@@ -135,6 +163,31 @@ async def test_activate_unconfigured_provider_returns_404(client: AsyncClient, a
         json={"provider": "WIGAL"}, headers=auth,
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_activate_rejects_missing_required_secret(client: AsyncClient, auth: dict):
+    """AfricasTalking/Hubtel/Twilio can't function without api_secret — activating
+    one that was saved without it must fail loudly, not just log FAILED sends later."""
+    await client.post("/sms/configs", json={
+        "provider": "AFRICAS_TALKING", "api_key": "k", "sender_id": "SCHOOL",
+    }, headers=auth)
+    resp = await client.post("/sms/configs/activate",
+        json={"provider": "AFRICAS_TALKING"}, headers=auth,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_activate_allows_provider_without_secret_requirement(client: AsyncClient, auth: dict):
+    """Arkesel/WiGal genuinely don't need api_secret — must still activate cleanly."""
+    await client.post("/sms/configs", json={
+        "provider": "ARKESEL", "api_key": "k", "sender_id": "SCHOOL",
+    }, headers=auth)
+    resp = await client.post("/sms/configs/activate",
+        json={"provider": "ARKESEL"}, headers=auth,
+    )
+    assert resp.status_code == 200
 
 
 # ── Delete config ─────────────────────────────────────────────────────────────
@@ -217,13 +270,15 @@ async def test_send_succeeds_with_active_config(
     assert data["sent"] == 1
     assert data["failed"] == 0
 
-    # Verify log entry written
+    # Verify log entry written — recipient must be the normalized number actually
+    # dialed (+233...), not the raw "0244123456" the admin typed in.
     from app.models.school import SmsLog
     log = await db_session.scalar(
         select(SmsLog).where(SmsLog.school_id == school.id)
     )
     assert log is not None
     assert log.message == "Test from TTEK-SMS"
+    assert log.recipient == "+233244123456"
 
 
 # ── SMS log endpoint ──────────────────────────────────────────────────────────

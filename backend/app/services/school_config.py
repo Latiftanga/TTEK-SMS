@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.school import SchoolConfig, SmsConfig, SmsProvider
 from app.schemas.school import SchoolConfigSet, SmsConfigCreate, SmsConfigRead
+from app.services.sms_driver import PROVIDERS_REQUIRING_SECRET
 
 
 async def set_config(
@@ -125,6 +126,11 @@ async def activate_sms_provider(
             status.HTTP_404_NOT_FOUND,
             f"No {provider.value} config found for this school. "
             "Configure the provider credentials first.",
+        )
+    if provider in PROVIDERS_REQUIRING_SECRET and not config.api_secret:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{provider.value} requires api_secret to be set before it can be activated.",
         )
     await db.execute(
         update(SmsConfig)

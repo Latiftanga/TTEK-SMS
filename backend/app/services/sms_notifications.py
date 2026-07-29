@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.school import SmsConfig, SmsLog, SmsStatus
 from app.models.students import Guardian, Student, StudentGuardian
-from app.services.sms_driver import SmsDriver, SmsResult, build_driver
+from app.services.sms_driver import SmsDriver, SmsResult, build_driver, _normalize_phone
 
 
 async def _get_active_driver(school_id: uuid.UUID, db: AsyncSession) -> SmsDriver | None:
@@ -99,9 +99,13 @@ async def _deliver(
     entity_type: str | None,
     entity_id: uuid.UUID | None,
     db: AsyncSession,
-) -> None:
-    result = await driver.send(to, message)
-    await _log_result(result, to, message, school_id, entity_type, entity_id, db)
+) -> SmsResult:
+    """Normalizes once, sends, and logs the normalized number — so SmsLog.recipient
+    always reflects the number actually dialed, not whatever format it was typed in."""
+    normalized = _normalize_phone(to)
+    result = await driver.send(normalized, message)
+    await _log_result(result, normalized, message, school_id, entity_type, entity_id, db)
+    return result
 
 
 # ── Notification triggers ─────────────────────────────────────────────────────
@@ -233,14 +237,11 @@ async def notify_staff_invite(
         driver = await _get_active_driver(school_id, db)
         if not driver:
             return False
-        from app.services.sms_driver import _normalize_phone
-        normalized = _normalize_phone(phone)
         msg = (
             f"Hi {staff_name}, you've been invited to join {school_name} "
             f"on TTEK-SMS. Set your password here: {invite_link}"
         )
-        result = await driver.send(normalized, msg)
-        await _log_result(result, normalized, msg, school_id, "STAFF_INVITE", invitation_id, db)
+        result = await _deliver(driver, phone, msg, school_id, "STAFF_INVITE", invitation_id, db)
         return result.success
     except Exception:
         return False
@@ -271,8 +272,7 @@ async def notify_portal_access(
         driver = await _get_active_driver(school_id, db)
         if not driver:
             return False
-        result = await driver.send(phone, message)
-        await _log_result(result, phone, message, school_id, entity_type, entity_id, db)
+        result = await _deliver(driver, phone, message, school_id, entity_type, entity_id, db)
         return result.success
     except Exception:
         return False
@@ -295,7 +295,6 @@ async def send_manual(
         raise ValueError("No active SMS provider configured for this school.")
     results: list[SmsResult] = []
     for phone in phones:
-        result = await driver.send(phone, message)
-        await _log_result(result, phone, message, school_id, "MANUAL", None, db)
+        result = await _deliver(driver, phone, message, school_id, "MANUAL", None, db)
         results.append(result)
     return results
