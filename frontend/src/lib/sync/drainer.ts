@@ -12,6 +12,7 @@ export async function drainWriteOutbox(): Promise<DrainResult> {
 
   const items = scoreItems.map(item => ({
     outbox_id: String(item.id!),
+    client_op_id: item.client_op_id,
     entity_type: 'score' as const,
     offline_session_started_at: item.offline_session_started_at,
     data: item.payload as { assessment_id: string; student_id: string; raw_score: number },

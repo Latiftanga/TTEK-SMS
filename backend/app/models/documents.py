@@ -154,3 +154,32 @@ class OfflineSyncConflict(Base, UUIDPrimaryKey, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("user.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OutboxProcessedItem(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Idempotency ledger for POST /sync/outbox.
+
+    A retried or duplicated submission of the same client_op_id returns the
+    outcome recorded here instead of re-running the score-apply logic — so a
+    network retry (or two drain triggers racing each other) can't double-write
+    a ScoreAuditLog entry or spuriously reopen a conflict.
+
+    client_op_id is generated client-side (crypto.randomUUID()) once, when the
+    write is first queued — unlike the Dexie local auto-increment id, it stays
+    globally unique across devices, so it's safe to use as the sole dedup key.
+    """
+    __tablename__ = "outbox_processed_item"
+    __table_args__ = (
+        UniqueConstraint("school_id", "user_id", "client_op_id", name="uq_outbox_processed_item"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    client_op_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # "applied" | "conflict"
+    conflict_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("offline_sync_conflict.id", ondelete="SET NULL"), nullable=True
+    )
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

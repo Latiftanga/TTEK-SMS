@@ -2,12 +2,11 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { getPendingCount } from '$lib/offline/outbox';
-  import { drainWriteOutbox } from '$lib/sync/drainer';
+  import { isSyncing } from '$lib/offline/sync';
   import { listConflicts } from '$lib/api/sync';
   import { isAuthenticated } from '$lib/stores/auth';
 
   let online        = $state(true);
-  let draining      = $state(false);
   let pendingCount  = $state(0);
   let conflictCount = $state(0);
 
@@ -23,23 +22,23 @@
     } catch { conflictCount = 0; }
   }
 
-  async function handleOnline() {
-    online = true;
-    if (pendingCount > 0) {
-      draining = true;
-      await drainWriteOutbox();
-      draining = false;
-      await updatePending();
-    }
-    await checkConflicts();
-  }
+  // Draining itself is owned by $lib/offline/sync.ts's initOfflineSync — this
+  // banner only reflects its isSyncing state and refreshes once it finishes,
+  // rather than triggering its own drain (that used to race the real one,
+  // submitting the same score twice and surfacing a phantom conflict).
+  let wasSyncing = false;
+  $effect(() => {
+    const syncing = $isSyncing;
+    if (wasSyncing && !syncing) { updatePending(); checkConflicts(); }
+    wasSyncing = syncing;
+  });
 
   onMount(() => {
     online = navigator.onLine;
     updatePending();
     checkConflicts();
 
-    const onOnline  = () => handleOnline();
+    const onOnline  = () => { online = true; updatePending(); checkConflicts(); };
     const onOffline = () => { online = false; updatePending(); };
     window.addEventListener('online',  onOnline);
     window.addEventListener('offline', onOffline);
@@ -74,7 +73,7 @@
   </div>
 
 <!-- Draining outbox -->
-{:else if draining}
+{:else if $isSyncing}
   <div role="status" aria-live="polite"
        class="fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white"
        style="background: var(--brand);">

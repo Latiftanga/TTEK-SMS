@@ -58,10 +58,14 @@ async def assessment(
     return a
 
 
-def _outbox_payload(assessment: Assessment, student: Student, raw_score: str, outbox_id: str, offline_ts: str) -> dict:
+def _outbox_payload(
+    assessment: Assessment, student: Student, raw_score: str, outbox_id: str, offline_ts: str,
+    client_op_id: str | None = None,
+) -> dict:
     return {
         "items": [{
             "outbox_id": outbox_id,
+            "client_op_id": client_op_id or f"op-{outbox_id}",
             "entity_type": "score",
             "offline_session_started_at": offline_ts,
             "data": {
@@ -115,6 +119,75 @@ async def test_outbox_applies_when_server_older(
     )
     assert resp.status_code == 200
     assert resp.json()[0]["status"] == "applied"
+
+
+# ── Idempotency ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_outbox_duplicate_client_op_id_is_noop(
+    client: AsyncClient, auth: dict, assessment: Assessment, student: Student,
+    db_session: AsyncSession, school: School,
+):
+    """Resubmitting the same client_op_id (a retried request, or two drain
+    triggers racing) must not re-run the apply logic or write a second
+    ScoreAuditLog entry — it should return the recorded outcome as-is."""
+    from sqlalchemy import select
+    from app.models.assessments import ScoreAuditLog
+
+    offline_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    payload = _outbox_payload(assessment, student, "78.00", "ob-idem-1", offline_ts, client_op_id="op-idem-1")
+
+    first = await client.post("/sync/outbox", json=payload, headers=auth)
+    assert first.status_code == 200
+    assert first.json()[0]["status"] == "applied"
+
+    second = await client.post("/sync/outbox", json=payload, headers=auth)
+    assert second.status_code == 200
+    assert second.json()[0]["status"] == "applied"
+
+    score = await db_session.scalar(
+        select(Score).where(Score.assessment_id == assessment.id, Score.student_id == student.id)
+    )
+    logs = (await db_session.scalars(
+        select(ScoreAuditLog).where(ScoreAuditLog.score_id == score.id)
+    )).all()
+    assert len(logs) == 1, "duplicate submission must not double-write the audit log"
+
+
+@pytest.mark.asyncio
+async def test_outbox_duplicate_client_op_id_returns_same_conflict(
+    client: AsyncClient, auth: dict,
+    assessment: Assessment, student: Student,
+    db_session: AsyncSession, school: School, school_admin,
+):
+    """A retried submission of a client_op_id that resulted in a conflict must
+    return that same conflict_id, not create a second OfflineSyncConflict row."""
+    from sqlalchemy import select
+    from app.models.documents import OfflineSyncConflict
+
+    score = Score(
+        school_id=school.id, assessment_id=assessment.id, student_id=student.id,
+        raw_score=Decimal("55.00"), entered_by_id=school_admin.id,
+        submitted_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+    )
+    db_session.add(score)
+    await db_session.flush()
+
+    offline_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    payload = _outbox_payload(assessment, student, "90.00", "ob-idem-2", offline_ts, client_op_id="op-idem-2")
+
+    first = await client.post("/sync/outbox", json=payload, headers=auth)
+    conflict_id = first.json()[0]["conflict_id"]
+    assert conflict_id is not None
+
+    second = await client.post("/sync/outbox", json=payload, headers=auth)
+    assert second.json()[0]["status"] == "conflict"
+    assert second.json()[0]["conflict_id"] == conflict_id
+
+    conflicts = (await db_session.scalars(
+        select(OfflineSyncConflict).where(OfflineSyncConflict.outbox_id == "ob-idem-2")
+    )).all()
+    assert len(conflicts) == 1, "duplicate submission must not create a second conflict row"
 
 
 # ── Outbox — conflict ─────────────────────────────────────────────────────────

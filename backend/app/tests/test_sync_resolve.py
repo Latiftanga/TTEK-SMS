@@ -78,6 +78,7 @@ async def _create_conflict(
     resp = await client.post("/sync/outbox", json={
         "items": [{
             "outbox_id": outbox_id,
+            "client_op_id": f"op-{outbox_id}",
             "entity_type": "score",
             "offline_session_started_at": offline_ts,
             "data": {

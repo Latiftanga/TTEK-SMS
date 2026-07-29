@@ -30,6 +30,11 @@ class OutboxScoreData(BaseModel):
 
 class OutboxItem(BaseModel):
     outbox_id: str
+    # Client-generated (crypto.randomUUID()) once, when the write is first
+    # queued — unlike outbox_id (a Dexie local auto-increment id, unique only
+    # within one device), this is globally unique and safe to use as an
+    # idempotency key (see OutboxProcessedItem).
+    client_op_id: str
     entity_type: Literal["score"]
     offline_session_started_at: datetime
     data: OutboxScoreData

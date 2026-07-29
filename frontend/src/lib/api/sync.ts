@@ -22,6 +22,7 @@ export interface SyncConflict {
 
 export interface OutboxSyncItem {
   outbox_id: string;
+  client_op_id: string;
   entity_type: 'score';
   offline_session_started_at: string;
   data: ScoreData;

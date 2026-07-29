@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessments import Score, ScoreAuditLog
-from app.models.documents import ConflictResolution, OfflineSyncConflict
+from app.models.documents import ConflictResolution, OfflineSyncConflict, OutboxProcessedItem
 from app.schemas.sync import (
     ConflictRead, ConflictResolveRequest,
     OutboxItem, OutboxItemResult, OutboxScoreData,
@@ -91,6 +91,23 @@ async def _sync_score(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> OutboxItemResult:
+    # Idempotency: a retried or duplicated submission of the same client_op_id
+    # (two drain triggers racing, or a client retry after a dropped response)
+    # returns the recorded outcome instead of reprocessing it.
+    processed = await db.scalar(
+        select(OutboxProcessedItem).where(
+            OutboxProcessedItem.school_id == school_id,
+            OutboxProcessedItem.user_id == user_id,
+            OutboxProcessedItem.client_op_id == item.client_op_id,
+        )
+    )
+    if processed:
+        return OutboxItemResult(
+            outbox_id=item.outbox_id,
+            status=processed.status,
+            conflict_id=processed.conflict_id,
+        )
+
     data = item.data
     offline_ts = item.offline_session_started_at
     if offline_ts.tzinfo is None:
@@ -104,6 +121,8 @@ async def _sync_score(
             Score.school_id == school_id,
         )
     )
+
+    now = datetime.now(timezone.utc)
 
     if existing and existing.submitted_at and existing.submitted_at > offline_ts:
         conflict = OfflineSyncConflict(
@@ -122,9 +141,14 @@ async def _sync_score(
                 "is_approved": existing.is_approved,
             },
             conflict_type="CONCURRENT_EDIT",
-            created_at=datetime.now(timezone.utc),
+            created_at=now,
         )
         db.add(conflict)
+        await db.flush()
+        db.add(OutboxProcessedItem(
+            school_id=school_id, user_id=user_id, client_op_id=item.client_op_id,
+            status="conflict", conflict_id=conflict.id, processed_at=now,
+        ))
         await db.flush()
         return OutboxItemResult(
             outbox_id=item.outbox_id,
@@ -133,6 +157,10 @@ async def _sync_score(
         )
 
     await _apply_score(data, school_id, user_id, db)
+    db.add(OutboxProcessedItem(
+        school_id=school_id, user_id=user_id, client_op_id=item.client_op_id,
+        status="applied", conflict_id=None, processed_at=now,
+    ))
     await db.flush()
     return OutboxItemResult(outbox_id=item.outbox_id, status="applied")
 
