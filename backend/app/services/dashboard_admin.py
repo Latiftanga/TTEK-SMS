@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, Class, SHSProgramme
-from app.models.assessments import Score
+from app.models.assessments import Assessment, Score
 from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.fees import FeePayment, StudentFeeSummary
 from app.models.school import School
@@ -136,22 +136,31 @@ async def admin_view(
                 AttendanceRecord.period_id.is_(None),
                 StudentClassAssignment.academic_year_id == term.academic_year_id,
                 StudentClassAssignment.school_id == school_id,
+                StudentClassAssignment.is_active.is_(True),
             )
             .group_by(StudentClassAssignment.class_id)
         )
         present_map = {r.class_id: r.n for r in att}
 
+    # class_rows is capped to 12 for the "Attendance by class" widget list — the
+    # headline present/total stat must not be derived from that same capped loop,
+    # so it's computed separately here across every class in the school.
+    today_total = await db.scalar(
+        select(func.count(StudentClassAssignment.id)).where(
+            StudentClassAssignment.school_id == school_id,
+            StudentClassAssignment.academic_year_id == term.academic_year_id,
+            StudentClassAssignment.is_active.is_(True),
+        )
+    ) or 0
+    today_present = sum(present_map.values())
+
     class_lines: list[ClassAttendanceLine] = []
-    today_present = 0
-    today_total = 0
     for cls, total in class_rows:
         prog_name: str | None = None
         if cls.programme_id:
             prog = await db.get(SHSProgramme, cls.programme_id)
             prog_name = prog.name if prog else None
         present = present_map.get(cls.id, 0)
-        today_present += present
-        today_total += total
         class_lines.append(ClassAttendanceLine(
             class_id=cls.id,
             name=_class_label(cls, prog_name),
@@ -167,7 +176,13 @@ async def admin_view(
     collected: Decimal = ft[1] or zero
 
     pending_approvals = await db.scalar(
-        select(func.count(Score.id)).where(Score.school_id == school_id, Score.is_approved.is_(False))
+        select(func.count(Score.id))
+        .join(Assessment, Assessment.id == Score.assessment_id)
+        .where(
+            Score.school_id == school_id,
+            Score.is_approved.is_(False),
+            Assessment.academic_term_id == term.id,
+        )
     ) or 0
 
     return AdminDashboard(

@@ -58,6 +58,7 @@ async def _class_snapshot(
 
     absent_students: list[AbsentStudent] = []
     present_count = 0
+    marked_count = 0
     if today_cal:
         rows = await db.execute(
             select(
@@ -75,9 +76,13 @@ async def _class_snapshot(
                 AttendanceRecord.period_id.is_(None),
                 StudentClassAssignment.class_id == cls.id,
                 StudentClassAssignment.academic_year_id == term.academic_year_id,
+                StudentClassAssignment.is_active.is_(True),
             )
         )
         for row in rows:
+            # Every status counts toward "marked today" — LATE/EXCUSED are neither
+            # present nor absent, but their presence still means the roster was marked.
+            marked_count += 1
             if row.status == AttendanceStatus.PRESENT:
                 present_count += 1
             elif row.status == AttendanceStatus.ABSENT:
@@ -87,7 +92,7 @@ async def _class_snapshot(
                     admission_number=row.admission_number,
                 ))
 
-    attendance_marked = bool(today_cal and (present_count + len(absent_students)) > 0)
+    attendance_marked = bool(today_cal and marked_count > 0)
     return ClassSnapshot(
         id=cls.id,
         name=_class_label(cls, prog_name),

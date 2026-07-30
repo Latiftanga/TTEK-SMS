@@ -42,8 +42,12 @@ async def _approver_view(
     total_assessments = 0
     if term:
         pending = await db.scalar(
-            select(func.count(Score.id)).where(
-                Score.school_id == school_id, Score.is_approved.is_(False),
+            select(func.count(Score.id))
+            .join(Assessment, Assessment.id == Score.assessment_id)
+            .where(
+                Score.school_id == school_id,
+                Score.is_approved.is_(False),
+                Assessment.academic_term_id == term.id,
             )
         ) or 0
         total_assessments = await db.scalar(
@@ -65,6 +69,11 @@ async def get_dashboard(
 ) -> DashboardData:
     user = await db.get(User, user_id)
     if not user or not user.staff_member_id:
+        # Covers the platform superadmin (school_id=None, staff_member_id=None,
+        # never tied to a single school — see scripts/create_superadmin.py) along
+        # with any other non-staff caller. The superadmin's real dashboard is
+        # /superadmin; this generic fallback is only what they'd see if they
+        # landed on /dashboard directly.
         return TeacherDashboard(
             greeting_name="Welcome",
             today_iso=date.today().isoformat(),
@@ -74,9 +83,6 @@ async def get_dashboard(
 
     staff = await db.get(StaffMember, user.staff_member_id)
     greeting_name = f"{staff.first_name} {staff.last_name}" if staff else "Staff"
-
-    if user.is_superadmin:
-        return await admin_view(school_id, greeting_name, db)
 
     perms = await resolve_permissions(user.staff_member_id, db)
 
