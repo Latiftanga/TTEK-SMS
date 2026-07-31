@@ -7,7 +7,6 @@
   import { getMySchool } from '$lib/api/schools';
   import { userRole, isClassTeacher } from '$lib/stores/permissions';
   import { NAV_GROUPS, IC, type NavRole, type SchoolType, type NavItem, type ChildNavItem } from '$lib/nav';
-  import SidebarFooter from './SidebarFooter.svelte';
 
   interface Props { open: boolean; onclose: () => void; }
   const { open, onclose }: Props = $props();
@@ -309,6 +308,4 @@
       </ul>
     {/each}
   </nav>
-
-  <SidebarFooter {collapsed} {onclose} />
 </aside>
