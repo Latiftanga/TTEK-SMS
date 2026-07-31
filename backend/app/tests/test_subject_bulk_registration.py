@@ -510,3 +510,93 @@ async def test_set_roster_allowed_when_locked_with_reason(
     )
     assert resp.status_code == 200
     assert resp.json()["registered"] == 1
+
+
+# ── Optimistic concurrency (expected_registered_ids) ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_set_roster_rejects_stale_expected_registered_ids(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, math_subject: Subject,
+):
+    """Simulates two staff editing the same roster: the second save's
+    expected_registered_ids no longer matches reality because the first
+    save already changed it — must be rejected, not silently applied."""
+    s1, te1 = await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "V")
+    s2, te2 = await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "W")
+
+    # Staff A loads the roster (nobody registered yet) then registers s1.
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={
+            "academic_term_id": str(academic_term.id), "student_ids": [str(s1.id)],
+            "expected_registered_ids": [],
+        },
+        headers=auth,
+    )
+    assert resp.status_code == 200
+
+    # Staff B, who loaded the roster before Staff A's save, tries to save
+    # based on the same stale "nobody registered" snapshot.
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={
+            "academic_term_id": str(academic_term.id), "student_ids": [str(s2.id)],
+            "expected_registered_ids": [],
+        },
+        headers=auth,
+    )
+    assert resp.status_code == 409
+
+    # s2's change never applied, s1's from Staff A is untouched.
+    regs = (await db_session.scalars(
+        select(SubjectRegistration).where(SubjectRegistration.subject_id == math_subject.id)
+    )).all()
+    assert {r.term_enrollment_id for r in regs} == {te1.id}
+
+
+@pytest.mark.asyncio
+async def test_set_roster_allows_matching_expected_registered_ids(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, math_subject: Subject,
+):
+    s1, _te1 = await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "X")
+
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={
+            "academic_term_id": str(academic_term.id), "student_ids": [str(s1.id)],
+            "expected_registered_ids": [],
+        },
+        headers=auth,
+    )
+    assert resp.status_code == 200
+
+    # Correctly re-fetched snapshot (s1 now registered) — save proceeds.
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={
+            "academic_term_id": str(academic_term.id), "student_ids": [],
+            "expected_registered_ids": [str(s1.id)],
+        },
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["removed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_set_roster_skips_conflict_check_when_expected_ids_omitted(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, math_subject: Subject,
+):
+    """Backward compatible: a caller that doesn't track expected_registered_ids
+    at all (None, the default) skips the check entirely."""
+    s1, _te1 = await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "Y")
+
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={"academic_term_id": str(academic_term.id), "student_ids": [str(s1.id)]},
+        headers=auth,
+    )
+    assert resp.status_code == 200

@@ -229,6 +229,16 @@ async def set_subject_roster(
         )
         existing_regs = {r.term_enrollment_id: r for r in rows}
 
+    if req.expected_registered_ids is not None:
+        currently_registered_ids = {
+            student_id for student_id, te_id in te_by_student.items() if te_id in existing_regs
+        }
+        if set(req.expected_registered_ids) != currently_registered_ids:
+            raise HTTPException(
+                status_code=409,
+                detail="This roster was changed by someone else since you loaded it. Refresh and try again.",
+            )
+
     checked_ids = set(req.student_ids)
     registration_type = "ELECTIVE" if cs.is_elective else "CORE"
     item = [SubjectRegistrationItem(subject_id=subject_id, registration_type=registration_type)]

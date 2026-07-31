@@ -36,17 +36,32 @@
   const rosterQ = createQuery(rosterOpts);
 
   let checkedIds = $state<Set<string>>(new Set());
+  // Frozen snapshot of who was registered when the roster was loaded — sent
+  // back with the save so the backend can detect a concurrent edit (someone
+  // else changed this roster in the meantime) instead of silently
+  // overwriting it. Unlike checkedIds, this never mutates after load.
+  let initialRegisteredIds: string[] = [];
   let initialized = false;
   $effect(() => {
     if (!initialized && $rosterQ.data) {
-      checkedIds = new Set($rosterQ.data.filter(s => s.is_registered).map(s => s.student_id));
+      const registered = $rosterQ.data.filter(s => s.is_registered).map(s => s.student_id);
+      checkedIds = new Set(registered);
+      initialRegisteredIds = registered;
       initialized = true;
     }
   });
 
-  const enrolledStudents = $derived(($rosterQ.data ?? []).filter(s => s.enrolled));
-  const allSelected  = $derived(enrolledStudents.length > 0 && enrolledStudents.every(s => checkedIds.has(s.student_id)));
-  const someSelected = $derived(checkedIds.size > 0 && checkedIds.size < enrolledStudents.length);
+  let searchQuery = $state('');
+  const visibleStudents = $derived.by(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return $rosterQ.data ?? [];
+    return ($rosterQ.data ?? []).filter(s =>
+      s.display_name.toLowerCase().includes(q) || s.admission_number.toLowerCase().includes(q)
+    );
+  });
+  const visibleEnrolled = $derived(visibleStudents.filter(s => s.enrolled));
+  const allSelected  = $derived(visibleEnrolled.length > 0 && visibleEnrolled.every(s => checkedIds.has(s.student_id)));
+  const someSelected = $derived(visibleEnrolled.some(s => checkedIds.has(s.student_id)) && !allSelected);
 
   function toggleOne(id: string) {
     const next = new Set(checkedIds);
@@ -54,8 +69,13 @@
     checkedIds = next;
   }
 
+  // Scoped to the current search — matches AssignStudentsPanel.svelte's
+  // "select all" convention, which also only ever acts on visible results.
   function toggleAll() {
-    checkedIds = allSelected ? new Set() : new Set(enrolledStudents.map(s => s.student_id));
+    const next = new Set(checkedIds);
+    if (allSelected) visibleEnrolled.forEach(s => next.delete(s.student_id));
+    else visibleEnrolled.forEach(s => next.add(s.student_id));
+    checkedIds = next;
   }
 
   // Removing a registration never deletes existing scores, but it does
@@ -77,13 +97,16 @@
   function isLocked(e: unknown): boolean {
     return (e as { response?: { status?: number } })?.response?.status === 423;
   }
+  function isConflict(e: unknown): boolean {
+    return (e as { response?: { status?: number } })?.response?.status === 409;
+  }
   function detailOf(e: unknown): string | undefined {
     return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
   }
 
   const saveMut = createMutation({
     mutationFn: (overrideReason: string | undefined) =>
-      setSubjectRoster(classId, subjectId, termId, [...checkedIds], overrideReason),
+      setSubjectRoster(classId, subjectId, termId, [...checkedIds], overrideReason, initialRegisteredIds),
     onSuccess: (result) => {
       overrideNeeded = false;
       errorMessage = '';
@@ -96,6 +119,12 @@
     },
     onError: (e: unknown) => {
       if (isLocked(e)) { overrideNeeded = true; errorMessage = detailOf(e) ?? 'This term is locked.'; return; }
+      if (isConflict(e)) {
+        toast.error(detailOf(e) ?? 'Someone else changed this roster — refresh and try again.');
+        initialized = false;   // re-seed checkedIds/initialRegisteredIds from the fresh fetch
+        qc.invalidateQueries({ queryKey: ['subject-roster', classId, subjectId, termId] });
+        return;
+      }
       toast.error(detailOf(e) ?? 'Failed to save roster.');
     },
   });
@@ -109,13 +138,20 @@
   {:else if ($rosterQ.data ?? []).length === 0}
     <p class="text-xs text-[var(--fg-muted)]">No students actively assigned to this class.</p>
   {:else}
+    <input bind:value={searchQuery} placeholder="Search students…"
+      class="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-xs text-[var(--fg)]
+             placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition" />
     <label class="flex items-center gap-2 text-xs font-semibold text-[var(--fg)]">
       <input type="checkbox" checked={allSelected} indeterminate={someSelected} onchange={toggleAll}
-        class="h-3.5 w-3.5 rounded accent-[var(--brand)]" />
-      {allSelected ? 'Deselect all' : `Select all (${enrolledStudents.length})`}
+        disabled={visibleEnrolled.length === 0}
+        class="h-3.5 w-3.5 rounded accent-[var(--brand)] disabled:opacity-40" />
+      {allSelected ? 'Deselect all' : `Select all (${visibleEnrolled.length})`}
     </label>
+    {#if visibleStudents.length === 0}
+      <p class="text-xs text-[var(--fg-subtle)]">No students match "{searchQuery}".</p>
+    {/if}
     <div class="max-h-64 space-y-1 overflow-y-auto">
-      {#each $rosterQ.data ?? [] as s (s.student_id)}
+      {#each visibleStudents as s (s.student_id)}
         <label class="flex items-center gap-2 py-0.5 text-sm {s.enrolled ? 'text-[var(--fg)]' : 'text-[var(--fg-subtle)]'}">
           <input type="checkbox" checked={checkedIds.has(s.student_id)} disabled={!s.enrolled}
             onchange={() => toggleOne(s.student_id)}

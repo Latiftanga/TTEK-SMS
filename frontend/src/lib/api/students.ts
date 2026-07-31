@@ -324,11 +324,13 @@ export const setSubjectRoster = (
   academicTermId: string,
   studentIds: string[],
   overrideReason?: string,
+  expectedRegisteredIds?: string[],
 ): Promise<SetSubjectRosterResult> =>
   api.post(`/students/classes/${classId}/subjects/${subjectId}/roster`, {
     academic_term_id: academicTermId,
     student_ids: studentIds,
     override_reason: overrideReason,
+    expected_registered_ids: expectedRegisteredIds,
   }).then(r => r.data);
 
 export const downloadImportTemplate = () =>

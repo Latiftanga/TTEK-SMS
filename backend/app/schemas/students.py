@@ -250,6 +250,13 @@ class SetSubjectRosterRequest(BaseModel):
     academic_term_id: uuid.UUID
     student_ids: list[uuid.UUID]          # full desired-checked set
     override_reason: str | None = None
+    # Optimistic concurrency: the set of student_ids the caller saw as
+    # already-registered when they fetched the roster. If the current DB
+    # state no longer matches (someone else changed it in the meantime),
+    # the write is rejected with 409 rather than silently overwriting their
+    # change. None (the default) skips the check, for any caller that
+    # doesn't track it.
+    expected_registered_ids: list[uuid.UUID] | None = None
 
 
 class SetSubjectRosterResult(BaseModel):
