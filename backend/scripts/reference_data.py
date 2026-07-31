@@ -126,6 +126,7 @@ STAFF_POSITIONS = [
         ("fees", "view"), ("fees", "collect"), ("fees", "manage"),
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
         ("reports", "view"), ("reports", "generate"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
     ("DEPUTY_HEAD", "Deputy Headmaster", [
         ("school", "view"), ("school", "edit"),
@@ -137,6 +138,7 @@ STAFF_POSITIONS = [
         ("fees", "view"), ("fees", "collect"),
         ("housing", "view"), ("housing", "assign"),
         ("reports", "view"), ("reports", "generate"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
     ("HOD", "Head of Department", [
         ("school", "view"),
@@ -146,6 +148,7 @@ STAFF_POSITIONS = [
         ("attendance", "view"), ("attendance", "record"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
         ("reports", "view"), ("reports", "generate"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
     ("CLASS_TEACHER", "Class Teacher", [
         ("school", "view"),
@@ -155,6 +158,7 @@ STAFF_POSITIONS = [
         ("assessments", "view"), ("assessments", "enter_scores"),
         ("fees", "view"),
         ("reports", "view"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
     ("HOUSEMASTER", "Housemaster / Housemistress", [
         ("school", "view"),
@@ -162,6 +166,7 @@ STAFF_POSITIONS = [
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
         ("attendance", "view"), ("attendance", "record"),
         ("reports", "view"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
     ("EXAM_OFFICER", "Examination Officer", [
         ("school", "view"),
@@ -169,12 +174,14 @@ STAFF_POSITIONS = [
         ("academic", "view"), ("academic", "edit"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
         ("reports", "view"), ("reports", "generate"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
     ("BURSAR", "Bursar / Finance Officer", [
         ("school", "view"),
         ("students", "view"),
         ("fees", "view"), ("fees", "collect"), ("fees", "manage"),
         ("reports", "view"), ("reports", "generate"),
+        ("documents", "view"), ("documents", "manage"),
     ]),
 ]
 

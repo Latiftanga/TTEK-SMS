@@ -20,7 +20,7 @@ async def upload_document(
     entity_id: uuid.UUID,
     document_type: str = Query(...),
     file: UploadFile = File(...),
-    auth=Depends(require_permission("reports", "generate")),
+    auth=Depends(require_permission("documents", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = auth
@@ -32,7 +32,7 @@ async def upload_document(
 @router.get("/{doc_id}/download")
 async def download_document(
     doc_id: uuid.UUID,
-    auth=Depends(require_permission("reports", "generate")),
+    auth=Depends(require_permission("documents", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = auth
@@ -53,7 +53,7 @@ async def download_document(
 async def list_documents(
     entity_type: str,
     entity_id: uuid.UUID,
-    auth=Depends(require_permission("reports", "generate")),
+    auth=Depends(require_permission("documents", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = auth
@@ -63,7 +63,7 @@ async def list_documents(
 @router.delete("/{doc_id}", status_code=204)
 async def delete_document(
     doc_id: uuid.UUID,
-    auth=Depends(require_permission("reports", "generate")),
+    auth=Depends(require_permission("documents", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = auth

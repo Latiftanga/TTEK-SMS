@@ -82,19 +82,33 @@ async def seed():
         await db.flush()
         print(f"  Holidays: {added_holidays} new (of {len(PUBLIC_HOLIDAYS)} total)")
 
-        # Staff position templates (authority roles with permissions)
+        # Staff position templates (authority roles with permissions).
+        # Diffed at the permission level, not just skip-if-position-exists —
+        # otherwise a (module, action) added to STAFF_POSITIONS after a
+        # school's first seed run would never actually reach any existing
+        # database, since these are shared templates (school_id=None), never
+        # forked per school like Subject/SHSProgramme adoption.
         for code, name, perms in STAFF_POSITIONS:
-            existing = await db.scalar(
+            pos = await db.scalar(
                 select(StaffPosition).where(StaffPosition.code == code, StaffPosition.school_id.is_(None))
             )
-            if not existing:
+            if not pos:
                 pos = StaffPosition(code=code, name=name, is_template=True, school_id=None)
                 db.add(pos)
                 await db.flush()
-                for module, action in perms:
+            existing_perms = {
+                (p.module, p.action) for p in (await db.scalars(
+                    select(PositionPermission).where(PositionPermission.position_id == pos.id)
+                )).all()
+            }
+            added = 0
+            for module, action in perms:
+                if (module, action) not in existing_perms:
                     db.add(PositionPermission(position_id=pos.id, module=module, action=action))
-                await db.flush()
-                print(f"  Position: {name} ({len(perms)} permissions)")
+                    added += 1
+            await db.flush()
+            if added:
+                print(f"  Position: {name} ({added} new permission(s) of {len(perms)} total)")
 
         # GES staff category templates (HR classification — no permissions)
         category_map: dict[str, StaffCategory] = {}
