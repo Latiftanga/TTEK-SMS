@@ -197,3 +197,25 @@ async def test_submit_scores_allows_student_with_no_registration_recorded(
         "scores": [{"student_id": str(unregistered.id), "raw_score": "80.00"}],
     }, headers=auth)
     assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_roster_excludes_withdrawn_student_with_stale_active_assignment(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school, school_admin,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm,
+    french_assessment: Assessment,
+):
+    """A withdrawn student (Student.is_active=False) whose
+    StudentClassAssignment row was never deactivated in lockstep (stale
+    data — confirmed live on the real dev DB) must not appear on the
+    assessment roster at all, i.e. must not be scoreable."""
+    withdrawn = Student(school_id=school.id, admission_number="WD001", first_name="With", last_name="Drawn", is_active=False)
+    db_session.add(withdrawn)
+    await db_session.flush()
+    await _assign_to_class(db_session, school, withdrawn, school_class, academic_year)
+    await _enroll_for_term(db_session, school, withdrawn, academic_term, school_admin.id)
+
+    resp = await client.get(f"/assessments/{french_assessment.id}/roster", headers=auth)
+    assert resp.status_code == 200
+    ids = {row["id"] for row in resp.json()}
+    assert str(withdrawn.id) not in ids

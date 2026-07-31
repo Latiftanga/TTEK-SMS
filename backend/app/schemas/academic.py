@@ -211,3 +211,33 @@ class SubjectTeacherRead(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class SubjectClassSummary(BaseModel):
+    class_id: uuid.UUID
+    display_name: str
+    teacher_name: str | None
+    registered_count: int
+
+
+class SubjectSummary(BaseModel):
+    subject_id: uuid.UUID
+    subject_name: str
+    total_classes: int
+    classes_without_teacher: int
+    total_students_registered: int
+    classes: list[SubjectClassSummary]
+
+
+class ProgrammeClassSummary(BaseModel):
+    class_id: uuid.UUID
+    display_name: str
+    student_count: int
+
+
+class ProgrammeSummary(BaseModel):
+    programme_id: uuid.UUID
+    programme_name: str
+    total_classes: int
+    total_students: int
+    classes: list[ProgrammeClassSummary]

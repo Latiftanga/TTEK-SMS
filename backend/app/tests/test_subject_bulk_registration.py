@@ -66,10 +66,10 @@ async def _make_subject(db_session: AsyncSession, school: School, code: str, nam
 async def _enroll_student(
     db_session: AsyncSession, school: School, school_class: Class,
     academic_year: AcademicYear, academic_term: AcademicTerm, enrolled_by_id, suffix: str,
-    *, term_enrolled: bool = True,
+    *, term_enrolled: bool = True, student_active: bool = True,
 ) -> tuple[Student, TermEnrollment | None]:
     student = Student(
-        school_id=school.id, admission_number=f"BULK{suffix}", first_name="Test", last_name=suffix, is_active=True,
+        school_id=school.id, admission_number=f"BULK{suffix}", first_name="Test", last_name=suffix, is_active=student_active,
     )
     db_session.add(student)
     await db_session.flush()
@@ -223,6 +223,26 @@ async def test_bulk_register_no_core_subjects_is_a_noop(
     bulk-register — must not error, just report zero."""
     await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "F")
 
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/bulk-register-core",
+        json={"academic_term_id": str(academic_term.id)}, headers=auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"registered": 0, "skipped": 0}
+
+
+@pytest.mark.asyncio
+async def test_bulk_register_excludes_withdrawn_student_with_stale_active_assignment(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, math_subject: Subject,
+):
+    """A withdrawn student (Student.is_active=False) whose
+    StudentClassAssignment row was never deactivated in lockstep (stale
+    data — confirmed live on the real dev DB) must not be registered or
+    counted as active."""
+    await _enroll_student(
+        db_session, school, school_class, academic_year, academic_term, school_admin.id, "WD1", student_active=False,
+    )
     resp = await client.post(
         f"/students/classes/{school_class.id}/subjects/bulk-register-core",
         json={"academic_term_id": str(academic_term.id)}, headers=auth,
@@ -435,6 +455,33 @@ async def test_set_roster_skips_checked_student_not_term_enrolled(
     resp = await client.post(
         f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
         json={"academic_term_id": str(academic_term.id), "student_ids": [str(not_enrolled.id)]}, headers=auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"registered": 0, "removed": 0, "skipped": 1}
+
+
+@pytest.mark.asyncio
+async def test_set_roster_skips_withdrawn_student_with_stale_active_assignment(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, math_subject: Subject,
+):
+    """Same stale-data shape as the bulk-register regression: Student.is_active
+    =False but StudentClassAssignment.is_active still True — must not be
+    registerable via the roster panel either."""
+    withdrawn, _te = await _enroll_student(
+        db_session, school, school_class, academic_year, academic_term, school_admin.id, "WD2", student_active=False,
+    )
+
+    get_resp = await client.get(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        params={"academic_term_id": str(academic_term.id)}, headers=auth,
+    )
+    assert get_resp.status_code == 200
+    assert all(row["student_id"] != str(withdrawn.id) for row in get_resp.json())
+
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={"academic_term_id": str(academic_term.id), "student_ids": [str(withdrawn.id)]}, headers=auth,
     )
     assert resp.status_code == 200
     assert resp.json() == {"registered": 0, "removed": 0, "skipped": 1}

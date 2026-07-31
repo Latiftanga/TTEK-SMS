@@ -63,7 +63,8 @@
 
   // ── Tab navigation ────────────────────────────────────────────────────────────
   type Tab = 'students' | 'subjects' | 'promote';
-  let activeTab = $state<Tab>('students');
+  const initialTab = $page.url.searchParams.get('tab');
+  let activeTab = $state<Tab>(initialTab === 'subjects' || initialTab === 'promote' ? initialTab : 'students');
 </script>
 
 <!-- Back link -->

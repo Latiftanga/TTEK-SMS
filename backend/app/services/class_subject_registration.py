@@ -77,11 +77,14 @@ async def bulk_register_core_subjects(
     ]
 
     active_ids = list((await db.scalars(
-        select(StudentClassAssignment.student_id).where(
+        select(StudentClassAssignment.student_id)
+        .join(Student, Student.id == StudentClassAssignment.student_id)
+        .where(
             StudentClassAssignment.class_id == class_id,
             StudentClassAssignment.academic_year_id == term.academic_year_id,
             StudentClassAssignment.school_id == school_id,
             StudentClassAssignment.is_active.is_(True),
+            Student.is_active.is_(True),
         )
     )).all())
     te_by_student = dict((await db.execute(
@@ -127,11 +130,14 @@ async def _roster_base(
         raise HTTPException(status_code=404, detail="Academic term not found.")
 
     active_ids = list((await db.scalars(
-        select(StudentClassAssignment.student_id).where(
+        select(StudentClassAssignment.student_id)
+        .join(Student, Student.id == StudentClassAssignment.student_id)
+        .where(
             StudentClassAssignment.class_id == class_id,
             StudentClassAssignment.academic_year_id == term.academic_year_id,
             StudentClassAssignment.school_id == school_id,
             StudentClassAssignment.is_active.is_(True),
+            Student.is_active.is_(True),
         )
     )).all())
     te_by_student = dict((await db.execute(

@@ -156,6 +156,29 @@ export async function listSubjects(): Promise<Subject[]> {
   return data;
 }
 
+export interface SubjectClassSummary {
+  class_id: string;
+  display_name: string;
+  teacher_name: string | null;
+  registered_count: number;
+}
+
+export interface SubjectSummary {
+  subject_id: string;
+  subject_name: string;
+  total_classes: number;
+  classes_without_teacher: number;
+  total_students_registered: number;
+  classes: SubjectClassSummary[];
+}
+
+export async function getSubjectSummary(subjectId: string, academicTermId: string): Promise<SubjectSummary> {
+  const { data } = await client.get<SubjectSummary>(`/academic/subjects/${subjectId}/summary`, {
+    params: { academic_term_id: academicTermId },
+  });
+  return data;
+}
+
 export async function listCatalogue(level?: 'BASIC' | 'SHS'): Promise<CatalogueEntry[]> {
   const { data } = await client.get<CatalogueEntry[]>('/academic/catalogue', {
     params: level ? { level } : undefined,
@@ -301,5 +324,26 @@ export async function updateProgramme(progId: string, req: {
   code?: string; name?: string; is_active?: boolean;
 }): Promise<Programme> {
   const { data } = await client.patch<Programme>(`/academic/programmes/${progId}`, req);
+  return data;
+}
+
+export interface ProgrammeClassSummary {
+  class_id: string;
+  display_name: string;
+  student_count: number;
+}
+
+export interface ProgrammeSummary {
+  programme_id: string;
+  programme_name: string;
+  total_classes: number;
+  total_students: number;
+  classes: ProgrammeClassSummary[];
+}
+
+export async function getProgrammeSummary(programmeId: string, academicYearId: string): Promise<ProgrammeSummary> {
+  const { data } = await client.get<ProgrammeSummary>(`/academic/programmes/${programmeId}/summary`, {
+    params: { academic_year_id: academicYearId },
+  });
   return data;
 }
