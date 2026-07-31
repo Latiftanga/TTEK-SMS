@@ -226,6 +226,38 @@ class SubjectRegistrationBulkCreate(BaseModel):
     override_reason: str | None = None
 
 
+class BulkRegisterCoreSubjectsRequest(BaseModel):
+    academic_term_id: uuid.UUID
+    override_reason: str | None = None
+
+
+class BulkRegisterCoreSubjectsResult(BaseModel):
+    registered: int
+    skipped: int
+
+
+class SubjectRosterStudent(BaseModel):
+    student_id: uuid.UUID
+    display_name: str
+    admission_number: str
+    enrolled: bool                        # has an active TermEnrollment this term
+    is_registered: bool
+    registration_id: uuid.UUID | None
+    has_scores: bool                      # already has a Score for this subject this term
+
+
+class SetSubjectRosterRequest(BaseModel):
+    academic_term_id: uuid.UUID
+    student_ids: list[uuid.UUID]          # full desired-checked set
+    override_reason: str | None = None
+
+
+class SetSubjectRosterResult(BaseModel):
+    registered: int
+    removed: int
+    skipped: int
+
+
 class SubjectRegistrationRead(BaseModel):
     id: uuid.UUID
     subject_id: uuid.UUID

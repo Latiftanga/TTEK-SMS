@@ -221,6 +221,33 @@ class SubjectRegistration(Base, UUIDPrimaryKey, SchoolScopedMixin):
     term_enrollment: Mapped[TermEnrollment] = relationship(back_populates="subject_registrations")
 
 
+class SubjectRegistrationAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Immutable log of every subject-registration create/delete, mirroring
+    ScoreAuditLog/BehaviourAuditLog. registration_id is SET NULL (not
+    CASCADE) on delete so the log survives the row it documents.
+    """
+    __tablename__ = "subject_registration_audit_log"
+
+    registration_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subject_registration.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    term_enrollment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("term_enrollment.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subject.id"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(10), nullable=False)  # CREATE | DELETE
+    registration_type: Mapped[str] = mapped_column(String(20), nullable=False)  # CORE | ELECTIVE
+    changed_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # set only for locked-term overrides
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class TransferRequest(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "transfer_request"
 

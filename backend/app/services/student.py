@@ -4,7 +4,7 @@ Student CRUD and medical record upsert.
 Guardian add/update/remove live in student_guardian.py.
 Enrollment (initial + term) and transfer logic live in student_enrollment.py.
 Listing/search lives in student_list.py. Photo upload/delete lives in
-student_photo.py. Shared display helpers (_display_name, _class_display,
+student_photo.py. Shared display helpers (_display_name, _class_display_name,
 _photo_url, _get_class_map) live in student_display.py — split out when this
 file went over the 300-line cap.
 
@@ -42,7 +42,7 @@ from app.schemas.students import (
     StudentSummary,
     StudentUpdate,
 )
-from app.services.student_display import _class_display, _display_name, _photo_url
+from app.services.student_display import _class_display_name, _display_name, _photo_url
 from app.services.student_lifecycle import deactivate_student, reactivate_student
 
 
@@ -54,7 +54,7 @@ def _to_summary(
     current_class_id = None
     if class_info:
         level, year_group, programme, stream, cls_id = class_info
-        current_class_name = _class_display(level, year_group, programme, stream)
+        current_class_name = _class_display_name(level, year_group, programme, stream)
         current_class_id = cls_id
     return StudentSummary(
         id=s.id,

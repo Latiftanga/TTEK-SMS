@@ -72,6 +72,7 @@ export interface ClassSubject {
   class_id: string;
   subject_id: string;
   is_active: boolean;
+  is_elective: boolean;
 }
 
 export interface ClassTeacher {
@@ -244,6 +245,15 @@ export async function listSubjectTeachers(classId: string, yearId: string): Prom
 
 export async function removeClassSubject(classId: string, subjectId: string): Promise<void> {
   await client.delete(`/academic/classes/${classId}/subjects/${subjectId}`);
+}
+
+export async function updateClassSubject(
+  classId: string,
+  subjectId: string,
+  req: { is_elective: boolean }
+): Promise<ClassSubject> {
+  const { data } = await client.patch<ClassSubject>(`/academic/classes/${classId}/subjects/${subjectId}`, req);
+  return data;
 }
 
 export async function assignClassTeacher(

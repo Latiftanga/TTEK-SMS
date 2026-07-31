@@ -24,10 +24,18 @@ def _display_name(first: str, middle: str | None, last: str) -> str:
     return " ".join(parts)
 
 
-def _class_display(level: str, year_group: int, programme: str | None, stream: str | None) -> str:
-    parts = [level, str(year_group)]
-    if programme:
-        parts.append(programme)
+def _class_display_name(level: str, year_group: int, programme: str | None, stream: str | None) -> str:
+    if level.upper() == "SHS":
+        # SHS: "1 General Science A" — level is implied by the school
+        parts = [str(year_group)]
+        if programme:
+            parts.append(programme)
+    elif level.upper() == "CRECHE":
+        # Creche has no numbered year groups — just "Creche" (or "Creche A" with a stream)
+        parts = [level]
+    else:
+        # Other basic levels: "Basic 5", "KG 2", etc.
+        parts = [level, str(year_group)]
     if stream:
         parts.append(stream)
     return " ".join(parts)

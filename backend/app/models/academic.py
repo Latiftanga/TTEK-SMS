@@ -161,6 +161,9 @@ class ClassSubject(Base, UUIDPrimaryKey, SchoolScopedMixin):
         UUID(as_uuid=True), ForeignKey("subject.id", ondelete="CASCADE"), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # False (default) = every student in the class takes this subject; True =
+    # a genuine elective choice, excluded from bulk_register_core_subjects().
+    is_elective: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     class_: Mapped[Class] = relationship(back_populates="class_subjects")
 

@@ -7,6 +7,11 @@ A student can only be registered for a subject actually offered to their
 class (ClassSubject) — mirrors the same check on assessment creation
 (services/subject_roster.py::class_subject_exists, added in 12q).
 
+Class-wide, multi-student operations (bulk-register-core, per-subject
+roster read/write) live in services/class_subject_registration.py, which
+imports register_subjects/delete_subject_registration from here rather
+than duplicating their insert/delete logic.
+
 TERM LOCK
 ---------
 Registering or removing a subject against a term that's already been
@@ -17,9 +22,17 @@ scoring/assessment edits; both routes here are gated at students.edit (a
 weaker permission than assessments.approve_scores), so the override itself
 still requires the caller to hold assessments.approve_scores, same shape as
 submit_scores in scoring.py.
+
+AUDIT LOG
+---------
+Every create/delete writes a SubjectRegistrationAuditLog row (mirroring
+ScoreAuditLog/BehaviourAuditLog) — check_term_lock_override()'s return
+value is captured and stored as `reason` (null unless it was actually a
+locked-term override), not discarded.
 """
 from __future__ import annotations
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -28,7 +41,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
 from app.models.academic import AcademicTerm, Subject
-from app.models.students import StudentClassAssignment, SubjectRegistration, TermEnrollment
+from app.models.students import (
+    StudentClassAssignment,
+    SubjectRegistration,
+    SubjectRegistrationAuditLog,
+    TermEnrollment,
+)
 from app.schemas.students import SubjectRegistrationItem, SubjectRegistrationRead
 from app.services.subject_roster import class_subject_exists
 
@@ -65,7 +83,7 @@ async def register_subjects(
             status_code=422,
             detail="Student has no class assignment for this academic year — cannot register subjects.",
         )
-    await check_term_lock_override(term.id, override_reason, user_id, db)
+    resolved_reason = await check_term_lock_override(term.id, override_reason, user_id, db)
     for item in items:
         if not await class_subject_exists(sca.class_id, item.subject_id, school_id, db):
             subject = await db.get(Subject, item.subject_id)
@@ -87,12 +105,19 @@ async def register_subjects(
             async with db.begin_nested():
                 db.add(reg)
                 await db.flush()
-            results.append(reg)
         except IntegrityError:
             try:
                 db.expunge(reg)
             except Exception:
-                pass  # already registered — skip silently
+                pass  # already registered — skip silently, no audit entry for a no-op
+            continue
+        db.add(SubjectRegistrationAuditLog(
+            school_id=school_id, registration_id=reg.id, term_enrollment_id=te_id,
+            subject_id=item.subject_id, action="CREATE", registration_type=item.registration_type,
+            changed_by_id=user_id, reason=resolved_reason, changed_at=datetime.now(timezone.utc),
+        ))
+        await db.flush()
+        results.append(reg)
 
     return [SubjectRegistrationRead.model_validate(r) for r in results]
 
@@ -129,7 +154,13 @@ async def delete_subject_registration(
     if not reg:
         raise HTTPException(status_code=404, detail="Subject registration not found.")
     te = await db.get(TermEnrollment, te_id)
+    resolved_reason = None
     if te:
-        await check_term_lock_override(te.academic_term_id, override_reason, user_id, db)
+        resolved_reason = await check_term_lock_override(te.academic_term_id, override_reason, user_id, db)
+    db.add(SubjectRegistrationAuditLog(
+        school_id=school_id, registration_id=reg.id, term_enrollment_id=te_id,
+        subject_id=reg.subject_id, action="DELETE", registration_type=reg.registration_type,
+        changed_by_id=user_id, reason=resolved_reason, changed_at=datetime.now(timezone.utc),
+    ))
     await db.delete(reg)
     await db.flush()

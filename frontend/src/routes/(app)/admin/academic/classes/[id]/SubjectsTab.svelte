@@ -2,16 +2,27 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
   import {
-    listClassSubjects, listSubjects, assignSubjects, removeClassSubject,
+    listClassSubjects, listSubjects, removeClassSubject, updateClassSubject,
     listYears, listSubjectTeachers, assignSubjectTeacher,
   } from '$lib/api/academic';
   import { listStaff } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
+  import { school } from '$lib/stores/school';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import BulkRegisterCoreSubjectsButton from './BulkRegisterCoreSubjectsButton.svelte';
+  import AddClassSubjectForm from './AddClassSubjectForm.svelte';
+  import SubjectRosterPanel from './SubjectRosterPanel.svelte';
 
   interface Props { classId: string; }
   const { classId }: Props = $props();
+
+  // Elective subjects are an SHS-programme concept (e.g. French vs
+  // Literature-in-French) — Basic schools follow a fixed GES curriculum with
+  // no per-student subject choice, so the Core/Elective toggle would just be
+  // confusing noise for them. Every subject already defaults to non-elective,
+  // so hiding the control changes nothing functionally for Basic schools.
+  const showElectiveToggle = $derived($school?.schoolType !== 'BASIC');
 
   const qc = useQueryClient();
 
@@ -51,27 +62,10 @@
   const unassignedCount  = $derived(classSubjects.filter(cs => yearId && !teacherBySubject.has(cs.subject_id)).length);
 
   // ── Add subject + teacher ─────────────────────────────────────────────────────
-  let showAdd      = $state(false);
-  let newSubjectId = $state('');
-  let newTeacherId = $state('');
-  let addError     = $state('');
+  let showAdd = $state(false);
 
-  const canAdd = $derived(!!newSubjectId && (!yearId || !!newTeacherId));
-
-  const addMut = createMutation({
-    mutationFn: async () => {
-      await assignSubjects(classId, [newSubjectId]);
-      if (yearId && newTeacherId)
-        await assignSubjectTeacher(classId, { subject_id: newSubjectId, staff_member_id: newTeacherId, academic_year_id: yearId });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['class-subjects', classId] });
-      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
-      showAdd = false; newSubjectId = ''; newTeacherId = ''; addError = '';
-      toast.success('Subject assigned.');
-    },
-    onError: (e) => { addError = apiError(e, 'Failed to assign subject.'); },
-  });
+  // ── Enroll students (per-subject roster) ──────────────────────────────────────
+  let expandedRosterId = $state('');
 
   // ── Change / assign teacher ───────────────────────────────────────────────────
   let changingId    = $state('');
@@ -104,6 +98,18 @@
       toast.success('Subject removed.');
     },
     onError: (e) => toast.error(apiError(e, 'Failed to remove subject.')),
+  });
+
+  // ── Elective toggle ───────────────────────────────────────────────────────────
+  // False (default) = every student takes it, included in the "register
+  // non-elective subjects" bulk action. True = a genuine per-student choice,
+  // left out of that action — registered individually on the student's own
+  // Enrollment tab instead.
+  const electiveMut = createMutation({
+    mutationFn: (args: { subjectId: string; isElective: boolean }) =>
+      updateClassSubject(classId, args.subjectId, { is_elective: args.isElective }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['class-subjects', classId] }),
+    onError: (e) => toast.error(apiError(e, 'Failed to update subject.')),
   });
 
   // Avatar helpers
@@ -150,6 +156,7 @@
             </span>
           {/if}
         </div>
+        <BulkRegisterCoreSubjectsButton {classId} />
         <!-- Year selector (compact, inline) -->
         <div class="relative shrink-0">
           <select bind:value={yearId} class={selSm}>
@@ -162,7 +169,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
           </svg>
         </div>
-        <button onclick={() => { showAdd = !showAdd; newSubjectId = ''; newTeacherId = ''; addError = ''; }}
+        <button onclick={() => showAdd = !showAdd}
           class="flex shrink-0 items-center gap-1 text-xs font-semibold transition hover:opacity-70" style="color:var(--brand)">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
@@ -188,6 +195,19 @@
               {/if}
             </div>
 
+            <!-- Elective toggle (SHS-only — Basic has no per-student subject choice) -->
+            {#if showElectiveToggle}
+              <button onclick={() => $electiveMut.mutate({ subjectId: cs.subject_id, isElective: !cs.is_elective })}
+                disabled={$electiveMut.isPending}
+                title="Click to toggle — non-elective subjects are included in the bulk 'register non-elective subjects' action"
+                class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold transition disabled:opacity-40
+                  {cs.is_elective
+                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                    : 'bg-[var(--hover)] text-[var(--fg-subtle)]'}">
+                {cs.is_elective ? 'Elective' : 'Core'}
+              </button>
+            {/if}
+
             <!-- Teacher chip -->
             {#if !yearId}
               <span class="shrink-0 text-xs text-[var(--fg-subtle)]">—</span>
@@ -206,6 +226,10 @@
             {/if}
 
             <!-- Actions -->
+            <button onclick={() => expandedRosterId = expandedRosterId === cs.subject_id ? '' : cs.subject_id}
+              class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
+              Enroll students
+            </button>
             {#if yearId && !editing}
               <button onclick={() => startChange(cs.subject_id)}
                 class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
@@ -217,6 +241,11 @@
               Remove
             </button>
           </div>
+
+          <!-- Enroll students (per-subject roster) -->
+          {#if expandedRosterId === cs.subject_id}
+            <SubjectRosterPanel {classId} subjectId={cs.subject_id} />
+          {/if}
 
           <!-- Inline teacher change form -->
           {#if editing}
@@ -246,41 +275,7 @@
 
   <!-- Add subject + teacher form -->
   {#if showAdd}
-    {#if unassignedSubjs.length === 0}
-      <p class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--fg-muted)]">
-        All available subjects are already assigned to this class.
-      </p>
-    {:else}
-      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 space-y-3">
-        <p class="text-xs font-semibold text-[var(--fg)]">Add subject</p>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Subject *</label>
-            <select bind:value={newSubjectId} class={sel}>
-              <option value="">Select subject…</option>
-              {#each unassignedSubjs as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
-            </select>
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
-              Teacher{yearId ? ' *' : ' (select a year first)'}
-            </label>
-            <select bind:value={newTeacherId} disabled={!yearId} class={sel}>
-              <option value="">Select teacher…</option>
-              {#each teachingStaff as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
-            </select>
-          </div>
-        </div>
-        {#if addError}<p class="text-xs text-red-500">{addError}</p>{/if}
-        <div class="flex gap-2">
-          <button onclick={() => $addMut.mutate()} disabled={$addMut.isPending || !canAdd}
-            class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-            style="background:var(--brand)">{$addMut.isPending ? 'Saving…' : 'Add'}</button>
-          <button onclick={() => { showAdd = false; newSubjectId = ''; newTeacherId = ''; addError = ''; }}
-            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">Cancel</button>
-        </div>
-      </div>
-    {/if}
+    <AddClassSubjectForm {classId} {yearId} {unassignedSubjs} {teachingStaff} onClose={() => showAdd = false} />
   {/if}
 </div>
 

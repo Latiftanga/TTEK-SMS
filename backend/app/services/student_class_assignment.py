@@ -20,18 +20,7 @@ from app.schemas.students import (
     StudentClassAssignmentCreate,
     StudentClassAssignmentRead,
 )
-
-
-def _display_name(level: str, year_group: int, programme_name: str | None, stream: str | None) -> str:
-    if level.upper() == "SHS":
-        parts = [str(year_group)]
-        if programme_name:
-            parts.append(programme_name)
-    else:
-        parts = [level, str(year_group)]
-    if stream:
-        parts.append(stream)
-    return " ".join(parts)
+from app.services.student_display import _class_display_name
 
 
 def _sca_query(*where_clauses):
@@ -51,7 +40,7 @@ def _to_sca_read(row) -> StudentClassAssignmentRead:
         student_id=sca.student_id,
         class_id=sca.class_id,
         academic_year_id=sca.academic_year_id,
-        class_display_name=_display_name(level, year_group, prog_name, stream),
+        class_display_name=_class_display_name(level, year_group, prog_name, stream),
         is_active=sca.is_active,
         created_at=sca.created_at,
     )

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { writable } from 'svelte/store';
   import {
     listSubjectRegistrations, registerSubjects, removeSubjectRegistration,
     type TermEnrollmentRead,
   } from '$lib/api/students';
-  import { listClassSubjects, listSubjects, type Subject } from '$lib/api/academic';
+  import { listClassSubjects, listSubjects, listAllTerms, listSubjectTeachers, type Subject } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
+  import { school } from '$lib/stores/school';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
   interface Props {
@@ -13,6 +15,13 @@
     compact?: boolean;
   }
   const { enrollment, compact = false }: Props = $props();
+
+  // Core/Elective is an SHS-programme concept — Basic schools follow a fixed
+  // GES curriculum with no per-student subject choice, so the toggle and
+  // badge would just be confusing jargon. Every registration still defaults
+  // to CORE under the hood; this only hides the UI, same gate as
+  // SubjectsTab.svelte's Core/Elective toggle.
+  const showElectiveConcept = $derived($school?.schoolType !== 'BASIC');
 
   const qc = useQueryClient();
   let showAddForm = $state(false);
@@ -50,6 +59,34 @@
     enabled:  () => !!enrollment.class_id,
     staleTime: 5 * 60_000,
   });
+
+  // Teacher-assignment awareness — informational only, never blocks
+  // registration (a school may set up curriculum before a teacher is hired).
+  // SubjectTeacher is year-scoped, not term-scoped, so resolve the year that
+  // contains this enrollment's term rather than assuming "current".
+  const allTermsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
+  const yearId = $derived(($allTermsQ.data ?? []).find(t => t.id === enrollment.academic_term_id)?.academic_year_id ?? '');
+
+  // Writable store pattern — keeps queryFn/enabled reactive to yearId (which
+  // starts empty until allTermsQ resolves), mirroring SubjectsTab.svelte's
+  // subjTeachersOpts / SubjectRosterPanel.svelte's rosterOpts.
+  const subjTeachersOpts = writable({
+    queryKey: ['subject-teachers', enrollment.class_id, ''] as (string | null)[],
+    queryFn: () => listSubjectTeachers(enrollment.class_id!, ''),
+    enabled: false,
+    staleTime: 60_000,
+  });
+  $effect(() => {
+    const y = yearId;
+    subjTeachersOpts.set({
+      queryKey: ['subject-teachers', enrollment.class_id, y],
+      queryFn: () => listSubjectTeachers(enrollment.class_id!, y),
+      enabled: !!enrollment.class_id && !!y,
+      staleTime: 60_000,
+    });
+  });
+  const subjTeachersQ = createQuery(subjTeachersOpts);
+  const subjectsWithTeacher = $derived(new Set(($subjTeachersQ.data ?? []).map(st => st.subject_id)));
 
   const registeredIds = $derived(new Set(($subjectRegsQ.data ?? []).map(r => r.subject_id)));
 
@@ -132,27 +169,31 @@
   <div class="space-y-2.5 {compact ? 'py-2' : 'mt-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3'}">
     <select bind:value={subjectId} class="sel w-full">
       <option value="">Select subject…</option>
-      {#each availableSubjects as s}<option value={s.id}>{s.name}</option>{/each}
+      {#each availableSubjects as s}
+        <option value={s.id}>{s.name}{(!$subjTeachersQ.isPending && !subjectsWithTeacher.has(s.id)) ? ' (no teacher assigned)' : ''}</option>
+      {/each}
       {#if availableSubjects.length === 0 && !$allSubjectsQ.isPending}
         <option disabled>All subjects registered</option>
       {/if}
     </select>
 
-    <!-- Core / Elective toggle -->
-    <div class="flex overflow-hidden rounded-lg border border-[var(--border)]">
-      <button type="button" onclick={() => regType = 'CORE'}
-        class="flex-1 py-1.5 text-xs font-semibold transition
-          {regType === 'CORE' ? 'text-white' : 'bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}"
-        style={regType === 'CORE' ? 'background: var(--brand)' : ''}>
-        Core
-      </button>
-      <button type="button" onclick={() => regType = 'ELECTIVE'}
-        class="flex-1 border-l border-[var(--border)] py-1.5 text-xs font-semibold transition
-          {regType === 'ELECTIVE' ? 'text-white' : 'bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}"
-        style={regType === 'ELECTIVE' ? 'background: var(--brand)' : ''}>
-        Elective
-      </button>
-    </div>
+    <!-- Core / Elective toggle (SHS-only — Basic has no per-student subject choice) -->
+    {#if showElectiveConcept}
+      <div class="flex overflow-hidden rounded-lg border border-[var(--border)]">
+        <button type="button" onclick={() => regType = 'CORE'}
+          class="flex-1 py-1.5 text-xs font-semibold transition
+            {regType === 'CORE' ? 'text-white' : 'bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}"
+          style={regType === 'CORE' ? 'background: var(--brand)' : ''}>
+          Core
+        </button>
+        <button type="button" onclick={() => regType = 'ELECTIVE'}
+          class="flex-1 border-l border-[var(--border)] py-1.5 text-xs font-semibold transition
+            {regType === 'ELECTIVE' ? 'text-white' : 'bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}"
+          style={regType === 'ELECTIVE' ? 'background: var(--brand)' : ''}>
+          Elective
+        </button>
+      </div>
+    {/if}
 
     {#if addError}<p class="text-xs text-red-500">{addError}</p>{/if}
 
@@ -180,11 +221,16 @@
     <div class="flex items-center justify-between py-1 group">
       <span class="text-sm text-[var(--fg)]">{subjectName(reg.subject_id)}</span>
       <div class="flex items-center gap-2">
-        <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide {
-          reg.registration_type === 'CORE'
-            ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-950/30 dark:text-blue-400'
-            : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'
-        }">{reg.registration_type === 'CORE' ? 'Core' : 'Elective'}</span>
+        {#if !$subjTeachersQ.isPending && !subjectsWithTeacher.has(reg.subject_id)}
+          <span class="text-amber-500" title="No teacher assigned to this subject yet">⚠</span>
+        {/if}
+        {#if showElectiveConcept}
+          <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide {
+            reg.registration_type === 'CORE'
+              ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-950/30 dark:text-blue-400'
+              : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'
+          }">{reg.registration_type === 'CORE' ? 'Core' : 'Elective'}</span>
+        {/if}
         <button
           onclick={() => handleRemove(reg.id)}
           disabled={$removeMut.isPending && removeTarget === reg.id}

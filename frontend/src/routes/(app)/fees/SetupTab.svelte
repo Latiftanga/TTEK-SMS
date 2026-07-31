@@ -45,7 +45,7 @@
     if (s.applies_to_class_id) return classes.find(c => c.id === s.applies_to_class_id)?.display_name ?? 'Specific class';
     if (s.applies_to_year_group || s.applies_to_programme_id) {
       const parts: string[] = [];
-      if (s.applies_to_year_group) { const c = classes.find(x => x.year_group === s.applies_to_year_group); parts.push(c ? `${c.level} ${s.applies_to_year_group}` : `Year ${s.applies_to_year_group}`); }
+      if (s.applies_to_year_group) { const c = classes.find(x => x.year_group === s.applies_to_year_group); parts.push(c ? (c.level.toUpperCase() === 'CRECHE' ? c.level : `${c.level} ${s.applies_to_year_group}`) : `Year ${s.applies_to_year_group}`); }
       if (s.applies_to_programme_id) parts.push(classes.find(c => c.programme_id === s.applies_to_programme_id)?.programme_name ?? '');
       return parts.join(' · ');
     }

@@ -19,27 +19,10 @@ from app.schemas.academic import (
     ClassCreate,
     ClassRead,
     ClassSubjectAssign,
+    ClassSubjectUpdate,
     ClassUpdate,
 )
-
-
-def _display_name(
-    level: str,
-    year_group: int,
-    programme_name: str | None,
-    stream: str | None,
-) -> str:
-    if level.upper() == "SHS":
-        # SHS: "1 General Science A" — level is implied by the school
-        parts = [str(year_group)]
-        if programme_name:
-            parts.append(programme_name)
-    else:
-        # Basic schools: "Basic 5", "KG 2", etc.
-        parts = [level, str(year_group)]
-    if stream:
-        parts.append(stream)
-    return " ".join(parts)
+from app.services.student_display import _class_display_name
 
 
 def _to_class_read(cls: Class, programme_name: str | None) -> ClassRead:
@@ -53,7 +36,7 @@ def _to_class_read(cls: Class, programme_name: str | None) -> ClassRead:
         stream=cls.stream,
         capacity=cls.capacity,
         is_active=cls.is_active,
-        display_name=_display_name(cls.level, cls.year_group, programme_name, cls.stream),
+        display_name=_class_display_name(cls.level, cls.year_group, programme_name, cls.stream),
     )
 
 
@@ -66,6 +49,13 @@ async def create_class(
     # Handle NULLs explicitly since SQL NULL != NULL.
     level_norm = req.level.strip()
     stream_norm = req.stream.strip() if req.stream else None
+
+    if level_norm.upper() == "CRECHE" and req.year_group != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Creche has no numbered year groups — use year_group 1.",
+        )
+
     prog_clause = (
         Class.programme_id == req.programme_id if req.programme_id else Class.programme_id.is_(None)
     )
@@ -248,3 +238,27 @@ async def remove_class_subject(
         )
     await db.delete(cs)
     await db.flush()
+
+
+async def update_class_subject(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    req: ClassSubjectUpdate,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> ClassSubject:
+    cs = await db.scalar(
+        select(ClassSubject).where(
+            ClassSubject.class_id == class_id,
+            ClassSubject.subject_id == subject_id,
+            ClassSubject.school_id == school_id,
+        )
+    )
+    if not cs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subject not assigned to this class.",
+        )
+    cs.is_elective = req.is_elective
+    await db.flush()
+    return cs

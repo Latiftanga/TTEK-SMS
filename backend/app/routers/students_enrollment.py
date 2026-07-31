@@ -11,8 +11,11 @@ POST /students/term-enrollments                     students.edit
 POST /students/term-enrollments/{id}/subjects        students.edit (+ assessments.approve_scores to override a locked term)
 GET  /students/term-enrollments/{id}/subjects        students.view
 DELETE /students/term-enrollments/{id}/subjects/{id} students.edit (+ assessments.approve_scores to override a locked term)
+POST /students/classes/{id}/subjects/bulk-register-core students.edit (+ assessments.approve_scores to override a locked term)
+GET  /students/classes/{id}/subjects/{id}/roster     students.view
+POST /students/classes/{id}/subjects/{id}/roster     students.edit (+ assessments.approve_scores to override a locked term)
 GET  /students/transfers/pending                    students.delete
-PATCH /students/transfers/{id}/review               students.delete
+PATCH /students/transfers/{id}/review                students.delete
 """
 from __future__ import annotations
 import uuid
@@ -22,12 +25,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.schemas.students import (
-    BulkEnrollResult, BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
+    BulkEnrollResult, BulkRegisterCoreSubjectsRequest, BulkRegisterCoreSubjectsResult,
+    BulkStudentClassAssignmentCreate, BulkTermEnrollmentCreate,
+    SetSubjectRosterRequest, SetSubjectRosterResult,
     StudentClassAssignmentCreate, StudentClassAssignmentRead,
-    SubjectRegistrationBulkCreate, SubjectRegistrationRead,
+    SubjectRegistrationBulkCreate, SubjectRegistrationRead, SubjectRosterStudent,
     TermEnrollmentCreate, TermEnrollmentRead,
     TransferRequestRead, TransferRequestReview,
 )
+from app.services import class_subject_registration as class_subject_reg_svc
 from app.services import student_class_assignment as class_svc
 from app.services import student_enrollment as enroll_svc
 from app.services import student_subject_registration as subject_reg_svc
@@ -114,6 +120,41 @@ async def delete_subject(
 ):
     user_id, school_id = ids
     await subject_reg_svc.delete_subject_registration(te_id, reg_id, school_id, user_id, db, override_reason)
+
+
+@router.post("/classes/{class_id}/subjects/bulk-register-core", response_model=BulkRegisterCoreSubjectsResult)
+async def bulk_register_core_subjects(
+    class_id: uuid.UUID,
+    req: BulkRegisterCoreSubjectsRequest,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    return await class_subject_reg_svc.bulk_register_core_subjects(class_id, req, school_id, user_id, db)
+
+
+@router.get("/classes/{class_id}/subjects/{subject_id}/roster", response_model=list[SubjectRosterStudent])
+async def get_subject_roster(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    academic_term_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("students", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    return await class_subject_reg_svc.get_subject_roster(class_id, subject_id, academic_term_id, school_id, db)
+
+
+@router.post("/classes/{class_id}/subjects/{subject_id}/roster", response_model=SetSubjectRosterResult)
+async def set_subject_roster(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    req: SetSubjectRosterRequest,
+    ids=Depends(require_permission("students", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    return await class_subject_reg_svc.set_subject_roster(class_id, subject_id, req, school_id, user_id, db)
 
 
 # ── Transfer management (declared before /{student_id}) ──────────────────────

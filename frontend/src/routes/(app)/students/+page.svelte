@@ -130,7 +130,7 @@
       const key = `${c.level}::${c.year_group}`;
       if (!seen.has(key)) {
         seen.add(key);
-        opts.push({ key, label: `${c.level} ${c.year_group}` });
+        opts.push({ key, label: c.level.toUpperCase() === 'CRECHE' ? c.level : `${c.level} ${c.year_group}` });
       }
     }
     return opts.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));

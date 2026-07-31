@@ -16,7 +16,7 @@ from app.models.academic import Class
 from app.models.students import (
     Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment,
 )
-from app.services.student_display import _class_display, _display_name, _get_class_map
+from app.services.student_display import _class_display_name, _display_name, _get_class_map
 
 # Keys of fields that require the class or guardian lookup queries.
 _CLASS_FIELDS    = {"current_class", "level"}
@@ -110,7 +110,7 @@ async def export_students_custom(
     if sids and requested_keys & _CLASS_FIELDS:
         class_info_map = await _get_class_map(sids, db)
         class_map = {
-            sid: (_class_display(level, year_group, programme, stream), level)
+            sid: (_class_display_name(level, year_group, programme, stream), level)
             for sid, (level, year_group, programme, stream, _cls_id) in class_info_map.items()
         }
 

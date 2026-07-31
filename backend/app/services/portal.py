@@ -23,7 +23,7 @@ from app.models.fees import StudentFeeSummary
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, StudentGuardian, TermEnrollment
 from app.schemas.portal import PortalProfile, PortalTermEnrollmentRead
-from app.services.student_display import _class_display, _display_name, _get_class_map
+from app.services.student_display import _class_display_name, _display_name, _get_class_map
 
 
 async def get_my_profile(student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> PortalProfile:
@@ -35,7 +35,7 @@ async def get_my_profile(student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncS
         student_id=student.id,
         admission_number=student.admission_number,
         display_name=_display_name(student.first_name, student.middle_name, student.last_name),
-        current_class_name=_class_display(*class_info[:4]) if class_info else None,
+        current_class_name=_class_display_name(*class_info[:4]) if class_info else None,
         school_name=school.name if school else "School",
     )
 

@@ -51,6 +51,7 @@ from app.schemas.students import (
     TermEnrollmentCreate,
     TermEnrollmentRead,
 )
+from app.services.student_display import _class_display_name
 
 
 class FeeGateBlockedError(HTTPException):
@@ -90,18 +91,6 @@ async def _can_waive_fee_gate(user_id: uuid.UUID, db: AsyncSession) -> bool:
     return perms.get("fees.manage", False)
 
 
-def _display_name(level: str, year_group: int, programme_name: str | None, stream: str | None) -> str:
-    if level.upper() == "SHS":
-        parts = [str(year_group)]
-        if programme_name:
-            parts.append(programme_name)
-    else:
-        parts = [level, str(year_group)]
-    if stream:
-        parts.append(stream)
-    return " ".join(parts)
-
-
 def _te_query(*where_clauses):
     """
     Joins TermEnrollment → AcademicTerm → StudentClassAssignment → Class → SHSProgramme
@@ -131,7 +120,7 @@ def _te_query(*where_clauses):
 
 def _to_te_read(row) -> TermEnrollmentRead:
     te, class_id, level, year_group, stream, prog_name = row
-    display = _display_name(level, year_group, prog_name, stream) if level else None
+    display = _class_display_name(level, year_group, prog_name, stream) if level else None
     return TermEnrollmentRead(
         id=te.id,
         student_id=te.student_id,

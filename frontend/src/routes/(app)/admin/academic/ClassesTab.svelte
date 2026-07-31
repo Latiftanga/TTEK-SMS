@@ -187,6 +187,8 @@
                       <p class="font-semibold text-[var(--fg)] leading-snug">{cls.display_name}</p>
                       {#if cls.programme_name}
                         <p class="text-[11px] text-[var(--fg-muted)]">{cls.programme_name}</p>
+                      {:else if cls.level.toUpperCase() === 'CRECHE'}
+                        <p class="text-[11px] text-[var(--fg-subtle)]">{cls.level}</p>
                       {:else}
                         <p class="text-[11px] text-[var(--fg-subtle)]">{cls.level} · Year {cls.year_group}</p>
                       {/if}

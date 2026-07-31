@@ -64,7 +64,9 @@ async def test_export_csv_shows_current_class_for_promoted_student(
     assert resp.status_code == 200
     rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
     header, data_row = rows[0], rows[1]
-    assert data_row[header.index("Current Class")] == "SHS 3 A"
+    # SHS classes drop the redundant "SHS" word (school-wide format, matches the
+    # class list / dashboards) — see student_display.py::_class_display_name.
+    assert data_row[header.index("Current Class")] == "3 A"
 
 
 @pytest.mark.asyncio
@@ -81,5 +83,5 @@ async def test_custom_export_shows_current_class_for_promoted_student(
     assert resp.status_code == 200
     rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
     header, data_row = rows[0], rows[1]
-    assert data_row[header.index("Current Class")] == "SHS 3 A"
+    assert data_row[header.index("Current Class")] == "3 A"
     assert data_row[header.index("Level")] == "SHS"

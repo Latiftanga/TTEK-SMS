@@ -66,13 +66,15 @@
         </select>
       </div>
     {/if}
-    <div>
-      <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Year</label>
-      <select bind:value={form.year_group} disabled={schoolType !== 'SHS' && !form.level}
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none disabled:opacity-50">
-        {#each yearOptions as yr}<option value={yr}>{yr}</option>{/each}
-      </select>
-    </div>
+    {#if yearOptions.length > 1}
+      <div>
+        <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Year</label>
+        <select bind:value={form.year_group} disabled={schoolType !== 'SHS' && !form.level}
+          class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none disabled:opacity-50">
+          {#each yearOptions as yr}<option value={yr}>{yr}</option>{/each}
+        </select>
+      </div>
+    {/if}
     {#if schoolType === 'SHS'}
       <div>
         <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Programme</label>

@@ -165,6 +165,46 @@ async def test_create_basic_class_no_programme(client: AsyncClient, auth: dict):
     assert data["programme_id"] is None
 
 
+@pytest.mark.asyncio
+async def test_create_creche_class_has_no_numbered_year(client: AsyncClient, auth: dict):
+    """Creche is a single, undifferentiated group — display_name must never
+    show a year number ("Creche 1"), unlike Nursery/KG/Basic."""
+    await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)
+
+    resp = await client.post("/academic/classes", json={
+        "level": "Creche",
+        "year_group": 1,
+    }, headers=auth)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["display_name"] == "Creche"
+
+    # A second Creche group is still possible via stream, just never via year_group.
+    resp2 = await client.post("/academic/classes", json={
+        "level": "Creche",
+        "year_group": 1,
+        "stream": "A",
+    }, headers=auth)
+    assert resp2.status_code == 201
+    assert resp2.json()["display_name"] == "Creche A"
+
+
+@pytest.mark.asyncio
+async def test_create_creche_class_rejects_nonone_year_group(client: AsyncClient, auth: dict):
+    await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)
+
+    resp = await client.post("/academic/classes", json={
+        "level": "Creche",
+        "year_group": 2,
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "year_group" in resp.json()["detail"].lower() or "creche" in resp.json()["detail"].lower()
+
+
 async def _second_shs_school_auth(client: AsyncClient, db_session: AsyncSession) -> dict:
     """Create a second SHS school + superadmin and return their auth headers."""
     region = await db_session.scalar(select(GhanaRegion).limit(1))

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class
 from app.models.students import Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment
-from app.services.student_display import _class_display, _display_name, _get_class_map
+from app.services.student_display import _class_display_name, _display_name, _get_class_map
 
 
 HEADERS = [
@@ -70,7 +70,7 @@ async def export_students_csv(
     sids = [s.id for s in students]
     class_info_map = await _get_class_map(sids, db)
     class_map = {
-        sid: _class_display(level, year_group, programme, stream)
+        sid: _class_display_name(level, year_group, programme, stream)
         for sid, (level, year_group, programme, stream, _cls_id) in class_info_map.items()
     }
 

@@ -17,11 +17,11 @@ from app.models.assessments import Assessment
 from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.students import Student, StudentClassAssignment
 from app.schemas.dashboard import AbsentStudent, ClassSnapshot, TeacherDashboard
-from app.services.academic_class import _display_name
+from app.services.student_display import _class_display_name
 
 
 def _class_label(cls: Class, prog_name: str | None) -> str:
-    return _display_name(cls.level, cls.year_group, prog_name, cls.stream)
+    return _class_display_name(cls.level, cls.year_group, prog_name, cls.stream)
 
 
 async def _current_term(school_id: uuid.UUID, db: AsyncSession) -> AcademicTerm | None:

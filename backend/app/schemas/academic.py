@@ -170,8 +170,13 @@ class ClassSubjectRead(BaseModel):
     class_id: uuid.UUID
     subject_id: uuid.UUID
     is_active: bool
+    is_elective: bool
 
     model_config = {"from_attributes": True}
+
+
+class ClassSubjectUpdate(BaseModel):
+    is_elective: bool
 
 
 class ClassTeacherAssign(BaseModel):

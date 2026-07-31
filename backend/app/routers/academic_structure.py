@@ -24,6 +24,7 @@ from app.schemas.academic import (
     ClassRead,
     ClassSubjectAssign,
     ClassSubjectRead,
+    ClassSubjectUpdate,
     ClassTeacherAssign,
     ClassTeacherRead,
     ClassUpdate,
@@ -212,6 +213,19 @@ async def assign_subjects(
     _, school_id = ids
     added = await class_svc.assign_subjects(class_id, req, school_id, db)
     return [ClassSubjectRead.model_validate(cs) for cs in added]
+
+
+@router.patch("/classes/{class_id}/subjects/{subject_id}", response_model=ClassSubjectRead)
+async def update_class_subject(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    req: ClassSubjectUpdate,
+    ids=Depends(require_permission("academic", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    cs = await class_svc.update_class_subject(class_id, subject_id, req, school_id, db)
+    return ClassSubjectRead.model_validate(cs)
 
 
 @router.get("/classes/{class_id}/class-teacher", response_model=ClassTeacherRead | None)

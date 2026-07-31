@@ -119,7 +119,7 @@
         <!-- Level avatar -->
         <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-black text-white shadow-sm"
              style="background: {levelBg(c.level)}">
-          {c.year_group}
+          {c.level.toUpperCase() === 'CRECHE' ? c.level[0] : c.year_group}
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-start justify-between gap-3">

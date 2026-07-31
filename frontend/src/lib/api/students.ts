@@ -275,8 +275,61 @@ export const registerSubjects = (
 ): Promise<SubjectRegistrationRead[]> =>
   api.post(`/students/term-enrollments/${teId}/subjects`, { items, override_reason: overrideReason }).then(r => r.data);
 
+export interface BulkRegisterCoreSubjectsResult {
+  registered: number;
+  skipped: number;
+}
+
+export const bulkRegisterCoreSubjects = (
+  classId: string,
+  academicTermId: string,
+  overrideReason?: string,
+): Promise<BulkRegisterCoreSubjectsResult> =>
+  api.post(`/students/classes/${classId}/subjects/bulk-register-core`, {
+    academic_term_id: academicTermId,
+    override_reason: overrideReason,
+  }).then(r => r.data);
+
 export const bulkEnrollStudents = (items: { student_id: string; academic_term_id: string }[]) =>
   api.post('/students/bulk-term-enrollments', { items }).then(r => r.data);
+
+export interface SubjectRosterStudent {
+  student_id: string;
+  display_name: string;
+  admission_number: string;
+  enrolled: boolean;
+  is_registered: boolean;
+  registration_id: string | null;
+  has_scores: boolean;
+}
+
+export interface SetSubjectRosterResult {
+  registered: number;
+  removed: number;
+  skipped: number;
+}
+
+export const getSubjectRoster = (
+  classId: string,
+  subjectId: string,
+  academicTermId: string,
+): Promise<SubjectRosterStudent[]> =>
+  api.get(`/students/classes/${classId}/subjects/${subjectId}/roster`, {
+    params: { academic_term_id: academicTermId },
+  }).then(r => r.data);
+
+export const setSubjectRoster = (
+  classId: string,
+  subjectId: string,
+  academicTermId: string,
+  studentIds: string[],
+  overrideReason?: string,
+): Promise<SetSubjectRosterResult> =>
+  api.post(`/students/classes/${classId}/subjects/${subjectId}/roster`, {
+    academic_term_id: academicTermId,
+    student_ids: studentIds,
+    override_reason: overrideReason,
+  }).then(r => r.data);
 
 export const downloadImportTemplate = () =>
   api.get('/students/import/template', { responseType: 'blob' }).then(r => r.data);
