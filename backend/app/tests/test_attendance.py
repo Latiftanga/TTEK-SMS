@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
-from app.models.academic import AcademicTerm, Class
+from app.models.academic import AcademicTerm, Class, ClassTeacher
 from app.models.attendance import DayType, SchoolCalendar
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
@@ -19,9 +19,10 @@ from app.models.students import Student
 
 async def _login_as_position(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
-) -> dict:
+) -> tuple[dict, str]:
     """Create a staff member holding `position_code`, give them a login, and return
-    their bearer-token auth headers — mirrors test_scoring_lock.py's helper."""
+    (their bearer-token auth headers, their staff_member id) — mirrors
+    test_scoring_lock.py's helper."""
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
     assert pos is not None, "Run seed_reference_data.py first"
 
@@ -41,7 +42,7 @@ async def _login_as_position(
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
     })
     assert resp.status_code == 200, resp.text
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
 
 
 async def _other_school_auth(client: AsyncClient, db_session: AsyncSession) -> dict:
@@ -410,7 +411,12 @@ async def test_mark_attendance_allowed_when_locked_with_reason_and_permission(
     academic_term.results_locked = True
     await db_session.flush()
 
-    hod_auth = await _login_as_position(client, auth, db_session, school, "HOD")
+    hod_auth, hod_staff_id = await _login_as_position(client, auth, db_session, school, "HOD")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=hod_staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
     resp = await client.post("/attendance/mark", json={
         "school_calendar_id": str(school_calendar.id),
         "class_id": str(school_class.id),
@@ -429,7 +435,12 @@ async def test_mark_attendance_reason_alone_insufficient_without_permission(
     academic_term.results_locked = True
     await db_session.flush()
 
-    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    teacher_auth, teacher_staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=teacher_staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
     resp = await client.post("/attendance/mark", json={
         "school_calendar_id": str(school_calendar.id),
         "class_id": str(school_class.id),
@@ -468,3 +479,143 @@ async def test_compute_attendance_stats_excludes_reclassified_day(
     present_after, total_after = stats_after.get(academic_term.id, (0, 0))
     assert present_after == 0
     assert present_after <= total_after
+
+
+# ── Class-teacher scoping ──────────────────────────────────────────────────────
+# A CLASS_TEACHER holds attendance.record but should only be able to mark/view
+# attendance for class(es) they are the ClassTeacher of — matches the user's
+# own framing ("the teacher should see only the class(s) assigned to that
+# teacher as class_teacher to mark attendance").
+
+@pytest.mark.asyncio
+async def test_mark_attendance_404_for_non_owning_class_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student, redis_permissions: None,
+):
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+    }, headers=teacher_auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mark_attendance_allowed_for_owning_class_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+    }, headers=teacher_auth)
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_my_attendance_classes_scoped_to_own_class_teacher_assignment(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    empty = await client.get(f"/attendance/my-classes?term_id={academic_term.id}", headers=teacher_auth)
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get(f"/attendance/my-classes?term_id={academic_term.id}", headers=teacher_auth)
+    assert resp.status_code == 200
+    assert [c["id"] for c in resp.json()] == [str(school_class.id)]
+
+
+@pytest.mark.asyncio
+async def test_my_attendance_classes_unrestricted_for_admin(
+    client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm,
+):
+    """The school_admin fixture is a superadmin — always unrestricted."""
+    resp = await client.get(f"/attendance/my-classes?term_id={academic_term.id}", headers=auth)
+    assert resp.status_code == 200
+    assert any(c["id"] == str(school_class.id) for c in resp.json())
+
+
+# ── Current-term lock for marking ──────────────────────────────────────────────
+# A class teacher may only mark attendance for the term admins have set as
+# current — going back to a previous term doesn't make sense for them.
+
+@pytest.mark.asyncio
+async def test_mark_attendance_422_for_non_current_term(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_term: AcademicTerm, student: Student, redis_permissions: None,
+):
+    non_current_term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_term.academic_year_id,
+        term_number=2, name="Term 2",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 1), is_current=False,
+    )
+    db_session.add(non_current_term)
+    await db_session.flush()
+    past_cal = SchoolCalendar(
+        school_id=school.id, date=date(2025, 1, 6),
+        day_type=DayType.SCHOOL_DAY, academic_term_id=non_current_term.id,
+    )
+    db_session.add(past_cal)
+    await db_session.flush()
+
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(past_cal.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+    }, headers=teacher_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_mark_attendance_unrestricted_for_attendance_approve_holder(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_term: AcademicTerm, student: Student, redis_permissions: None,
+):
+    """HEAD holds attendance.approve — can mark any term, current or not."""
+    non_current_term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_term.academic_year_id,
+        term_number=2, name="Term 2",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 1), is_current=False,
+    )
+    db_session.add(non_current_term)
+    await db_session.flush()
+    past_cal = SchoolCalendar(
+        school_id=school.id, date=date(2025, 1, 6),
+        day_type=DayType.SCHOOL_DAY, academic_term_id=non_current_term.id,
+    )
+    db_session.add(past_cal)
+    await db_session.flush()
+
+    head_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "HEAD")
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(past_cal.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+    }, headers=head_auth)
+    assert resp.status_code == 201

@@ -95,6 +95,20 @@ export const updateAssessmentType = (typeId: string, data: {
 export const listAssessments = (classId: string, termId: string): Promise<Assessment[]> =>
   api.get('/assessments', { params: { class_id: classId, term_id: termId } }).then(r => r.data);
 
+export interface MySubjectAssignment {
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
+}
+
+// (class, subject) combos the caller can create assessments/enter scores
+// for — scoped to their own SubjectTeacher assignment(s) unless they hold
+// assessments.approve_scores (the backend returns every active class+subject
+// pairing in the school for those callers instead).
+export const listMySubjects = (termId: string): Promise<MySubjectAssignment[]> =>
+  api.get('/assessments/my-subjects', { params: { term_id: termId } }).then(r => r.data);
+
 export const getAssessment = (id: string): Promise<Assessment> =>
   api.get(`/assessments/${id}`).then(r => r.data);
 

@@ -25,9 +25,11 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import AcademicTerm, ClassSubject
+from app.core.teacher_scope import resolve_assessment_scope, year_for_term
+from app.models.academic import AcademicTerm, Class, ClassSubject, SHSProgramme, Subject
 from app.models.students import Student, StudentClassAssignment, SubjectRegistration, TermEnrollment
-from app.schemas.assessments import AssessmentRosterStudent
+from app.schemas.assessments import AssessmentRosterStudent, MySubjectAssignment
+from app.services.student_display import _class_display_name
 
 
 def _display_name(first: str, middle: str | None, last: str) -> str:
@@ -132,3 +134,69 @@ async def list_assessment_roster(
         )
         for s in students
     ]
+
+
+async def list_my_subjects(
+    term_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
+) -> list[MySubjectAssignment]:
+    """(class, subject) combos the caller can create assessments/enter scores
+    for — every active ClassSubject in the school if unrestricted, else just
+    the caller's own SubjectTeacher pairs this year. Powers the Assessments
+    page's cascading class → subject pickers."""
+    year_id = await year_for_term(term_id, db)
+    if year_id is None:
+        return []
+
+    scope = await resolve_assessment_scope(user_id, year_id, db)
+
+    if scope is None:
+        rows = await db.execute(
+            select(Class, Subject, SHSProgramme.name.label("prog_name"))
+            .join(ClassSubject, ClassSubject.class_id == Class.id)
+            .join(Subject, Subject.id == ClassSubject.subject_id)
+            .outerjoin(SHSProgramme, Class.programme_id == SHSProgramme.id)
+            .where(
+                Class.school_id == school_id,
+                ClassSubject.school_id == school_id,
+                ClassSubject.is_active.is_(True),
+            )
+            .order_by(Class.level, Class.year_group, Class.stream, Subject.name)
+        )
+        return [
+            MySubjectAssignment(
+                class_id=cls.id,
+                class_name=_class_display_name(cls.level, cls.year_group, prog_name, cls.stream),
+                subject_id=subj.id,
+                subject_name=subj.name,
+            )
+            for cls, subj, prog_name in rows
+        ]
+
+    if not scope:
+        return []
+
+    class_ids = {cid for cid, _ in scope}
+    subject_ids = {sid for _, sid in scope}
+    class_rows = await db.execute(
+        select(Class, SHSProgramme.name.label("prog_name"))
+        .outerjoin(SHSProgramme, Class.programme_id == SHSProgramme.id)
+        .where(Class.id.in_(class_ids), Class.school_id == school_id)
+    )
+    classes_by_id = {
+        cls.id: _class_display_name(cls.level, cls.year_group, prog_name, cls.stream)
+        for cls, prog_name in class_rows
+    }
+    subjects_by_id = {
+        s.id: s.name
+        for s in await db.scalars(select(Subject).where(Subject.id.in_(subject_ids), Subject.school_id == school_id))
+    }
+    result = [
+        MySubjectAssignment(
+            class_id=cid, class_name=classes_by_id[cid],
+            subject_id=sid, subject_name=subjects_by_id[sid],
+        )
+        for cid, sid in scope
+        if cid in classes_by_id and sid in subjects_by_id
+    ]
+    result.sort(key=lambda r: (r.class_name, r.subject_name))
+    return result

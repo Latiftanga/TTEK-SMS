@@ -20,13 +20,14 @@ from app.schemas.assessments import (
     AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
     BulkScoreSubmit, GradeCreate, GradeRead,
     GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
-    ScoreApproveRequest, ScoreRead,
+    MySubjectAssignment, ScoreApproveRequest, ScoreRead,
 )
 from app.services import assessment as assess_svc
 from app.services import assessment_type as atype_svc
 from app.services import grading as grade_svc
 from app.services import scoring as score_svc
 from app.services.subject_roster import list_assessment_roster
+from app.services.subject_roster import list_my_subjects as list_my_subjects_svc
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 
@@ -157,8 +158,23 @@ async def list_assessments(
     ids=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await assess_svc.list_assessments(class_id, term_id, school_id, db)
+    user_id, school_id = ids
+    return await assess_svc.list_assessments(class_id, term_id, school_id, user_id, db)
+
+
+# Registered before /{assessment_id} — a literal path segment would otherwise
+# be swallowed by the UUID path param and fail assessment_id parsing.
+@router.get("/my-subjects", response_model=list[MySubjectAssignment])
+async def list_my_subjects(
+    term_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("assessments", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """(class, subject) combos the caller can create assessments/enter scores
+    for — scoped to their own SubjectTeacher assignment(s) unless they hold
+    assessments.approve_scores."""
+    user_id, school_id = ids
+    return await list_my_subjects_svc(term_id, school_id, user_id, db)
 
 
 @router.get("/{assessment_id}", response_model=AssessmentRead)
@@ -167,8 +183,8 @@ async def get_assessment(
     ids=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await assess_svc.get_assessment(assessment_id, school_id, db)
+    user_id, school_id = ids
+    return await assess_svc.get_assessment(assessment_id, school_id, user_id, db)
 
 
 @router.get("/{assessment_id}/roster", response_model=list[AssessmentRosterStudent])
@@ -180,8 +196,8 @@ async def get_assessment_roster(
     """Students eligible to be scored for this assessment's subject — never
     "everyone in the class" once subject registration splits them (electives).
     See services/subject_roster.py."""
-    _, school_id = ids
-    assessment = await assess_svc.get_assessment(assessment_id, school_id, db)
+    user_id, school_id = ids
+    assessment = await assess_svc.get_assessment(assessment_id, school_id, user_id, db)
     return await list_assessment_roster(
         assessment.class_id, assessment.subject_id, assessment.academic_term_id, school_id, db,
     )
@@ -237,8 +253,8 @@ async def list_scores(
     ids=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await score_svc.list_scores(assessment_id, school_id, db)
+    user_id, school_id = ids
+    return await score_svc.list_scores(assessment_id, school_id, user_id, db)
 
 
 @router.post("/{assessment_id}/scores/approve", response_model=list[ScoreRead])

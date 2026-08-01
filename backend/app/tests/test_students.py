@@ -33,9 +33,9 @@ def _tiny_png() -> bytes:
 
 async def _login_as_position(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
-) -> dict:
-    """Create a staff member holding `position_code`, give them a login, and return
-    their bearer-token auth headers."""
+) -> tuple[dict, str]:
+    """Create a staff member holding `position_code`, give them a login, and
+    return (their bearer-token auth headers, their staff_member id)."""
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
     assert pos is not None, "Run seed_reference_data.py first"
 
@@ -55,7 +55,7 @@ async def _login_as_position(
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
     })
     assert resp.status_code == 200, resp.text
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
 
 
 # ── Student CRUD ──────────────────────────────────────────────────────────────
@@ -223,7 +223,7 @@ async def test_list_students_bursar_sees_full_roster(
     await client.post("/students", json=_student("ADM001"), headers=auth)
     await client.post("/students", json=_student("ADM002"), headers=auth)
 
-    bursar_auth = await _login_as_position(client, auth, db_session, school, "BURSAR")
+    bursar_auth, _bursar_staff_id = await _login_as_position(client, auth, db_session, school, "BURSAR")
     resp = await client.get("/students", headers=bursar_auth)
     assert resp.status_code == 200
     assert resp.headers["x-total-count"] == "2"
@@ -237,7 +237,7 @@ async def test_list_students_housemaster_sees_full_roster(
     still see students outside their own house to assign a new one in."""
     await client.post("/students", json=_student("ADM001"), headers=auth)
 
-    housemaster_auth = await _login_as_position(client, auth, db_session, school, "HOUSEMASTER")
+    housemaster_auth, _hm_staff_id = await _login_as_position(client, auth, db_session, school, "HOUSEMASTER")
     resp = await client.get("/students", headers=housemaster_auth)
     assert resp.status_code == 200
     assert resp.headers["x-total-count"] == "1"
@@ -251,10 +251,46 @@ async def test_list_students_exam_officer_sees_full_roster(
     must still see rosters for classes they don't personally teach."""
     await client.post("/students", json=_student("ADM001"), headers=auth)
 
-    exam_officer_auth = await _login_as_position(client, auth, db_session, school, "EXAM_OFFICER")
+    exam_officer_auth, _eo_staff_id = await _login_as_position(client, auth, db_session, school, "EXAM_OFFICER")
     resp = await client.get("/students", headers=exam_officer_auth)
     assert resp.status_code == 200
     assert resp.headers["x-total-count"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_list_students_class_teacher_scoped_to_own_class(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, redis_permissions: None,
+):
+    """CLASS_TEACHER holds students.edit but — unlike Bursar/Housemaster/Exam
+    Officer's genuinely broad permissions — that's not a signal to see the
+    whole school. Scoped to their own ClassTeacher/SubjectTeacher classes via
+    the existing student_list.py union, same as a plain subject-only teacher."""
+    from app.models.academic import ClassTeacher
+
+    sid_in_class = (await client.post("/students", json=_student("ADM001"), headers=auth)).json()["id"]
+    await client.post("/students", json=_student("ADM002"), headers=auth)  # not in the teacher's class
+    await client.post("/students/class-assignments", json={
+        "student_id": sid_in_class, "class_id": str(school_class.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    unassigned = await client.get("/students", headers=teacher_auth)
+    assert unassigned.status_code == 200
+    assert unassigned.headers["x-total-count"] == "0"
+
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get("/students", headers=teacher_auth)
+    assert resp.status_code == 200
+    assert resp.headers["x-total-count"] == "1"
+    assert resp.json()[0]["id"] == sid_in_class
 
 
 @pytest.mark.asyncio

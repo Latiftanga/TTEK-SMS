@@ -261,3 +261,15 @@ class BulkReportJobRead(BaseModel):
     format: str
     status: str   # "queued" | "done" | "error"
     download_url: str | None = None
+
+
+class MySubjectAssignment(BaseModel):
+    """One (class, subject) combo the caller can create assessments/enter
+    scores for — scoped to their own SubjectTeacher assignments unless they
+    hold assessments.approve_scores, in which case every active ClassSubject
+    pairing in the school is returned. Powers the Assessments page's
+    cascading class → subject pickers."""
+    class_id: uuid.UUID
+    class_name: str
+    subject_id: uuid.UUID
+    subject_name: str

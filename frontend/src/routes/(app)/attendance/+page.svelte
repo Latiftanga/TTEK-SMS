@@ -1,10 +1,10 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
-  import { listClasses, listYears } from '$lib/api/academic';
+  import { listYears } from '$lib/api/academic';
   import { listStudents } from '$lib/api/students';
   import {
-    listCalendar, listAttendanceRecords, markAttendance, getClassSummaries,
+    listCalendar, listAttendanceRecords, markAttendance, getClassSummaries, listMyAttendanceClasses,
     type AttendanceStatus, type CalendarDay, type StudentAbsenceSummary,
   } from '$lib/api/attendance';
   import { toast } from '$lib/stores/toast';
@@ -29,11 +29,20 @@
   let classId      = $state('');
   let selectedDate = $state(today);
 
-  const classesQ = createQuery({ queryKey: ['classes'],        queryFn: listClasses, staleTime: 5 * 60_000 });
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
   const allTerms      = $derived(($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name }))));
   const currentTermId = $derived(allTerms.find(t => t.is_current)?.id ?? '');
+
+  // Scoped to the caller's own ClassTeacher assignment(s) unless they hold
+  // attendance.approve — the backend decides, this page just renders whatever
+  // it gets back, same for every role.
+  const classesQ = reactiveQuery(() => ({
+    queryKey: ['my-attendance-classes', currentTermId] as const,
+    queryFn:  () => listMyAttendanceClasses(currentTermId),
+    enabled:  !!currentTermId,
+    staleTime: 5 * 60_000,
+  }));
 
   // ── Calendar for current term ──────────────────────────────────────────────────
   const calendarQ = reactiveQuery(() => ({

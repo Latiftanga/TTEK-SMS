@@ -72,6 +72,7 @@ async def test_bulk_generate_report_cards_creates_zip_for_every_student(
     result = await _run(
         db_session, job_id=job_id, class_id=school_class.id,
         academic_term_id=academic_term.id, school_id=school.id, format="BASIC",
+        user_id=school_admin.id,
     )
     try:
         assert result == {"job_id": job_id, "generated": 2, "failed": 0}
@@ -114,6 +115,7 @@ async def test_bulk_generate_report_cards_excludes_withdrawn_student(
     result = await _run(
         db_session, job_id=job_id, class_id=school_class.id,
         academic_term_id=academic_term.id, school_id=school.id, format="BASIC",
+        user_id=school_admin.id,
     )
     try:
         assert result == {"job_id": job_id, "generated": 1, "failed": 0}
@@ -142,10 +144,10 @@ async def test_bulk_generate_report_cards_isolates_a_single_student_failure(
 
     real_assemble = bulk_report_job.assemble
 
-    async def _flaky_assemble(enrollment_id, school_id, format, db):
+    async def _flaky_assemble(enrollment_id, school_id, format, user_id, db):
         if enrollment_id == te_ok.id:
             raise RuntimeError("simulated assembly failure")
-        return await real_assemble(enrollment_id, school_id, format, db)
+        return await real_assemble(enrollment_id, school_id, format, user_id, db)
 
     monkeypatch.setattr(bulk_report_job, "assemble", _flaky_assemble)
 
@@ -153,6 +155,7 @@ async def test_bulk_generate_report_cards_isolates_a_single_student_failure(
     result = await _run(
         db_session, job_id=job_id, class_id=school_class.id,
         academic_term_id=academic_term.id, school_id=school.id, format="BASIC",
+        user_id=school_admin.id,
     )
     try:
         assert result == {"job_id": job_id, "generated": 1, "failed": 1}

@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
+from app.core.teacher_scope import resolve_assessment_scope, year_for_term
 from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score
 from app.models.school import School
@@ -98,20 +99,33 @@ async def create_assessment(
 
 
 async def list_assessments(
-    class_id: uuid.UUID, term_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    class_id: uuid.UUID, term_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> list[AssessmentRead]:
-    rows = await db.scalars(
+    rows = list(await db.scalars(
         select(Assessment).where(
             Assessment.class_id == class_id,
             Assessment.academic_term_id == term_id,
             Assessment.school_id == school_id,
         ).order_by(Assessment.due_date, Assessment.name)
-    )
+    ))
+
+    year_id = await year_for_term(term_id, db)
+    if year_id is not None:
+        scope = await resolve_assessment_scope(user_id, year_id, db)
+        if scope is not None:
+            # Not all-or-nothing: a SubjectTeacher may only teach 1 of several
+            # subjects in this class — filter to just those, don't 404 the
+            # whole class unless the caller has zero pairs here at all.
+            taught_subject_ids = {sid for cid, sid in scope if cid == class_id}
+            if not taught_subject_ids:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Class not found.")
+            rows = [a for a in rows if a.subject_id in taught_subject_ids]
+
     return [_assessment_read(a) for a in rows]
 
 
 async def get_assessment(
-    assessment_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    assessment_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> AssessmentRead:
     a = await db.scalar(
         select(Assessment).where(
@@ -120,6 +134,13 @@ async def get_assessment(
     )
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+
+    year_id = await year_for_term(a.academic_term_id, db)
+    if year_id is not None:
+        scope = await resolve_assessment_scope(user_id, year_id, db)
+        if scope is not None and (a.class_id, a.subject_id) not in scope:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+
     return _assessment_read(a)
 
 

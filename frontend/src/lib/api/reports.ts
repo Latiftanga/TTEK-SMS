@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { SchoolClass } from './academic';
 
 export interface EnrollmentForReport {
   enrollment_id: string;
@@ -34,3 +35,8 @@ export const downloadBulkReport = (job_id: string): Promise<Blob> =>
 
 export const getTranscriptBlob = (student_id: string): Promise<Blob> =>
   api.get(`/students/${student_id}/transcript`, { responseType: 'blob' }).then(r => r.data);
+
+// Classes the caller can view/generate report cards for — scoped to their
+// own ClassTeacher assignment(s) unless they hold assessments.approve_scores.
+export const listMyReportClasses = (term_id: string): Promise<SchoolClass[]> =>
+  api.get('/report-cards/my-classes', { params: { term_id } }).then(r => r.data);

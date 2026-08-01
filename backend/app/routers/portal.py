@@ -129,7 +129,7 @@ async def portal_get_report_card(
     the child named by ?student_id=.
     Returns 403 until the school publishes at least one assessment for the term.
     """
-    _, school_id, student_id = auth
+    user_id, school_id, student_id = auth
 
     te = await db.scalar(
         select(TermEnrollment).where(
@@ -143,7 +143,7 @@ async def portal_get_report_card(
     if not await portal_svc.is_report_published(student_id, te.academic_term_id, school_id, db):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Report card has not been published yet.")
 
-    context = await rc_svc.assemble(enrollment_id, school_id, format, db)
+    context = await rc_svc.assemble(enrollment_id, school_id, format, user_id, db)
     # WeasyPrint is synchronous and CPU-heavy — off the event loop, or every
     # report card generated blocks every other concurrent request.
     pdf_bytes = await asyncio.to_thread(render_report_card, context, format)

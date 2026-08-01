@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
+from app.schemas.academic import ClassRead
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
     CalendarDayOverride, CalendarDayRead, CalendarGenerateRequest,
@@ -21,6 +22,7 @@ from app.schemas.attendance import (
 )
 from app.services import attendance as att_svc
 from app.services import attendance_calendar as cal_svc
+from app.services import attendance_summary as att_summary_svc
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
@@ -101,8 +103,8 @@ async def list_attendance(
     ids=Depends(require_permission("attendance", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await att_svc.list_attendance(calendar_id, class_id, school_id, db)
+    user_id, school_id = ids
+    return await att_svc.list_attendance(calendar_id, class_id, school_id, user_id, db)
 
 
 @router.get("/today", response_model=TodayStatusRead)
@@ -112,8 +114,8 @@ async def get_today_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Today's calendar status + existing record count for a class — single fast call."""
-    _, school_id = ids
-    return await att_svc.get_today_status(class_id, school_id, db)
+    user_id, school_id = ids
+    return await att_summary_svc.get_today_status(class_id, school_id, user_id, db)
 
 
 @router.get("/class-summaries", response_model=list[StudentAbsenceSummary])
@@ -124,8 +126,8 @@ async def get_class_summaries(
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk per-student absence counts for a class — one query for inline display."""
-    _, school_id = ids
-    return await att_svc.get_class_summaries(class_id, term_id, school_id, db)
+    user_id, school_id = ids
+    return await att_summary_svc.get_class_summaries(class_id, term_id, school_id, user_id, db)
 
 
 @router.get("/summary", response_model=AttendanceSummaryRead)
@@ -135,5 +137,17 @@ async def get_summary(
     ids=Depends(require_permission("attendance", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await att_svc.get_summary(student_id, term_id, school_id, db)
+    user_id, school_id = ids
+    return await att_summary_svc.get_summary(student_id, term_id, school_id, user_id, db)
+
+
+@router.get("/my-classes", response_model=list[ClassRead])
+async def list_my_classes(
+    term_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Classes the caller can mark attendance for — scoped to their own
+    ClassTeacher assignment(s) unless they hold attendance.approve."""
+    user_id, school_id = ids
+    return await att_summary_svc.list_my_classes(term_id, school_id, user_id, db)

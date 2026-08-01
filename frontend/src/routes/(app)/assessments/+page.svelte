@@ -3,10 +3,10 @@
   import { reactiveQuery } from '$lib/query.svelte';
   import { goto } from '$app/navigation';
   import {
-    listAssessments, listAssessmentTypes, createAssessment,
+    listAssessments, listAssessmentTypes, createAssessment, listMySubjects,
     type Assessment,
   } from '$lib/api/assessments';
-  import { listClasses, listYears, listSubjects, updateTerm } from '$lib/api/academic';
+  import { listYears, updateTerm } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
@@ -17,13 +17,12 @@
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
 
   // ── Filters ───────────────────────────────────────────────────────────────────
-  let classId = $state('');
-  let termId  = $state('');
+  let classId   = $state('');
+  let termId    = $state('');
+  let subjectId = $state('');
 
-  const classesQ = createQuery({ queryKey: ['classes'],         queryFn: listClasses,  staleTime: 5 * 60_000 });
   const yearsQ   = createQuery({ queryKey: ['academic-years'],  queryFn: listYears,    staleTime: 5 * 60_000 });
   const typesQ   = createQuery({ queryKey: ['assessment-types'], queryFn: listAssessmentTypes, staleTime: 5 * 60_000 });
-  const subjectsQ = createQuery({ queryKey: ['subjects'],        queryFn: listSubjects, staleTime: 5 * 60_000 });
 
   const allTerms = $derived(
     ($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name })))
@@ -35,6 +34,44 @@
     if (cur && !termId) termId = cur.id;
   });
 
+  // (class, subject) combos the caller can create assessments/enter scores
+  // for — scoped to their own SubjectTeacher assignment(s) unless they hold
+  // assessments.approve_scores. Powers both the class picker and the create
+  // form's subject picker, cascaded by the selected class.
+  const mySubjectsQ = reactiveQuery(() => ({
+    queryKey: ['my-subjects', termId] as const,
+    queryFn:  () => listMySubjects(termId),
+    enabled:  !!termId,
+    staleTime: 5 * 60_000,
+  }));
+
+  const myClasses = $derived.by(() => {
+    const seen = new Map<string, { id: string; display_name: string }>();
+    for (const p of $mySubjectsQ.data ?? []) {
+      if (!seen.has(p.class_id)) seen.set(p.class_id, { id: p.class_id, display_name: p.class_name });
+    }
+    return [...seen.values()].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  });
+
+  // Subjects taught in the selected class — cascades from the Class picker,
+  // replacing what used to be a plain class-name suffix with a real filter.
+  // Powers both the list's Subject filter and the create form's Subject picker.
+  const subjectsForClass = $derived(
+    ($mySubjectsQ.data ?? []).filter(p => p.class_id === classId)
+  );
+
+  // Reset subject when the class changes — a subject from the previous class
+  // must not silently linger and filter out everything in the new one.
+  $effect(() => { classId; subjectId = ''; });
+
+  // Auto-select subject when only one is taught in this class (mirrors the
+  // class auto-select below for a teacher with a single prep there).
+  $effect(() => {
+    if (subjectsForClass.length === 1 && !subjectId) subjectId = subjectsForClass[0].subject_id;
+  });
+
+  const subjectName = (id: string) => subjectsForClass.find(p => p.subject_id === id)?.subject_name ?? '—';
+
   const resultsLockMut = createMutation({
     mutationFn: ({ id, on }: { id: string; on: boolean }) => updateTerm(id, { results_locked: on }),
     onSuccess: () => {
@@ -45,8 +82,7 @@
 
   // Auto-select class when only one is available (e.g. class teacher with one class)
   $effect(() => {
-    const classes = $classesQ.data ?? [];
-    if (classes.length === 1 && !classId) classId = classes[0].id;
+    if (myClasses.length === 1 && !classId) classId = myClasses[0].id;
   });
 
   const assessmentsQ = reactiveQuery(() => ({
@@ -56,9 +92,16 @@
     staleTime: 30_000,
   }));
 
+  // The list endpoint is class+term scoped (already server-filtered to just
+  // the caller's own subject(s) in that class); narrowing to one subject when
+  // a class teaches more than one is a pure client-side filter on top — no
+  // extra round trip, the data's already fully fetched and small.
+  const visibleAssessments = $derived(
+    subjectId ? ($assessmentsQ.data ?? []).filter(a => a.subject_id === subjectId) : ($assessmentsQ.data ?? [])
+  );
+
   // ── Helpers ───────────────────────────────────────────────────────────────────
-  const typeName    = (id: string) => ($typesQ.data    ?? []).find(t => t.id === id)?.name ?? '—';
-  const subjectName = (id: string) => ($subjectsQ.data ?? []).find(s => s.id === id)?.name ?? '—';
+  const typeName = (id: string) => ($typesQ.data ?? []).find(t => t.id === id)?.name ?? '—';
 
   // ── Create form ───────────────────────────────────────────────────────────────
   let showCreate = $state(false);
@@ -102,16 +145,30 @@
     <label for="f-class" class="label">Class</label>
     <select id="f-class" bind:value={classId} class="sel">
       <option value="">All classes…</option>
-      {#each $classesQ.data ?? [] as c}<option value={c.id}>{c.display_name}</option>{/each}
+      {#each myClasses as c}<option value={c.id}>{c.display_name}</option>{/each}
     </select>
   </div>
-  <div class="flex-1 min-w-[180px]">
-    <label for="f-term" class="label">Term</label>
-    <select id="f-term" bind:value={termId} class="sel">
-      <option value="">Select term…</option>
-      {#each allTerms as t}<option value={t.id}>{t.yearName} — {t.name}</option>{/each}
+  <div class="flex-1 min-w-[160px]">
+    <label for="f-subject" class="label">Subject</label>
+    <select id="f-subject" bind:value={subjectId} class="sel" disabled={!classId}>
+      <option value="">{classId ? 'All subjects…' : 'Select a class first'}</option>
+      {#each subjectsForClass as p}<option value={p.subject_id}>{p.subject_name}</option>{/each}
     </select>
   </div>
+  {#if canManage}
+    <!-- Admin/approver keep a real term picker — they legitimately browse past
+         terms' assessments. A class/subject teacher is locked to the current
+         term server-side (services/scoring.py::submit_scores), and the current
+         term is already shown in the top bar, so no picker or label is shown
+         to them here at all — replaced by the Subject filter above instead. -->
+    <div class="flex-1 min-w-[180px]">
+      <label for="f-term" class="label">Term</label>
+      <select id="f-term" bind:value={termId} class="sel">
+        <option value="">Select term…</option>
+        {#each allTerms as t}<option value={t.id}>{t.yearName} — {t.name}</option>{/each}
+      </select>
+    </div>
+  {/if}
   {#if canManage && termId && selectedTerm}
     <button
       onclick={() => $resultsLockMut.mutate({ id: termId, on: !selectedTerm.results_locked })}
@@ -162,7 +219,7 @@
         <label for="cf-subj" class="label">Subject <span class="text-red-500">*</span></label>
         <select id="cf-subj" bind:value={cf.subjectId} class="input">
           <option value="">Select subject…</option>
-          {#each $subjectsQ.data ?? [] as s}<option value={s.id}>{s.name}</option>{/each}
+          {#each subjectsForClass as p}<option value={p.subject_id}>{p.subject_name}</option>{/each}
         </select>
       </div>
       <div><label for="cf-max" class="label">Max score <span class="text-red-500">*</span></label><input id="cf-max" type="number" min="1" step="0.5" bind:value={cf.maxScore} class="input" /></div>
@@ -197,9 +254,11 @@
   <div class="space-y-2">
     {#each [1, 2, 3] as _}<div class="h-14 animate-pulse rounded-2xl bg-[var(--card)]"></div>{/each}
   </div>
-{:else if ($assessmentsQ.data ?? []).length === 0}
+{:else if visibleAssessments.length === 0}
   <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
-    <p class="text-sm font-medium text-[var(--fg-muted)]">No assessments yet.</p>
+    <p class="text-sm font-medium text-[var(--fg-muted)]">
+      {subjectId ? 'No assessments for this subject yet.' : 'No assessments yet.'}
+    </p>
     {#if canManage}<p class="mt-1 text-xs text-[var(--fg-subtle)]">Click "New assessment" to create one.</p>{/if}
   </div>
 {:else}
@@ -214,7 +273,7 @@
         <th class="px-4 py-3">Status</th>
       </tr></thead>
       <tbody>
-        {#each $assessmentsQ.data ?? [] as a (a.id)}
+        {#each visibleAssessments as a (a.id)}
           <tr onclick={() => goto(`/assessments/${a.id}`)}
             class="cursor-pointer border-b border-[var(--border)] last:border-0 transition hover:bg-[var(--hover)]">
             <td class="px-4 py-3 font-medium text-[var(--fg)]">{a.name}</td>

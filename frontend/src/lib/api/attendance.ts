@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { SchoolClass } from './academic';
 
 export type DayType =
   | 'SCHOOL_DAY' | 'PUBLIC_HOLIDAY' | 'SCHOOL_HOLIDAY'
@@ -109,3 +110,9 @@ export const getAttendanceSummary = (
   termId: string,
 ): Promise<AttendanceSummary> =>
   api.get('/attendance/summary', { params: { student_id: studentId, term_id: termId } }).then(r => r.data);
+
+// Classes the caller can mark attendance for — scoped to their own
+// ClassTeacher assignment(s) unless they hold attendance.approve (the
+// backend returns the full school-wide list for those callers instead).
+export const listMyAttendanceClasses = (termId: string): Promise<SchoolClass[]> =>
+  api.get('/attendance/my-classes', { params: { term_id: termId } }).then(r => r.data);

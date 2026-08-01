@@ -22,9 +22,9 @@ from app.models.students import Student
 
 async def _login_as_position(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
-) -> dict:
+) -> tuple[dict, str]:
     """Create a staff member holding `position_code`, give them a login, and return
-    their bearer-token auth headers."""
+    (their bearer-token auth headers, their staff_member id)."""
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
     assert pos is not None, "Run seed_reference_data.py first"
 
@@ -44,7 +44,7 @@ async def _login_as_position(
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
     })
     assert resp.status_code == 200, resp.text
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
 
 
 @pytest.fixture
@@ -142,7 +142,13 @@ async def test_submit_scores_blocked_for_class_teacher_even_with_reason(
     """CLASS_TEACHER holds enter_scores but not approve_scores — a locked term
     must reject them even when they supply a reason."""
     await _lock_term(client, auth, academic_term.id)
-    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    teacher_auth, teacher_staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    from app.models.academic import SubjectTeacher
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=assessment.class_id, subject_id=assessment.subject_id,
+        staff_member_id=teacher_staff_id, academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
     resp = await client.post(f"/assessments/{assessment.id}/scores", json={
         "scores": [{"student_id": str(student.id), "raw_score": "85.00"}],
         "override_reason": "I really need to enter this.",

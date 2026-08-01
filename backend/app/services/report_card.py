@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.teacher_scope import resolve_report_card_scope
 from app.models.academic import AcademicTerm, AcademicYear, Class, ClassTeacher, Subject
 from app.models.assessments import Assessment, AssessmentType, Score, StudentBehaviourRecord
 from app.models.school import School
@@ -65,7 +66,7 @@ async def _load_scores(
 
 
 async def assemble(
-    enrollment_id: uuid.UUID, school_id: uuid.UUID, format: str, db: AsyncSession
+    enrollment_id: uuid.UUID, school_id: uuid.UUID, format: str, user_id: uuid.UUID, db: AsyncSession
 ) -> dict:
     """Build the full context dict for the Jinja2 report card template."""
     te = await db.scalar(
@@ -94,6 +95,10 @@ async def assemble(
     cls = await db.get(Class, sca.class_id) if sca else None
     if not cls:
         raise HTTPException(404, "Student has no class assignment for this academic year.")
+
+    scope = await resolve_report_card_scope(user_id, term.academic_year_id, db)
+    if scope is not None and cls.id not in scope:
+        raise HTTPException(404, "Term enrollment not found.")
 
     # Programme name for class label
     programme_name: str | None = None

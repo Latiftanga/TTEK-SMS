@@ -3,7 +3,7 @@ import asyncio
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.core.redis import get_arq
+from app.core.teacher_scope import classes_for_scope, resolve_report_card_scope, year_for_term
 from app.models.academic import AcademicTerm, Class, SHSProgramme
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
+from app.schemas.academic import ClassRead
 from app.schemas.assessments import (
     BehaviourRecordCreate, BehaviourRecordRead,
     BulkReportJobRead, BulkReportRequest,
@@ -71,7 +73,12 @@ async def list_class_enrollments(
     db: AsyncSession = Depends(get_db),
 ):
     """Return all term-enrolled students for a class+term, with their enrollment IDs."""
-    _, school_id = auth
+    user_id, school_id = auth
+    year_id = await year_for_term(term_id, db)
+    if year_id is not None:
+        scope = await resolve_report_card_scope(user_id, year_id, db)
+        if scope is not None and class_id not in scope:
+            raise HTTPException(404, "Class not found.")
     rows = await db.execute(
         select(
             TermEnrollment.id,
@@ -122,6 +129,25 @@ async def list_class_enrollments(
     return result
 
 
+# Registered before /report-cards/{enrollment_id} — a literal path segment
+# would otherwise be swallowed by the UUID path param.
+@router.get("/report-cards/my-classes", response_model=list[ClassRead])
+async def list_my_report_classes(
+    term_id: uuid.UUID = Query(...),
+    auth=Depends(require_permission("assessments", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Classes the caller can view/generate report cards for — scoped to
+    their own ClassTeacher assignment(s) unless they hold
+    assessments.approve_scores."""
+    user_id, school_id = auth
+    year_id = await year_for_term(term_id, db)
+    if year_id is None:
+        return await classes_for_scope(None, school_id, db)
+    scope = await resolve_report_card_scope(user_id, year_id, db)
+    return await classes_for_scope(scope, school_id, db)
+
+
 # ── Single report card ────────────────────────────────────────────────────────
 
 @router.get("/report-cards/{enrollment_id}")
@@ -131,8 +157,8 @@ async def get_report_card(
     auth=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    context = await rc_svc.assemble(enrollment_id, school_id, format, db)
+    user_id, school_id = auth
+    context = await rc_svc.assemble(enrollment_id, school_id, format, user_id, db)
     # WeasyPrint is synchronous and CPU-heavy — off the event loop, or every
     # report card generated blocks every other concurrent request.
     pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
@@ -155,7 +181,7 @@ async def queue_bulk_report(
     auth=Depends(require_permission("assessments", "approve_scores")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
+    user_id, school_id = auth
     job_id = str(uuid.uuid4())
     arq = await get_arq()
     try:
@@ -166,6 +192,7 @@ async def queue_bulk_report(
             academic_term_id=str(req.academic_term_id),
             school_id=str(school_id),
             format=req.format,
+            user_id=str(user_id),
             _job_id=job_id,
         )
     finally:

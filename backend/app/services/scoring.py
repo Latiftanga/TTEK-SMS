@@ -38,11 +38,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
+from app.core.teacher_scope import enforce_current_term_for_scoring, resolve_assessment_scope, year_for_term
 from app.models.assessments import Assessment, Score, ScoreAuditLog
 from app.models.students import Student
 from app.schemas.assessments import BulkScoreSubmit, ScoreApproveRequest, ScoreRead
 from app.services.grading import resolve_grade
 from app.services.subject_roster import filter_eligible_for_subject
+
+
+async def _check_assessment_in_scope(assessment: Assessment, user_id: uuid.UUID, db: AsyncSession) -> None:
+    year_id = await year_for_term(assessment.academic_term_id, db)
+    if year_id is None:
+        return
+    scope = await resolve_assessment_scope(user_id, year_id, db)
+    if scope is not None and (assessment.class_id, assessment.subject_id) not in scope:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
 
 
 def _to_read(s: Score) -> ScoreRead:
@@ -63,6 +73,8 @@ async def submit_scores(
     )
     if not assessment:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    await _check_assessment_in_scope(assessment, user_id, db)
+    await enforce_current_term_for_scoring(user_id, assessment.academic_term_id, db)
     if assessment.is_published:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -194,7 +206,7 @@ async def approve_scores(
 
 
 async def list_scores(
-    assessment_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    assessment_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> list[ScoreRead]:
     assessment = await db.scalar(
         select(Assessment).where(
@@ -203,6 +215,7 @@ async def list_scores(
     )
     if not assessment:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    await _check_assessment_in_scope(assessment, user_id, db)
     rows = await db.scalars(
         select(Score)
         .join(Student, Student.id == Score.student_id)

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { createQuery, createMutation } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
-  import { listClasses, listYears } from '$lib/api/academic';
+  import { listYears } from '$lib/api/academic';
   import {
-    listClassEnrollments, getReportCardBlob, queueBulkReport, downloadBulkReport,
+    listClassEnrollments, getReportCardBlob, queueBulkReport, downloadBulkReport, listMyReportClasses,
     type EnrollmentForReport, type ReportFormat,
   } from '$lib/api/reports';
   import { userRole } from '$lib/stores/permissions';
@@ -17,7 +17,6 @@
   let termId   = $state('');
   let format   = $state<ReportFormat>('BASIC');
 
-  const classesQ = createQuery({ queryKey: ['classes'],        queryFn: listClasses, staleTime: 5 * 60_000 });
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
   const allTerms = $derived(
@@ -28,6 +27,16 @@
     const cur = allTerms.find(t => t.is_current);
     if (cur && !termId) termId = cur.id;
   });
+
+  // Scoped to the caller's own ClassTeacher assignment(s) unless they hold
+  // assessments.approve_scores — the backend decides, this page just renders
+  // whatever it gets back, same for every role.
+  const classesQ = reactiveQuery(() => ({
+    queryKey: ['my-report-classes', termId] as const,
+    queryFn:  () => listMyReportClasses(termId),
+    enabled:  !!termId,
+    staleTime: 5 * 60_000,
+  }));
 
   const canApprove = $derived($userRole === 'admin' || $userRole === 'approver');
 
