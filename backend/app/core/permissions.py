@@ -63,7 +63,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import get_redis
@@ -183,10 +183,24 @@ async def resolve_permissions(
             derived_codes.append("HOUSEMASTER")
 
         if derived_codes:
-            derived_pos_ids = await db.scalars(
-                select(StaffPosition.id).where(StaffPosition.code.in_(derived_codes))
+            # Same "school-specific copy wins over the shared platform
+            # template" rule as routers/permissions.py's list endpoint —
+            # without the school_id filter, a *different* school forking its
+            # own CLASS_TEACHER/HOUSEMASTER copy would leak into every other
+            # school's derived staff (code alone isn't unique across
+            # schools), and even within one school a fork would only ever
+            # add to the template's permissions instead of replacing them.
+            derived_rows = await db.execute(
+                select(StaffPosition.id, StaffPosition.code, StaffPosition.school_id).where(
+                    StaffPosition.code.in_(derived_codes),
+                    or_(StaffPosition.school_id == staff.school_id, StaffPosition.school_id.is_(None)),
+                )
             )
-            position_ids.extend(derived_pos_ids)
+            by_code: dict[str, uuid.UUID] = {}
+            for pid, code, sid in derived_rows:
+                if code not in by_code or sid is not None:
+                    by_code[code] = pid
+            position_ids.extend(by_code.values())
 
         if position_ids:
             position_rows = await db.execute(

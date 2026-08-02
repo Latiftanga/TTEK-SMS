@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -73,7 +73,21 @@ async def update_position_permissions(
     ids: tuple = Depends(require_permission("school", "manage_users")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Replace the full permission set for a position. Invalidates all affected staff caches."""
+    """Replace the full permission set for a position. Invalidates all affected staff caches.
+
+    FORK ON FIRST EDIT
+    -------------------
+    Most seeded positions (HEAD, TEACHER, HOD, ...) are shared platform
+    templates (school_id=NULL). Editing one in place would silently change
+    what that position means for every school on the platform — the same
+    "shared row mutated by one tenant" bug already fixed for Programmes
+    (services/academic_subjects.py::adopt_programme). So editing a template
+    instead forks a school-owned copy (same code/name, school_id=this
+    school) and migrates this school's own staff off the template onto the
+    fork, leaving the template itself completely untouched. A school that
+    already has its own copy (this call, or an earlier edit) just edits it
+    in place — no repeated forking.
+    """
     _, school_id = ids
 
     pos = await db.scalar(
@@ -95,29 +109,72 @@ async def update_position_permissions(
                 detail=f"Invalid permission: {entry.module}.{entry.action}",
             )
 
-    # Replace all permission rows for this position
+    target = pos
+    if pos.school_id is None:
+        # Editing a shared template — reuse this school's own copy if one
+        # already exists (e.g. a stale client still referencing the
+        # template's id after an earlier fork), otherwise fork a new one.
+        existing_fork = await db.scalar(
+            select(StaffPosition)
+            .where(StaffPosition.code == pos.code, StaffPosition.school_id == school_id)
+            .options(selectinload(StaffPosition.permissions))
+        )
+        if existing_fork:
+            target = existing_fork
+        else:
+            target = StaffPosition(
+                code=pos.code, name=pos.name, school_id=school_id, is_template=False,
+            )
+            db.add(target)
+            await db.flush()
+
+            # Move this school's own staff off the template onto the fork —
+            # otherwise their permissions wouldn't actually change, since
+            # resolve_permissions() reads by the specific position_id a
+            # staff member is linked to, not by code.
+            staff_to_migrate = await db.scalars(
+                select(staff_member_positions.c.staff_member_id)
+                .join(StaffMember, StaffMember.id == staff_member_positions.c.staff_member_id)
+                .where(
+                    staff_member_positions.c.position_id == pos.id,
+                    StaffMember.school_id == school_id,
+                )
+            )
+            staff_ids_to_migrate = list(staff_to_migrate)
+            if staff_ids_to_migrate:
+                await db.execute(
+                    update(staff_member_positions)
+                    .where(
+                        staff_member_positions.c.position_id == pos.id,
+                        staff_member_positions.c.staff_member_id.in_(staff_ids_to_migrate),
+                    )
+                    .values(position_id=target.id)
+                )
+
+    # Replace all permission rows for the target (the fork, or the school's
+    # own pre-existing row — never the shared template).
     await db.execute(
-        delete(PositionPermission).where(PositionPermission.position_id == position_id)
+        delete(PositionPermission).where(PositionPermission.position_id == target.id)
     )
     for entry in req.permissions:
         if entry.is_allowed:  # only store granted permissions
             db.add(PositionPermission(
-                position_id=position_id,
+                position_id=target.id,
                 module=entry.module,
                 action=entry.action,
                 is_allowed=True,
             ))
 
     await db.flush()
-    await db.refresh(pos, attribute_names=["permissions"])
+    await db.refresh(target, attribute_names=["permissions"])
 
-    # Invalidate cache for every staff member who holds this position
+    # Invalidate cache for every staff member who now holds this position
     staff_ids = await db.scalars(
         select(staff_member_positions.c.staff_member_id).where(
-            staff_member_positions.c.position_id == position_id
+            staff_member_positions.c.position_id == target.id
         )
     )
     for sid in staff_ids:
         await invalidate_permissions(sid)
 
-    return _to_read(pos)
+    return _to_read(target)
