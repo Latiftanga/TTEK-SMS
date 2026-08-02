@@ -60,10 +60,15 @@
     staleTime: 5 * 60_000,
   });
 
-  // Teacher-assignment awareness — informational only, never blocks
-  // registration (a school may set up curriculum before a teacher is hired).
-  // SubjectTeacher is year-scoped, not term-scoped, so resolve the year that
-  // contains this enrollment's term rather than assuming "current".
+  // Teacher-assignment awareness — the backend now hard-blocks registering a
+  // subject with no SubjectTeacher assigned (a school may still set up
+  // curriculum, i.e. ClassSubject, before a teacher is hired — that part
+  // stays allowed; only registering a *student* against it doesn't, since
+  // there'd be no one to teach them). Disabling the option here is a UX
+  // courtesy so the reason is visible up front instead of only surfacing as
+  // a 422 after Add is clicked. SubjectTeacher is year-scoped, not
+  // term-scoped, so resolve the year that contains this enrollment's term
+  // rather than assuming "current".
   const allTermsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
   const yearId = $derived(($allTermsQ.data ?? []).find(t => t.id === enrollment.academic_term_id)?.academic_year_id ?? '');
 
@@ -170,7 +175,8 @@
     <select bind:value={subjectId} class="sel w-full">
       <option value="">Select subject…</option>
       {#each availableSubjects as s}
-        <option value={s.id}>{s.name}{(!$subjTeachersQ.isPending && !subjectsWithTeacher.has(s.id)) ? ' (no teacher assigned)' : ''}</option>
+        {@const hasTeacher = $subjTeachersQ.isPending || subjectsWithTeacher.has(s.id)}
+        <option value={s.id} disabled={!hasTeacher}>{s.name}{!hasTeacher ? ' (no teacher assigned — cannot register)' : ''}</option>
       {/each}
       {#if availableSubjects.length === 0 && !$allSubjectsQ.isPending}
         <option disabled>All subjects registered</option>

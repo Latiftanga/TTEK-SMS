@@ -19,10 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import hash_password
 from app.models.academic import (
     AcademicTerm, AcademicYear, Class, ClassSubject,
-    SchoolLevel, Subject, SubjectCatalogue, SubjectType,
+    SchoolLevel, Subject, SubjectCatalogue, SubjectTeacher, SubjectType,
 )
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import School
+from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, SubjectRegistration, TermEnrollment
 
 
@@ -63,6 +64,22 @@ async def _make_subject(db_session: AsyncSession, school: School, code: str, nam
     return subj
 
 
+async def _assign_teacher(
+    db_session: AsyncSession, school: School, class_id, subject_id, academic_year_id, suffix: str,
+) -> None:
+    """Registration now requires someone actually assigned to teach the
+    subject (services/subject_roster.py::subject_teacher_assigned) — who the
+    teacher is doesn't matter for these tests, just that one exists."""
+    staff = StaffMember(school_id=school.id, staff_number=f"BULKTCH{suffix}", first_name="Teach", last_name=suffix)
+    db_session.add(staff)
+    await db_session.flush()
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=class_id, subject_id=subject_id,
+        staff_member_id=staff.id, academic_year_id=academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+
 async def _enroll_student(
     db_session: AsyncSession, school: School, school_class: Class,
     academic_year: AcademicYear, academic_term: AcademicTerm, enrolled_by_id, suffix: str,
@@ -90,20 +107,26 @@ async def _enroll_student(
 
 
 @pytest.fixture
-async def math_subject(db_session: AsyncSession, school: School, school_class: Class) -> Subject:
+async def math_subject(
+    db_session: AsyncSession, school: School, school_class: Class, academic_year: AcademicYear,
+) -> Subject:
     subj = await _make_subject(db_session, school, "MATH_BULK", "Mathematics")
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))
     await db_session.flush()
+    await _assign_teacher(db_session, school, school_class.id, subj.id, academic_year.id, "MATH")
     return subj
 
 
 @pytest.fixture
-async def french_elective(db_session: AsyncSession, school: School, school_class: Class) -> Subject:
+async def french_elective(
+    db_session: AsyncSession, school: School, school_class: Class, academic_year: AcademicYear,
+) -> Subject:
     subj = await _make_subject(db_session, school, "FR_BULK", "French")
     db_session.add(ClassSubject(
         school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True, is_elective=True,
     ))
     await db_session.flush()
+    await _assign_teacher(db_session, school, school_class.id, subj.id, academic_year.id, "FR")
     return subj
 
 

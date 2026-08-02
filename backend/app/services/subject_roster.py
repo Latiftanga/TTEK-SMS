@@ -26,7 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.teacher_scope import resolve_assessment_scope, year_for_term
-from app.models.academic import AcademicTerm, Class, ClassSubject, SHSProgramme, Subject
+from app.models.academic import AcademicTerm, Class, ClassSubject, SHSProgramme, Subject, SubjectTeacher
 from app.models.students import Student, StudentClassAssignment, SubjectRegistration, TermEnrollment
 from app.schemas.assessments import AssessmentRosterStudent, MySubjectAssignment
 from app.services.student_display import _class_display_name
@@ -45,6 +45,25 @@ async def class_subject_exists(
             ClassSubject.subject_id == subject_id,
             ClassSubject.school_id == school_id,
             ClassSubject.is_active.is_(True),
+        )
+    ) is not None
+
+
+async def subject_teacher_assigned(
+    class_id: uuid.UUID, subject_id: uuid.UUID, academic_year_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> bool:
+    """Whether someone is actually assigned to teach this (class, subject)
+    pair this year — a student shouldn't be registered for a subject no one
+    is teaching. Checked at registration time, not at ClassSubject-creation
+    time, since a subject can legitimately sit on the curriculum before a
+    teacher is assigned; it just can't be registered to a student yet."""
+    return await db.scalar(
+        select(SubjectTeacher.id).where(
+            SubjectTeacher.class_id == class_id,
+            SubjectTeacher.subject_id == subject_id,
+            SubjectTeacher.academic_year_id == academic_year_id,
+            SubjectTeacher.school_id == school_id,
+            SubjectTeacher.is_active.is_(True),
         )
     ) is not None
 

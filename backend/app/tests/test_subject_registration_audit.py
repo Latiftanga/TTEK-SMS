@@ -24,11 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import (
     AcademicTerm, AcademicYear, Class, ClassSubject,
-    SchoolLevel, Subject, SubjectCatalogue, SubjectType,
+    SchoolLevel, Subject, SubjectCatalogue, SubjectTeacher, SubjectType,
 )
 from app.models.assessments import Assessment, AssessmentType, Score
 from app.models.auth import User
 from app.models.school import School
+from app.models.staff import StaffMember
 from app.models.students import (
     Student, StudentClassAssignment, SubjectRegistration,
     SubjectRegistrationAuditLog, TermEnrollment,
@@ -68,9 +69,21 @@ async def _enroll_student(
 
 
 @pytest.fixture
-async def subject(db_session: AsyncSession, school: School, school_class: Class) -> Subject:
+async def subject(
+    db_session: AsyncSession, school: School, school_class: Class, academic_year: AcademicYear,
+) -> Subject:
     subj = await _make_subject(db_session, school, "AUDIT_SUBJ", "Audit Test Subject")
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))
+    await db_session.flush()
+    # Registration now requires someone assigned to teach the subject
+    # (services/subject_roster.py::subject_teacher_assigned).
+    staff = StaffMember(school_id=school.id, staff_number="AUDITTCH", first_name="Teach", last_name="Audit")
+    db_session.add(staff)
+    await db_session.flush()
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=school_class.id, subject_id=subj.id,
+        staff_member_id=staff.id, academic_year_id=academic_year.id, is_active=True,
+    ))
     await db_session.flush()
     return subj
 

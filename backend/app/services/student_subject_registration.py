@@ -5,7 +5,12 @@ cap).
 
 A student can only be registered for a subject actually offered to their
 class (ClassSubject) — mirrors the same check on assessment creation
-(services/subject_roster.py::class_subject_exists, added in 12q).
+(services/subject_roster.py::class_subject_exists, added in 12q) — and only
+if someone is actually assigned to teach it this year
+(services/subject_roster.py::subject_teacher_assigned): a ClassSubject can
+exist before any SubjectTeacher is assigned (the two are set up in separate
+steps), but registering a student for a subject no one teaches makes no
+sense, so registration itself is the gate, not curriculum setup.
 
 Class-wide, multi-student operations (bulk-register-core, per-subject
 roster read/write) live in services/class_subject_registration.py, which
@@ -22,6 +27,15 @@ scoring/assessment edits; both routes here are gated at students.edit (a
 weaker permission than assessments.approve_scores), so the override itself
 still requires the caller to hold assessments.approve_scores, same shape as
 submit_scores in scoring.py.
+
+CURRENT TERM ONLY
+-----------------
+Registering or removing a subject against a term that isn't the one
+currently running is blocked for a scoped caller (core/teacher_scope.py::
+enforce_current_term_for_subject_registration), same shape as Attendance/
+Scoring — no override-with-reason, since there's no "unlock" for a term
+simply not being current. A caller holding assessments.approve_scores is
+unrestricted, for backfilling historical data.
 
 AUDIT LOG
 ---------
@@ -50,7 +64,7 @@ from app.models.students import (
     TermEnrollment,
 )
 from app.schemas.students import SubjectRegistrationItem, SubjectRegistrationRead
-from app.services.subject_roster import class_subject_exists
+from app.services.subject_roster import class_subject_exists, subject_teacher_assigned
 
 
 async def _assert_can_register(
@@ -117,6 +131,13 @@ async def register_subjects(
             raise HTTPException(
                 status_code=422,
                 detail=f"'{name}' is not assigned to this student's class.",
+            )
+        if not await subject_teacher_assigned(sca.class_id, item.subject_id, term.academic_year_id, school_id, db):
+            subject = await db.get(Subject, item.subject_id)
+            name = subject.name if subject else str(item.subject_id)
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{name}' has no teacher assigned for this class yet — assign a subject teacher before registering students.",
             )
 
     results: list[SubjectRegistration] = []

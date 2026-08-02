@@ -15,7 +15,26 @@ from app.models.academic import AcademicTerm, Class
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.fees import StudentFeeRecord
 from app.models.school import School
+from app.models.staff import StaffMember
 from app.models.students import Student, TermEnrollment
+
+
+async def _assign_subject_teacher(
+    db_session: AsyncSession, school: School, class_id, subject_id, academic_year_id, suffix: str,
+) -> None:
+    """Registration now requires someone assigned to teach the subject
+    (services/subject_roster.py::subject_teacher_assigned) — who the
+    teacher is doesn't matter for tests not about that scoping itself."""
+    from app.models.academic import SubjectTeacher
+
+    staff = StaffMember(school_id=school.id, staff_number=f"ENRTCH-{suffix}", first_name="Teach", last_name=suffix)
+    db_session.add(staff)
+    await db_session.flush()
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=class_id, subject_id=subject_id,
+        staff_member_id=staff.id, academic_year_id=academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
 
 
 async def _assign_class(client, auth, student_id: str, school_class: Class, academic_term: AcademicTerm):
@@ -214,6 +233,7 @@ async def test_register_subjects(
     # the student's class (services/subject_roster.py::class_subject_exists).
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "REG")
 
     sid = await _create_student(client, auth)
     await _assign_class(client, auth, sid, school_class, academic_term)
@@ -242,6 +262,7 @@ async def test_duplicate_subject_skipped_silently(
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "DUP")
 
     sid = await _create_student(client, auth)
     await _assign_class(client, auth, sid, school_class, academic_term)
@@ -287,6 +308,69 @@ async def test_register_subject_not_on_class_rejected(
     ]}, headers=auth)
     assert resp.status_code == 422
     assert "not assigned" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_subject_rejected_when_no_teacher_assigned(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School,
+):
+    """A subject can sit on a class's curriculum (ClassSubject) before anyone
+    is assigned to teach it — registering a student for it doesn't make
+    sense until someone is."""
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="NOTEACH01", name="No Teacher Yet", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+    # Deliberately no SubjectTeacher row.
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=auth)
+    assert resp.status_code == 422
+    assert "no teacher assigned" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_subject_allowed_once_teacher_assigned(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School,
+):
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="NOTEACH02", name="Teacher Assigned Later", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=auth)
+    assert resp.status_code == 422
+
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "NOTEACH02")
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=auth)
+    assert resp.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -407,6 +491,7 @@ async def locked_term_setup(client: AsyncClient, auth: dict, school_class: Class
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "LOCK01")
 
     sid = await _create_student(client, auth)
     await _assign_class(client, auth, sid, school_class, academic_term)
@@ -454,6 +539,7 @@ async def test_register_subject_allowed_when_locked_with_reason_and_permission(
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "LOCK03")
 
     sid = await _create_student(client, auth)
     await _assign_class(client, auth, sid, school_class, academic_term)
@@ -570,6 +656,7 @@ async def non_current_term_registration(
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
     await db_session.flush()
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "NCT01")
 
     sid = await _create_student(client, auth)
     await _assign_class(client, auth, sid, school_class, academic_term)
