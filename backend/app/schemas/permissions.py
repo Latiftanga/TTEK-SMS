@@ -9,7 +9,7 @@ PERMISSION_MATRIX: dict[str, list[str]] = {
     "students":    ["view", "create", "edit", "delete"],
     "academic":    ["view", "create", "edit", "delete"],
     "attendance":  ["view", "record", "approve"],
-    "assessments": ["view", "enter_scores", "approve_scores"],
+    "assessments": ["view", "enter_scores", "approve_scores", "record_behaviour"],
     "fees":        ["view", "collect", "manage"],
     "housing":     ["view", "assign", "manage"],
     "reports":     ["view", "generate"],

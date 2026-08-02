@@ -207,6 +207,6 @@
   {:else if activeTab === 'medical'}
     <MedicalTab studentId={studentId} medical={s.medical_record} canEdit={s.can_edit} />
   {:else if activeTab === 'behaviour'}
-    <BehaviourTab studentId={studentId} />
+    <BehaviourTab studentId={studentId} canEdit={s.can_edit} />
   {/if}
 {/if}

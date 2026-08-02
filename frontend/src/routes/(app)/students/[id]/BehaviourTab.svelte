@@ -11,11 +11,15 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
-  interface Props { studentId: string; }
-  const { studentId }: Props = $props();
+  interface Props { studentId: string; canEdit?: boolean; }
+  const { studentId, canEdit = true }: Props = $props();
 
   const qc = useQueryClient();
-  const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
+  // Recording behaviour is now a Class Teacher duty (assessments.record_behaviour,
+  // scoped to this student's own class) as well as an admin/approver one — canEdit
+  // reflects the student's own can_edit flag (StudentDetail), computed the same way
+  // as every other pastoral tab.
+  const canManage = $derived($userRole === 'admin' || $userRole === 'approver' || canEdit);
   const today = new Date().toISOString().slice(0, 10);
 
   const termsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });

@@ -122,7 +122,14 @@ STAFF_POSITIONS = [
         ("students", "view"), ("students", "create"), ("students", "edit"), ("students", "delete"),
         ("academic", "view"), ("academic", "create"), ("academic", "edit"), ("academic", "delete"),
         ("attendance", "view"), ("attendance", "record"), ("attendance", "approve"),
+        # record_behaviour alongside approve_scores mirrors enter_scores/
+        # approve_scores below: require_permission() at the router is a flat
+        # check with no scope bypass logic of its own, so a senior position
+        # needs the narrow action too to even reach the service layer, where
+        # holding approve_scores is what actually makes them unrestricted
+        # (core/teacher_scope.py::resolve_report_card_scope).
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
+        ("assessments", "record_behaviour"),
         ("fees", "view"), ("fees", "collect"), ("fees", "manage"),
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
         ("reports", "view"), ("reports", "generate"),
@@ -139,6 +146,7 @@ STAFF_POSITIONS = [
         ("academic", "view"), ("academic", "create"), ("academic", "edit"),
         ("attendance", "view"), ("attendance", "record"), ("attendance", "approve"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
+        ("assessments", "record_behaviour"),
         ("fees", "view"), ("fees", "collect"),
         ("housing", "view"), ("housing", "assign"),
         ("reports", "view"), ("reports", "generate"),
@@ -154,6 +162,7 @@ STAFF_POSITIONS = [
         ("academic", "view"), ("academic", "edit"),
         ("attendance", "view"), ("attendance", "record"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
+        ("assessments", "record_behaviour"),
         ("reports", "view"), ("reports", "generate"),
         ("documents", "view"), ("documents", "manage"),
     ]),
@@ -163,9 +172,31 @@ STAFF_POSITIONS = [
         ("academic", "view"),
         ("attendance", "view"), ("attendance", "record"),
         ("assessments", "view"), ("assessments", "enter_scores"),
+        # record_behaviour is a Class Teacher duty specifically (not a plain
+        # Subject Teacher's, per the staff-roles spec) — scoped to their own
+        # ClassTeacher assignment via core/teacher_scope.py::resolve_report_card_scope.
+        ("assessments", "record_behaviour"),
         ("fees", "view"),
         ("reports", "view"),
         ("documents", "view"), ("documents", "manage"),
+    ]),
+    ("TEACHER", "Teacher", [
+        # Subject Teacher's core duty (every teaching staff member) per the
+        # staff-roles spec: register students into the subjects they teach,
+        # capture scores. students.edit is safe to grant broadly now that
+        # core/student_scope.py scopes it — a subject-only teacher (no
+        # ClassTeacher row) can only reach the Category B subject-registration
+        # path, everything else 404s. Reconciles a pre-existing drift: an old
+        # migration (q2r3s4t5u6v7) already created a global TEACHER template
+        # directly in the DB, but this script never knew about it until now —
+        # seed_reference_data.py's additive-only upsert will backfill any gap
+        # against this declared set without touching what that migration
+        # already granted (same reconciliation pattern as 12ad/12ag).
+        ("school", "view"),
+        ("students", "view"), ("students", "edit"),
+        ("academic", "view"),
+        ("assessments", "view"), ("assessments", "enter_scores"),
+        ("reports", "view"),
     ]),
     ("HOUSEMASTER", "Housemaster / Housemistress", [
         ("school", "view"),
@@ -180,6 +211,7 @@ STAFF_POSITIONS = [
         ("students", "view"),
         ("academic", "view"), ("academic", "edit"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
+        ("assessments", "record_behaviour"),
         ("reports", "view"), ("reports", "generate"),
         ("documents", "view"), ("documents", "manage"),
     ]),

@@ -95,13 +95,18 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: 'People',
     items: [
       {
-        href: '/students', label: 'Students', icon: IC.students, roles: ['teacher', 'admin', 'approver'],
+        href: '/students', label: 'Students', icon: IC.students, roles: ['admin', 'approver'],
         children: [
           { href: '/admin/transfers',           label: 'Transfers',   roles: ['admin'] },
           { href: '/admin/academic/promote',    label: 'Promotions',  roles: ['admin'] },
           { href: '/admin/academic/graduation', label: 'Graduation',  roles: ['admin'] },
         ],
       },
+      // Subject-only teachers (no ClassTeacher assignment) don't need direct
+      // Students-module access per the staff-roles spec — they register
+      // students into their own subject/enter scores through Assessments, not
+      // the Students module. Same classTeacherOnly pattern as Report Cards above.
+      { href: '/students', label: 'Students', icon: IC.students, roles: ['teacher'], classTeacherOnly: true },
       {
         href: '/admin/staff', label: 'Staff', icon: IC.staff, roles: ['admin'],
         children: [

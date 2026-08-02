@@ -42,17 +42,21 @@ Resolved permission maps are cached in Redis for 15 minutes using the key
 Call invalidate_permissions(staff_id) after any of these operations.
 Failing to do so means the old permissions stay active until the TTL expires.
 
-MODULES AND ACTIONS (29 total across 9 modules)
+MODULES AND ACTIONS (32 total across 10 modules)
 -----------------------------------------------
   school:      view, edit, manage_users
   staff:       view, create, edit, delete
   students:    view, create, edit, delete
   academic:    view, create, edit, delete
   attendance:  view, record, approve
-  assessments: view, enter_scores, approve_scores
+  assessments: view, enter_scores, approve_scores, record_behaviour
   fees:        view, collect, manage
   housing:     view, assign, manage
   reports:     view, generate
+  documents:   view, manage
+
+The canonical list lives in schemas/permissions.py::PERMISSION_MATRIX — this
+docstring is descriptive, keep it in sync when that changes.
 """
 from __future__ import annotations
 

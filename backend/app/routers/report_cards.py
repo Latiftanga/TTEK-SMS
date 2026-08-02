@@ -34,7 +34,7 @@ router = APIRouter(tags=["report-cards"])
 @router.post("/behaviour", response_model=BehaviourRecordRead, status_code=201)
 async def create_behaviour_record(
     req: BehaviourRecordCreate,
-    auth=Depends(require_permission("assessments", "approve_scores")),
+    auth=Depends(require_permission("assessments", "record_behaviour")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = auth
@@ -48,15 +48,15 @@ async def list_behaviour_records(
     auth=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    return await beh_svc.list_behaviour_records(student_id, term_id, school_id, db)
+    user_id, school_id = auth
+    return await beh_svc.list_behaviour_records(student_id, term_id, school_id, user_id, db)
 
 
 @router.delete("/behaviour/{record_id}", status_code=204)
 async def delete_behaviour_record(
     record_id: uuid.UUID,
     override_reason: str | None = Query(None),
-    auth=Depends(require_permission("assessments", "approve_scores")),
+    auth=Depends(require_permission("assessments", "record_behaviour")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = auth
