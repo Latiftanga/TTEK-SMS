@@ -94,4 +94,11 @@ async def get_dashboard(
         return await _approver_view(school_id, greeting_name, db)
     if perms.get("housing.manage"):
         return await housemaster_view(school_id, user.staff_member_id, greeting_name, db)
+    # Catches senior non-teaching staff who hold none of the above (e.g. an
+    # Assistant Head - Administration, who has no fees/assessments-approve/
+    # housing.manage) — without this they'd otherwise fall through to the
+    # teacher dashboard ("my classes: none"), which reads as broken for
+    # someone who doesn't teach at all.
+    if perms.get("staff.edit"):
+        return await _approver_view(school_id, greeting_name, db)
     return await teacher_view(school_id, user.staff_member_id, greeting_name, db)
