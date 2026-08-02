@@ -41,7 +41,7 @@
       urgent: data.pending_score_assessments > 0,
     },
     { href: '/students', label: 'My Students', badge: `${totalStudents} enrolled`, urgent: false },
-    { href: '/reports',  label: 'Report Cards', badge: 'View & download', urgent: false },
+    { href: '/reports',  label: 'Reports', badge: 'View & download', urgent: false },
   ]);
 
   const icons = {

@@ -30,7 +30,7 @@ export const isFinance     = derived(_view, $v => $v === 'finance');
 
 // Whether the current 'teacher' role holds at least one ClassTeacher
 // assignment this year, vs. a subject-only teacher — drives whether
-// class-teacher-only nav items (e.g. Report Cards) are shown. Distinct from
+// class-teacher-only nav items (e.g. Reports) are shown. Distinct from
 // the role check above: only meaningful when userRole === 'teacher'.
 const CLASS_TEACHER_KEY = 'user_is_class_teacher';
 

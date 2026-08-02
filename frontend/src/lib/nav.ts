@@ -71,7 +71,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
       { href: '/attendance',  label: 'Attendance',    icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
       {
-        // Teachers can't see either config child below, so for them Report Cards
+        // Teachers can't see either config child below, so for them Reports
         // would be the only item in the submenu — an extra click with no payoff.
         // Nested here for admin/approver (who get real value from 3 children);
         // duplicated as a plain top-level link below for teacher only.
@@ -79,13 +79,13 @@ export const NAV_GROUPS: NavGroup[] = [
         children: [
           { href: '/assessments/types',   label: 'Assessment Types', roles: ['admin', 'approver'] },
           { href: '/assessments/scales',  label: 'Grading Scales',   roles: ['admin', 'approver'] },
-          { href: '/reports',             label: 'Report Cards',     roles: ['admin', 'approver'], icon: IC.reports },
+          { href: '/reports',             label: 'Reports',          roles: ['admin', 'approver'], icon: IC.reports },
         ],
       },
       // Subject-only teachers (no ClassTeacher assignment) have no real need for
       // this — report cards are the class teacher's responsibility to review/hand
       // out. classTeacherOnly is on top of roles: ['teacher'] below.
-      { href: '/reports',     label: 'Report Cards', icon: IC.reports,     roles: ['teacher'], classTeacherOnly: true },
+      { href: '/reports',     label: 'Reports',      icon: IC.reports,     roles: ['teacher'], classTeacherOnly: true },
       { href: '/fees',        label: 'Fees',          icon: IC.fees,        roles: ['finance', 'admin'] },
       { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
         requiresBoarding: true },
@@ -105,7 +105,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Subject-only teachers (no ClassTeacher assignment) don't need direct
       // Students-module access per the staff-roles spec — they register
       // students into their own subject/enter scores through Assessments, not
-      // the Students module. Same classTeacherOnly pattern as Report Cards above.
+      // the Students module. Same classTeacherOnly pattern as Reports above.
       { href: '/students', label: 'Students', icon: IC.students, roles: ['teacher'], classTeacherOnly: true },
       {
         href: '/admin/staff', label: 'Staff', icon: IC.staff, roles: ['admin'],
