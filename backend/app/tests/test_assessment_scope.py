@@ -84,7 +84,7 @@ async def assessment(
     a = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
-        name="Scoped Test", max_score=Decimal("100.00"),
+        description="Scoped Test", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(a)
     await db_session.flush()
@@ -178,7 +178,7 @@ async def test_list_assessments_filters_to_taught_subject_only(
     other_assessment = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=other_subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
-        name="Other Subject Test", max_score=Decimal("100.00"),
+        description="Other Subject Test", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(other_assessment)
     await db_session.flush()
@@ -257,7 +257,7 @@ async def test_submit_scores_422_for_non_current_term(
     past_assessment = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=non_current_term.id,
-        name="Past Term Test", max_score=Decimal("100.00"),
+        description="Past Term Test", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(past_assessment)
     await db_session.flush()
@@ -292,7 +292,7 @@ async def test_submit_scores_unrestricted_for_approve_scores_holder(
     past_assessment = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=non_current_term.id,
-        name="Past Term Test 2", max_score=Decimal("100.00"),
+        description="Past Term Test 2", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(past_assessment)
     await db_session.flush()
@@ -302,3 +302,138 @@ async def test_submit_scores_unrestricted_for_approve_scores_holder(
         "scores": [{"student_id": str(student.id), "raw_score": "80.00"}],
     }, headers=exam_officer_auth)
     assert resp.status_code == 201
+
+
+# ── Assessment creation is the subject teacher's own job ──────────────────────
+# Creating/editing/deleting an assessment moved from assessments.approve_scores
+# (admin-only) to assessments.enter_scores + SubjectTeacher ownership — the
+# administrator's role narrows to managing AssessmentType categories and
+# grading scales only. Publish/approve stay approve_scores-gated, unchanged.
+
+@pytest.mark.asyncio
+async def test_create_assessment_allowed_for_assigned_subject_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id), "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id), "academic_term_id": str(academic_term.id),
+        "description": "Teacher-created Test", "max_score": "100.00",
+    }, headers=teacher_auth)
+    assert resp.status_code == 201
+    assert resp.json()["description"] == "Teacher-created Test"
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_422_for_non_assigned_subject_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id), "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id), "academic_term_id": str(academic_term.id),
+        "description": "Should Not Be Created", "max_score": "100.00",
+    }, headers=teacher_auth)
+    assert resp.status_code == 422
+    assert "not assigned" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_422_for_non_current_term(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    non_current_term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_term.academic_year_id,
+        term_number=2, name="Term 2",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 1), is_current=False,
+    )
+    db_session.add(non_current_term)
+    await db_session.flush()
+
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    # SubjectTeacher is year-scoped, so this covers the non-current term too —
+    # the rejection must come from the term not being current.
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id), "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id), "academic_term_id": str(non_current_term.id),
+        "description": "Should Not Be Created 2", "max_score": "100.00",
+    }, headers=teacher_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_unrestricted_for_approve_scores_holder(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    """HOD holds assessments.approve_scores — can create for any subject,
+    taught or not."""
+    hod_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "HOD")
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id), "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id), "academic_term_id": str(academic_term.id),
+        "description": "HOD-created Test", "max_score": "100.00",
+    }, headers=hod_auth)
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_update_and_delete_allowed_for_owning_subject_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, assessment: Assessment,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+
+    patch_resp = await client.patch(f"/assessments/{assessment.id}", json={
+        "description": "Renamed by owning teacher",
+    }, headers=teacher_auth)
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["description"] == "Renamed by owning teacher"
+
+    delete_resp = await client.delete(f"/assessments/{assessment.id}", headers=teacher_auth)
+    assert delete_resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_update_and_delete_404_for_non_owning_subject_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    assessment: Assessment, redis_permissions: None,
+):
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    patch_resp = await client.patch(f"/assessments/{assessment.id}", json={
+        "description": "Should not be allowed",
+    }, headers=teacher_auth)
+    assert patch_resp.status_code == 404
+
+    delete_resp = await client.delete(f"/assessments/{assessment.id}", headers=teacher_auth)
+    assert delete_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_publish_still_requires_approve_scores(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, assessment: Assessment,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    """Publish is deliberately NOT part of this move — the owning subject
+    teacher still can't publish their own assessment; only a senior
+    assessments.approve_scores holder can."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+
+    resp = await client.post(f"/assessments/{assessment.id}/publish", headers=teacher_auth)
+    assert resp.status_code == 403

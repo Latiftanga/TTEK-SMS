@@ -96,20 +96,23 @@ class AssessmentTypeRead(BaseModel):
 
 
 class AssessmentUpdate(BaseModel):
-    name: str | None = None
+    description: str | None = None
     max_score: Decimal | None = None
     due_date: date | None = None
     override_reason: str | None = None
 
 
 # ── Assessment ────────────────────────────────────────────────────────────────
+# Identity is (class, subject, term, category, recorded_date) — not a typed
+# name. description is optional supplementary detail; recorded_date is set
+# server-side at creation (always today) and is never client-supplied.
 
 class AssessmentCreate(BaseModel):
     class_id: uuid.UUID
     subject_id: uuid.UUID
     assessment_type_id: uuid.UUID
     academic_term_id: uuid.UUID
-    name: str
+    description: str | None = None
     max_score: Decimal
     due_date: date | None = None
 
@@ -121,7 +124,8 @@ class AssessmentRead(BaseModel):
     subject_id: uuid.UUID
     assessment_type_id: uuid.UUID
     academic_term_id: uuid.UUID
-    name: str
+    description: str | None
+    recorded_date: date
     max_score: Decimal
     due_date: date | None
     is_published: bool

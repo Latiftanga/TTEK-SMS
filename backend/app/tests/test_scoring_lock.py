@@ -5,6 +5,7 @@ test_assessments.py). Also covers the due_date term-bounds sanity check.
 
 Run inside Docker: docker compose exec api pytest app/tests/test_scoring_lock.py -v
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -75,7 +76,7 @@ async def assessment(
     a = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
-        name="Locked-Term Test", max_score=Decimal("100.00"),
+        description="Locked-Term Test", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(a)
     await db_session.flush()
@@ -207,7 +208,7 @@ async def test_update_assessment_blocked_when_locked_without_reason(
 ):
     await _lock_term(client, auth, academic_term.id)
     resp = await client.patch(f"/assessments/{assessment.id}", json={
-        "name": "Renamed while locked",
+        "description": "Renamed while locked",
     }, headers=auth)
     assert resp.status_code == 423
     log = await db_session.scalar(
@@ -223,18 +224,18 @@ async def test_update_assessment_allowed_when_locked_with_reason(
 ):
     await _lock_term(client, auth, academic_term.id)
     resp = await client.patch(f"/assessments/{assessment.id}", json={
-        "name": "Renamed with HOD approval",
-        "override_reason": "Corrected a typo in the assessment name after lock.",
+        "description": "Renamed with HOD approval",
+        "override_reason": "Corrected a typo in the assessment description after lock.",
     }, headers=auth)
     assert resp.status_code == 200
-    assert resp.json()["name"] == "Renamed with HOD approval"
+    assert resp.json()["description"] == "Renamed with HOD approval"
     log = await db_session.scalar(
         select(AssessmentAuditLog).where(AssessmentAuditLog.assessment_id == assessment.id)
     )
     assert log is not None
-    assert log.reason == "Corrected a typo in the assessment name after lock."
-    assert log.old_values["name"] == "Locked-Term Test"
-    assert log.new_values["name"] == "Renamed with HOD approval"
+    assert log.reason == "Corrected a typo in the assessment description after lock."
+    assert log.old_values["description"] == "Locked-Term Test"
+    assert log.new_values["description"] == "Renamed with HOD approval"
 
 
 @pytest.mark.asyncio
@@ -287,7 +288,7 @@ async def test_create_assessment_due_date_outside_term_rejected(
         "subject_id": str(subject.id),
         "assessment_type_id": str(assessment_type.id),
         "academic_term_id": str(academic_term.id),
-        "name": "Way Out Of Term",
+        "description": "Way Out Of Term",
         "max_score": "100.00",
         "due_date": "2026-01-15",  # academic_term ends 2024-12-20
     }, headers=auth)

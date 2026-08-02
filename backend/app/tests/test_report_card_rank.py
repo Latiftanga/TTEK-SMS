@@ -10,6 +10,7 @@ never do (the common case for GES Basic, no electives).
 
 Run inside Docker: docker compose exec api pytest app/tests/test_report_card_rank.py -v
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -61,14 +62,30 @@ async def _score(
     db: AsyncSession, school: School, school_class: Class, academic_term: AcademicTerm,
     at: AssessmentType, subject: Subject, student: Student, raw_score: str, entered_by_id,
 ) -> None:
-    a = Assessment(
-        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
-        assessment_type_id=at.id, academic_term_id=academic_term.id,
-        name=f"{subject.code} Test {student.admission_number}", max_score=Decimal("100.00"),
-        is_published=True,
+    # An assessment's identity is (class, subject, term, category, recorded_date)
+    # — one per class-wide test event, many Score rows under it (one per
+    # student), same as real usage. Reuse today's row for this (class,
+    # subject, term, category) instead of creating one per student, which
+    # would collide with uq_assessment_category_per_day.
+    a = await db.scalar(
+        select(Assessment).where(
+            Assessment.school_id == school.id,
+            Assessment.class_id == school_class.id,
+            Assessment.subject_id == subject.id,
+            Assessment.assessment_type_id == at.id,
+            Assessment.academic_term_id == academic_term.id,
+            Assessment.recorded_date == date.today(),
+        )
     )
-    db.add(a)
-    await db.flush()
+    if a is None:
+        a = Assessment(
+            school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+            assessment_type_id=at.id, academic_term_id=academic_term.id,
+            recorded_date=date.today(), max_score=Decimal("100.00"),
+            is_published=True,
+        )
+        db.add(a)
+        await db.flush()
     db.add(Score(
         school_id=school.id, assessment_id=a.id, student_id=student.id,
         raw_score=Decimal(raw_score), entered_by_id=entered_by_id, is_approved=True,

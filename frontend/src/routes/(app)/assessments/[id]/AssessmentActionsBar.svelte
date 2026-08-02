@@ -11,46 +11,54 @@
     confirmDelete: boolean;
     deletePending: boolean;
     onDelete: () => void;
+    // Approve/Publish are the senior sign-off step (guardian notifications,
+    // report-card visibility) — kept separate from Edit/Delete, which any
+    // subject teacher who owns this assessment already has via the parent's
+    // broader canEnterScores gate.
+    canApprovePublish: boolean;
   }
   let {
     unapprovedCount, hasScores, approvePending, onApprove,
     confirmPublish = $bindable(), publishPending, onPublish,
     onEdit,
     confirmDelete = $bindable(), deletePending, onDelete,
+    canApprovePublish,
   }: Props = $props();
 </script>
 
 <div class="flex flex-wrap items-center gap-2 sm:shrink-0">
-  <!-- Approve pending -->
-  {#if unapprovedCount > 0}
-    <button onclick={onApprove} disabled={approvePending}
-      class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--brand)] hover:text-[var(--brand)] disabled:opacity-50">
-      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      {approvePending ? 'Approving…' : `Approve ${unapprovedCount}`}
-    </button>
-  {:else if hasScores}
-    <span class="flex items-center gap-1 rounded-xl bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 dark:bg-green-950/30 dark:text-green-400">
-      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      All approved
-    </span>
-  {/if}
-
-  <!-- Publish -->
-  {#if !confirmPublish}
-    <button onclick={() => confirmPublish = true}
-      class="rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
-      style="background: var(--brand)">
-      Publish
-    </button>
-  {:else}
-    <div class="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-1.5">
-      <span class="text-xs text-[var(--fg-muted)]">SMS guardians?</span>
-      <button onclick={onPublish} disabled={publishPending}
-        class="rounded-lg bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition">
-        {publishPending ? '…' : 'Yes, publish'}
+  {#if canApprovePublish}
+    <!-- Approve pending -->
+    {#if unapprovedCount > 0}
+      <button onclick={onApprove} disabled={approvePending}
+        class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--brand)] hover:text-[var(--brand)] disabled:opacity-50">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        {approvePending ? 'Approving…' : `Approve ${unapprovedCount}`}
       </button>
-      <button onclick={() => confirmPublish = false} class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
-    </div>
+    {:else if hasScores}
+      <span class="flex items-center gap-1 rounded-xl bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 dark:bg-green-950/30 dark:text-green-400">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        All approved
+      </span>
+    {/if}
+
+    <!-- Publish -->
+    {#if !confirmPublish}
+      <button onclick={() => confirmPublish = true}
+        class="rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+        style="background: var(--brand)">
+        Publish
+      </button>
+    {:else}
+      <div class="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-1.5">
+        <span class="text-xs text-[var(--fg-muted)]">SMS guardians?</span>
+        <button onclick={onPublish} disabled={publishPending}
+          class="rounded-lg bg-green-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition">
+          {publishPending ? '…' : 'Yes, publish'}
+        </button>
+        <button onclick={() => confirmPublish = false} class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
+      </div>
+    {/if}
   {/if}
 
   <!-- Edit / Delete (secondary) -->

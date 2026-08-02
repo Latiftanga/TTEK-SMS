@@ -2,7 +2,7 @@
 Offline sync tests — outbox ingestion and conflict detection.
 Run inside Docker: docker compose exec api pytest app/tests/test_sync.py -v
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -50,7 +50,8 @@ async def assessment(
         subject_id=subject.id,
         assessment_type_id=assessment_type.id,
         academic_term_id=academic_term.id,
-        name="Sync Test",
+        description="Sync Test",
+        recorded_date=date.today(),
         max_score=Decimal("100.00"),
     )
     db_session.add(a)

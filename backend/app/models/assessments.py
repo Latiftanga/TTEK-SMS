@@ -89,7 +89,22 @@ class AssessmentType(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
 
 
 class Assessment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+    """
+    An assessment's identity is its (class, subject, term, category,
+    recorded_date) — NOT a teacher-typed name. Only one instance of a given
+    category can be recorded per class+subject per day (uq_assessment_
+    category_per_day below); description is optional supplementary detail,
+    never the identifier. recorded_date is set once at creation
+    (services/assessment.py::create_assessment, always date.today()) and is
+    never client-supplied or editable afterward.
+    """
     __tablename__ = "assessment"
+    __table_args__ = (
+        UniqueConstraint(
+            "class_id", "subject_id", "academic_term_id", "assessment_type_id", "recorded_date",
+            name="uq_assessment_category_per_day",
+        ),
+    )
 
     class_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("class.id", ondelete="CASCADE"), nullable=False, index=True
@@ -103,7 +118,8 @@ class Assessment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     academic_term_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False, index=True
     )
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    recorded_date: Mapped[date] = mapped_column(Date, nullable=False)
     max_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -170,7 +186,8 @@ class ScoreAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
 
 class AssessmentAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     """
-    Immutable log of every Assessment field edit (name/max_score/due_date),
+    Immutable log of every Assessment field edit (description/max_score/
+    due_date — recorded_date is never editable, so never logged here),
     mirroring ScoreAuditLog/BehaviourAuditLog. assessment_id is SET NULL (not
     CASCADE) on delete so the log survives the assessment it documents.
     reason is set only for locked-term overrides.

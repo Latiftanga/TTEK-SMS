@@ -2,7 +2,7 @@
 Offline sync tests — conflict resolution (CLIENT_WINS, SERVER_WINS, DISCARDED).
 Run inside Docker: docker compose exec api pytest app/tests/test_sync_resolve.py -v
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -51,7 +51,8 @@ async def assessment(
         subject_id=subject.id,
         assessment_type_id=assessment_type.id,
         academic_term_id=academic_term.id,
-        name="Resolve Test",
+        description="Resolve Test",
+        recorded_date=date.today(),
         max_score=Decimal("100.00"),
     )
     db_session.add(a)

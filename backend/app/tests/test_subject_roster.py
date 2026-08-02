@@ -10,6 +10,7 @@ Covers services/subject_roster.py and its call sites:
 
 Run inside Docker: docker compose exec api pytest app/tests/test_subject_roster.py -v
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -87,7 +88,7 @@ async def french_assessment(
     a = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=french.id,
         assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
-        name="French Mid-Term", max_score=Decimal("100.00"),
+        description="French Mid-Term", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(a)
     await db_session.flush()
@@ -106,7 +107,7 @@ async def test_create_assessment_rejects_subject_not_on_class(
         "subject_id": str(orphan.id),
         "assessment_type_id": str(assessment_type.id),
         "academic_term_id": str(academic_term.id),
-        "name": "Should Not Exist",
+        "description": "Should Not Exist",
         "max_score": "100.00",
     }, headers=auth)
     assert resp.status_code == 422

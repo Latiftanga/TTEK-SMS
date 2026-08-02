@@ -35,11 +35,21 @@ export interface Assessment {
   subject_id: string;
   assessment_type_id: string;
   academic_term_id: string;
-  name: string;
+  description: string | null;
+  recorded_date: string;
   max_score: number;
   due_date: string | null;
   is_published: boolean;
 }
+
+// An assessment's identity is its category (AssessmentType) + the date it
+// was recorded, not a teacher-typed name — mirrors the en-GH date format
+// already used in dashboard/TeacherView.svelte.
+export const formatAssessmentDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString('en-GH', { day: 'numeric', month: 'short' });
+
+export const assessmentLabel = (a: Assessment, categoryName: string): string =>
+  `${categoryName} — ${formatAssessmentDate(a.recorded_date)}`;
 
 export interface Score {
   id: string;
@@ -114,12 +124,12 @@ export const getAssessment = (id: string): Promise<Assessment> =>
 
 export const createAssessment = (data: {
   class_id: string; subject_id: string; assessment_type_id: string;
-  academic_term_id: string; name: string; max_score: number; due_date?: string;
+  academic_term_id: string; description?: string; max_score: number; due_date?: string;
 }): Promise<Assessment> =>
   api.post('/assessments', data).then(r => r.data);
 
 export const updateAssessment = (id: string, data: {
-  name?: string; max_score?: number; due_date?: string | null;
+  description?: string; max_score?: number; due_date?: string | null;
 }, overrideReason?: string): Promise<Assessment> =>
   api.patch(`/assessments/${id}`, { ...data, override_reason: overrideReason }).then(r => r.data);
 

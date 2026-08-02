@@ -100,7 +100,7 @@ async def _unapproved_score(
     assessment = Assessment(
         school_id=school.id, class_id=cls.id, subject_id=subj.id,
         assessment_type_id=atype.id, academic_term_id=term.id,
-        name=f"Assessment {suffix}", max_score=Decimal("100.00"),
+        description=f"Assessment {suffix}", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(assessment)
     await db_session.flush()

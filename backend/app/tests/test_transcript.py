@@ -104,7 +104,8 @@ async def _add_score(
     a = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
-        name=f"Test {academic_term.id}", max_score=Decimal("100.00"), is_published=is_published,
+        description=f"Test {academic_term.id}", recorded_date=date.today(),
+        max_score=Decimal("100.00"), is_published=is_published,
     )
     db_session.add(a)
     await db_session.flush()

@@ -2,6 +2,7 @@
 Assessments integration tests — grading scales, types, assessments, scores.
 Run inside Docker: docker compose exec api pytest app/tests/test_assessments.py -v
 """
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -191,7 +192,8 @@ async def assessment(
         subject_id=subject.id,
         assessment_type_id=assessment_type.id,
         academic_term_id=academic_term.id,
-        name="Mid-Term Test",
+        description="Mid-Term Test",
+        recorded_date=date.today(),
         max_score=Decimal("100.00"),
     )
     db_session.add(a)
@@ -209,28 +211,29 @@ async def test_create_assessment(
         "subject_id": str(subject.id),
         "assessment_type_id": str(assessment_type.id),
         "academic_term_id": str(academic_term.id),
-        "name": "Term 1 Test",
+        "description": "Term 1 Test",
         "max_score": "100.00",
     }, headers=auth)
     assert resp.status_code == 201
-    assert resp.json()["name"] == "Term 1 Test"
+    assert resp.json()["description"] == "Term 1 Test"
+    assert resp.json()["recorded_date"] == date.today().isoformat()
     assert resp.json()["is_published"] is False
 
 
 @pytest.mark.asyncio
-async def test_duplicate_assessment_name_rejected(
+async def test_duplicate_category_same_day_rejected(
     client: AsyncClient, auth: dict,
     school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
 ):
-    """Same class + subject + term + name must not silently create a second
-    assessment — reported live: creating two 'Assignment 1' for the same
-    subject was accepted with no warning."""
+    """Same class + subject + term + category + recorded_date (always today
+    at creation) must not silently create a second assessment — an
+    assessment's identity is the category and the day it was recorded, not a
+    teacher-typed name."""
     payload = {
         "class_id": str(school_class.id),
         "subject_id": str(subject.id),
         "assessment_type_id": str(assessment_type.id),
         "academic_term_id": str(academic_term.id),
-        "name": "Assignment 1",
         "max_score": "20.00",
     }
     first = await client.post("/assessments", json=payload, headers=auth)
@@ -238,7 +241,37 @@ async def test_duplicate_assessment_name_rejected(
 
     second = await client.post("/assessments", json=payload, headers=auth)
     assert second.status_code == 409
-    assert "already exists" in second.json()["detail"]
+    assert "already been recorded today" in second.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_same_category_different_day_allowed(
+    db_session: AsyncSession, client: AsyncClient, auth: dict,
+    school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
+):
+    """The UNIQUE constraint is scoped to (class, subject, term, category,
+    recorded_date) — a second instance of the same category on a different
+    day is a legitimate, distinct assessment, not a conflict."""
+    yesterday = Assessment(
+        school_id=school_class.school_id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        assessment_type_id=assessment_type.id,
+        academic_term_id=academic_term.id,
+        recorded_date=date.today() - timedelta(days=1),
+        max_score=Decimal("20.00"),
+    )
+    db_session.add(yesterday)
+    await db_session.flush()
+
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": "20.00",
+    }, headers=auth)
+    assert resp.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -355,7 +388,8 @@ async def quiz_assessment(
         subject_id=subject.id,
         assessment_type_id=assessment_type.id,
         academic_term_id=academic_term.id,
-        name="20-Mark Quiz",
+        description="20-Mark Quiz",
+        recorded_date=date.today(),
         max_score=Decimal("20.00"),
     )
     db_session.add(a)

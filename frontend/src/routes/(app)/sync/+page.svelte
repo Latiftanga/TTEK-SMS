@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listConflicts, resolveConflict, type SyncConflict, type ConflictResolution, type ScoreData } from '$lib/api/sync';
-  import { getAssessment } from '$lib/api/assessments';
+  import { getAssessment, listAssessmentTypes, assessmentLabel, type Assessment } from '$lib/api/assessments';
   import { getStudent } from '$lib/api/students';
   import { getPendingItems, type OutboxItem } from '$lib/offline/outbox';
   import { drainOutbox, refreshOutboxCount } from '$lib/offline/sync';
@@ -55,11 +55,14 @@
   });
 
   type EnrichedConflict = SyncConflict & {
-    assessment: { id: string; name: string; max_score: number } | null;
+    assessment: Assessment | null;
     student: { id: string; display_name: string; admission_number: string } | null;
   };
 
   const conflicts = $derived(($conflictsQ.data ?? []) as EnrichedConflict[]);
+
+  const typesQ = createQuery({ queryKey: ['assessment-types'], queryFn: listAssessmentTypes, staleTime: 5 * 60_000 });
+  const typeName = (id: string) => ($typesQ.data ?? []).find(t => t.id === id)?.name ?? '—';
 
   let resolving   = $state<Record<string, ConflictResolution | null>>({});
   let mergeInputs = $state<Record<string, string>>({});
@@ -185,7 +188,7 @@
               <span class="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-800 dark:bg-amber-800/40 dark:text-amber-300">
                 Score conflict
               </span>
-              <p class="mt-1.5 font-semibold text-[var(--fg)]">{c.assessment?.name ?? 'Assessment'}</p>
+              <p class="mt-1.5 font-semibold text-[var(--fg)]">{c.assessment ? assessmentLabel(c.assessment, typeName(c.assessment.assessment_type_id)) : 'Assessment'}</p>
               <p class="text-sm text-[var(--fg-muted)]">
                 {c.student?.display_name ?? 'Student'}
                 {#if c.student?.admission_number}

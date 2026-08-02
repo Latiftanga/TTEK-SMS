@@ -2,6 +2,7 @@
 Parent/student portal integration tests.
 Run inside Docker: docker compose exec api pytest app/tests/test_portal.py -v
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -87,7 +88,8 @@ async def _publish_assessment(
         school_id=school.id, class_id=school_class.id,
         subject_id=subject.id, assessment_type_id=at.id,
         academic_term_id=academic_term.id,
-        name="End of Term Exam", max_score=Decimal("100.00"), is_published=True,
+        description="End of Term Exam", recorded_date=date.today(),
+        max_score=Decimal("100.00"), is_published=True,
     ))
     await db.flush()
 

@@ -14,6 +14,7 @@ Two gaps found during a design-pattern comparison review, both fixed here:
 
 Run inside Docker: docker compose exec api pytest app/tests/test_subject_registration_audit.py -v
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -164,7 +165,7 @@ async def test_roster_reports_has_scores_for_a_student_with_a_score(
     assessment = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=atype.id, academic_term_id=academic_term.id,
-        name="Audit Test Assessment", max_score=Decimal("100.00"),
+        description="Audit Test Assessment", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(assessment)
     await db_session.flush()
@@ -200,7 +201,7 @@ async def test_unregistering_scored_student_does_not_delete_the_score(
     assessment = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=atype.id, academic_term_id=academic_term.id,
-        name="Audit Test Assessment 2", max_score=Decimal("100.00"),
+        description="Audit Test Assessment 2", recorded_date=date.today(), max_score=Decimal("100.00"),
     )
     db_session.add(assessment)
     await db_session.flush()

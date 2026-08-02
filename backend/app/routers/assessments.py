@@ -2,9 +2,13 @@
 Assessments router — grading scales, assessment types, assessments, scores.
 
 Permission map:
-  assessments.approve_scores → grading scale management, assessment type CRUD,
-                               assessment create/publish, score approval
-  assessments.enter_scores   → submit scores for an assessment
+  assessments.approve_scores → grading scale management, assessment type
+                               (category) CRUD, assessment publish, score
+                               approval — the administrator's/senior staff's
+                               job, never the class-level detail.
+  assessments.enter_scores   → assessment create/update/delete (scoped to the
+                               caller's own SubjectTeacher class+subject) and
+                               submit scores — the subject teacher's own job.
   assessments.view           → read-only access to everything
 """
 from __future__ import annotations
@@ -144,11 +148,15 @@ async def update_assessment_type(
 @router.post("", response_model=AssessmentRead, status_code=201)
 async def create_assessment(
     req: AssessmentCreate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
+    ids=Depends(require_permission("assessments", "enter_scores")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await assess_svc.create_assessment(req, school_id, db)
+    """Creating an assessment is the subject teacher's own job — scoped to
+    their SubjectTeacher assignment(s) (services/assessment.py), not gated
+    on assessments.approve_scores. Admins only manage assessment *types*
+    (categories) and grading scales, see the endpoints above."""
+    user_id, school_id = ids
+    return await assess_svc.create_assessment(req, school_id, user_id, db)
 
 
 @router.get("", response_model=list[AssessmentRead])
@@ -207,7 +215,7 @@ async def get_assessment_roster(
 async def update_assessment(
     assessment_id: uuid.UUID,
     req: AssessmentUpdate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
+    ids=Depends(require_permission("assessments", "enter_scores")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -217,11 +225,11 @@ async def update_assessment(
 @router.delete("/{assessment_id}", status_code=204)
 async def delete_assessment(
     assessment_id: uuid.UUID,
-    ids=Depends(require_permission("assessments", "approve_scores")),
+    ids=Depends(require_permission("assessments", "enter_scores")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    await assess_svc.delete_assessment(assessment_id, school_id, db)
+    user_id, school_id = ids
+    await assess_svc.delete_assessment(assessment_id, school_id, user_id, db)
 
 
 @router.post("/{assessment_id}/publish", response_model=AssessmentRead)

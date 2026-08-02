@@ -7,7 +7,7 @@
   import {
     getAssessment, getAssessmentRoster, listScores, submitScores, approveScores,
     publishAssessment, updateAssessment, deleteAssessment,
-    listAssessmentTypes, type Score,
+    listAssessmentTypes, assessmentLabel, type Score,
   } from '$lib/api/assessments';
   import { listSubjects, listAllTerms } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
@@ -30,6 +30,21 @@
   const subjectsQ   = createQuery({ queryKey: ['subjects'],         queryFn: listSubjects,          staleTime: 5 * 60_000 });
   const typesQ      = createQuery({ queryKey: ['assessment-types'], queryFn: listAssessmentTypes,   staleTime: 5 * 60_000 });
   const termsQ      = createQuery({ queryKey: ['all-terms'],        queryFn: listAllTerms,          staleTime: 60_000 });
+
+  // Reconstructs the exact filtered list view this assessment belongs to
+  // (class/subject/category/term), not just a bare "/assessments" — so
+  // "back" works the same whether the teacher arrived from that filtered
+  // list, a deep link, or anywhere else. Falls back to the bare list while
+  // the assessment is still loading.
+  const backHref = $derived.by(() => {
+    const a = $assessmentQ.data;
+    if (!a) return '/assessments';
+    const params = new URLSearchParams({
+      class: a.class_id, subject: a.subject_id,
+      category: a.assessment_type_id, term: a.academic_term_id,
+    });
+    return `/assessments?${params}`;
+  });
 
   const termLocked = $derived(
     ($termsQ.data ?? []).find(t => t.id === $assessmentQ.data?.academic_term_id)?.results_locked ?? false
@@ -153,11 +168,11 @@
 
   // ── Edit ──────────────────────────────────────────────────────────────────────
   let editing  = $state(false);
-  let editForm = $state({ name: '', maxScore: '', dueDate: '' });
+  let editForm = $state({ description: '', maxScore: '', dueDate: '' });
   let editErr  = $state('');
   function startEdit() {
     const a = $assessmentQ.data!;
-    editForm = { name: a.name, maxScore: String(a.max_score), dueDate: a.due_date ?? '' };
+    editForm = { description: a.description ?? '', maxScore: String(a.max_score), dueDate: a.due_date ?? '' };
     editErr = ''; editing = true;
     // AssessmentActionsBar unmounts while editing — clear any armed confirm
     // prompt so it doesn't silently reappear when editing is cancelled.
@@ -165,7 +180,7 @@
   }
   const editMut = createMutation({
     mutationFn: (overrideReason: string | undefined) => updateAssessment(assessmentId, {
-      name: editForm.name.trim() || undefined,
+      description: editForm.description.trim() || undefined,
       max_score: parseFloat(editForm.maxScore) || undefined,
       due_date: editForm.dueDate || null,
     }, overrideReason),
@@ -187,7 +202,7 @@
     mutationFn: () => deleteAssessment(assessmentId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assessments'] });
-      goto('/assessments'); toast.success('Assessment deleted.');
+      goto(backHref); toast.success('Assessment deleted.');
     },
     onError: (e: unknown) => {
       confirmDelete = false;
@@ -199,10 +214,13 @@
     },
   });
 
-  $effect(() => setPageTitle($assessmentQ.data?.name ?? 'Assessment'));
+  $effect(() => {
+    const a = $assessmentQ.data;
+    setPageTitle(a ? assessmentLabel(a, typeName(a.assessment_type_id)) : 'Assessment');
+  });
 </script>
 
-<button onclick={() => goto('/assessments')}
+<button onclick={() => goto(backHref)}
   class="mb-3 flex items-center gap-1 text-xs text-[var(--fg-muted)] transition hover:text-[var(--fg)]">
   <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
@@ -221,9 +239,9 @@
       <!-- Edit form -->
       <div class="space-y-3">
         <div class="grid gap-3 sm:grid-cols-3">
-          <div class="sm:col-span-1"><label class="lx">Name</label><input bind:value={editForm.name} class="inp mt-1" /></div>
+          <div class="sm:col-span-1"><label class="lx">Description</label><input bind:value={editForm.description} class="inp mt-1" /></div>
           <div><label class="lx">Max score</label><input type="number" min="1" step="0.5" bind:value={editForm.maxScore} class="inp mt-1" /></div>
-          <div><label class="lx">Due date</label><input type="date" bind:value={editForm.dueDate} class="inp mt-1" /></div>
+          <div><label class="lx">Date given to students</label><input type="date" bind:value={editForm.dueDate} class="inp mt-1" /></div>
         </div>
         {#if editErr}<p class="text-xs text-red-500">{editErr}</p>{/if}
         <div class="flex gap-2">
@@ -244,7 +262,7 @@
         <!-- Info -->
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
-            <h1 class="text-lg font-bold text-[var(--fg)]">{a.name}</h1>
+            <h1 class="text-lg font-bold text-[var(--fg)]">{assessmentLabel(a, typeName(a.assessment_type_id))}</h1>
             {#if a.is_published}
               <span class="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-950/30 dark:text-green-400">Published</span>
             {:else}
@@ -257,13 +275,18 @@
             {/if}
           </div>
           <p class="mt-1 text-sm text-[var(--fg-muted)]">
-            {subjectName(a.subject_id)} · {typeName(a.assessment_type_id)} · Max {a.max_score}
-            {#if a.due_date}<span class="text-[var(--fg-subtle)]"> · Due {a.due_date}</span>{/if}
+            {subjectName(a.subject_id)} · Max {a.max_score}
+            {#if a.due_date}<span class="text-[var(--fg-subtle)]"> · Given {a.due_date}</span>{/if}
+            {#if a.description}<span class="text-[var(--fg-subtle)]"> · {a.description}</span>{/if}
           </p>
         </div>
 
-        <!-- Actions (manager only, unpublished only) -->
-        {#if !a.is_published && canManage}
+        <!-- Actions (unpublished only). Edit/Delete are the owning subject
+             teacher's own job (get_assessment is already scope-checked
+             server-side, so canEnterScores here is safe — a 'teacher' role
+             only ever sees data for a class+subject they teach). Approve/
+             Publish stay canManage-only inside the bar. -->
+        {#if !a.is_published && canEnterScores}
           <AssessmentActionsBar
             {unapprovedCount}
             hasScores={($scoresQ.data ?? []).length > 0}
@@ -276,6 +299,7 @@
             bind:confirmDelete
             deletePending={$deleteMut.isPending}
             onDelete={() => $deleteMut.mutate()}
+            canApprovePublish={canManage}
           />
         {/if}
       </div>
