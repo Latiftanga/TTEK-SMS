@@ -4,16 +4,22 @@ students.py. See students.py's module docstring for the full file split.
 
 ACCESS CONTROL
 --------------
-POST /students/class-assignments                  students.edit
-POST /students/class-assignments/bulk              students.edit
-POST /students/bulk-term-enrollments                students.edit
-POST /students/term-enrollments                     students.edit
-POST /students/term-enrollments/{id}/subjects        students.edit (+ assessments.approve_scores to override a locked term)
-GET  /students/term-enrollments/{id}/subjects        students.view
-DELETE /students/term-enrollments/{id}/subjects/{id} students.edit (+ assessments.approve_scores to override a locked term)
-POST /students/classes/{id}/subjects/bulk-register-core students.edit (+ assessments.approve_scores to override a locked term)
-GET  /students/classes/{id}/subjects/{id}/roster     students.view
-POST /students/classes/{id}/subjects/{id}/roster     students.edit (+ assessments.approve_scores to override a locked term)
+Class-assignment and term-enrollment creation are Category A (pastoral,
+class-teacher-scoped); subject registration and per-subject roster
+read/write are Category B (class-teacher OR the specific subject's
+teacher) — both enforced inside the service layer via
+core/student_scope.py, on top of the flat permission below.
+
+POST /students/class-assignments                  students.edit (scoped)
+POST /students/class-assignments/bulk              students.edit (scoped)
+POST /students/bulk-term-enrollments                students.edit (scoped)
+POST /students/term-enrollments                     students.edit (scoped)
+POST /students/term-enrollments/{id}/subjects        students.edit (scoped) (+ assessments.approve_scores to override a locked term)
+GET  /students/term-enrollments/{id}/subjects        students.view (scoped)
+DELETE /students/term-enrollments/{id}/subjects/{id} students.edit (scoped) (+ assessments.approve_scores to override a locked term)
+POST /students/classes/{id}/subjects/bulk-register-core students.edit (scoped, class-teacher only) (+ assessments.approve_scores to override a locked term)
+GET  /students/classes/{id}/subjects/{id}/roster     students.view (scoped)
+POST /students/classes/{id}/subjects/{id}/roster     students.edit (scoped) (+ assessments.approve_scores to override a locked term)
 GET  /students/transfers/pending                    students.delete
 PATCH /students/transfers/{id}/review                students.delete
 """
@@ -106,8 +112,8 @@ async def list_subjects(
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await subject_reg_svc.list_subject_registrations(te_id, school_id, db)
+    user_id, school_id = ids
+    return await subject_reg_svc.list_subject_registrations(te_id, school_id, user_id, db)
 
 
 @router.delete("/term-enrollments/{te_id}/subjects/{reg_id}", status_code=204)
@@ -141,8 +147,10 @@ async def get_subject_roster(
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await class_subject_reg_svc.get_subject_roster(class_id, subject_id, academic_term_id, school_id, db)
+    user_id, school_id = ids
+    return await class_subject_reg_svc.get_subject_roster(
+        class_id, subject_id, academic_term_id, school_id, user_id, db,
+    )
 
 
 @router.post("/classes/{class_id}/subjects/{subject_id}/roster", response_model=SetSubjectRosterResult)

@@ -40,6 +40,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
+from app.core.student_scope import resolve_class_teacher_scope, resolve_subject_teacher_scope
 from app.models.academic import AcademicTerm, Subject
 from app.models.students import (
     StudentClassAssignment,
@@ -49,6 +50,26 @@ from app.models.students import (
 )
 from app.schemas.students import SubjectRegistrationItem, SubjectRegistrationRead
 from app.services.subject_roster import class_subject_exists
+
+
+async def _assert_can_register(
+    class_id: uuid.UUID,
+    subject_ids: list[uuid.UUID],
+    academic_year_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Subject registration is Category B — a class teacher may manage the
+    whole class's registrations, or a subject teacher may manage just their
+    own (class, subject) pair. See core/student_scope.py."""
+    class_scope = await resolve_class_teacher_scope(user_id, academic_year_id, db)
+    if class_scope is None or class_id in class_scope:
+        return
+    subject_scope = await resolve_subject_teacher_scope(user_id, academic_year_id, db)
+    if subject_scope is not None and any(
+        (class_id, sid) not in subject_scope for sid in subject_ids
+    ):
+        raise HTTPException(status_code=404, detail="Term enrollment not found.")
 
 
 async def register_subjects(
@@ -83,6 +104,9 @@ async def register_subjects(
             status_code=422,
             detail="Student has no class assignment for this academic year — cannot register subjects.",
         )
+    await _assert_can_register(
+        sca.class_id, [item.subject_id for item in items], term.academic_year_id, user_id, db,
+    )
     resolved_reason = await check_term_lock_override(term.id, override_reason, user_id, db)
     for item in items:
         if not await class_subject_exists(sca.class_id, item.subject_id, school_id, db):
@@ -125,8 +149,19 @@ async def register_subjects(
 async def list_subject_registrations(
     te_id: uuid.UUID,
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[SubjectRegistrationRead]:
+    from app.core.student_scope import assert_can_view_student
+
+    te = await db.scalar(
+        select(TermEnrollment).where(
+            TermEnrollment.id == te_id, TermEnrollment.school_id == school_id,
+        )
+    )
+    if te:
+        await assert_can_view_student(user_id, te.student_id, school_id, db)
+
     rows = await db.scalars(
         select(SubjectRegistration).where(
             SubjectRegistration.term_enrollment_id == te_id,
@@ -156,6 +191,22 @@ async def delete_subject_registration(
     te = await db.get(TermEnrollment, te_id)
     resolved_reason = None
     if te:
+        term = await db.get(AcademicTerm, te.academic_term_id)
+        sca = await db.scalar(
+            select(StudentClassAssignment).where(
+                StudentClassAssignment.student_id == te.student_id,
+                StudentClassAssignment.academic_year_id == term.academic_year_id,
+                StudentClassAssignment.school_id == school_id,
+                StudentClassAssignment.is_active.is_(True),
+            )
+        ) if term else None
+        if sca:
+            await _assert_can_register(sca.class_id, [reg.subject_id], term.academic_year_id, user_id, db)
+        else:
+            # No active class assignment — a scoped caller has nothing to
+            # match against, so deny rather than silently fall through.
+            if await resolve_class_teacher_scope(user_id, term.academic_year_id, db) is not None:
+                raise HTTPException(status_code=404, detail="Subject registration not found.")
         resolved_reason = await check_term_lock_override(te.academic_term_id, override_reason, user_id, db)
     db.add(SubjectRegistrationAuditLog(
         school_id=school_id, registration_id=reg.id, term_enrollment_id=te_id,

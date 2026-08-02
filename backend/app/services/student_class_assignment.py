@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.student_scope import resolve_class_teacher_scope
 from app.models.academic import AcademicYear, Class, SHSProgramme
 from app.models.students import Student, StudentClassAssignment
 from app.schemas.students import (
@@ -63,6 +64,11 @@ async def create_class_assignment(
     year = await db.get(AcademicYear, req.academic_year_id)
     if not year or year.school_id != school_id:
         raise HTTPException(status_code=404, detail="Academic year not found.")
+
+    # Pastoral, class-teacher-scoped — see core/student_scope.py.
+    scope = await resolve_class_teacher_scope(user_id, req.academic_year_id, db)
+    if scope is not None and req.class_id not in scope:
+        raise HTTPException(status_code=404, detail="Class not found.")
 
     sca = StudentClassAssignment(
         school_id=school_id,

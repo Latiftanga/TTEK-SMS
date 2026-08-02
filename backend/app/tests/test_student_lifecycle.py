@@ -9,11 +9,39 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import hash_password
 from app.models.academic import AcademicTerm, AcademicYear, Class
-from app.models.auth import User
+from app.models.auth import LoginType, StaffPosition, User
 from app.models.fees import StudentFeeRecord
 from app.models.school import School
 from app.models.students import Student
+
+
+async def _login_as_position(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
+) -> dict:
+    """Create a staff member holding `position_code` and return their bearer
+    auth headers — mirrors test_students.py's helper of the same name."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post("/staff", json={
+        "staff_number": f"TST-{position_code}", "first_name": "Test", "last_name": position_code.title(),
+    }, headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
+
+    email = f"{position_code.lower()}@presec-test.edu.gh"
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
 async def _create_student(client, auth, num="ADM001"):
@@ -53,6 +81,30 @@ async def next_class(db_session: AsyncSession, school: School) -> Class:
 
 
 # ── Promotion / repetition / demotion ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_bulk_promote_requires_students_delete(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, next_class: Class, next_year: AcademicYear,
+    redis_permissions: None,
+):
+    """Year-end actions are admin-only even for the student's own class
+    teacher — matches nav.ts's existing admin-only gating of the bulk
+    /admin/academic/promote page."""
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_year)
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    payload = {
+        "academic_year_id": str(next_year.id),
+        "records": [{"student_id": sid, "graduation_type": "PROMOTED", "class_id": str(next_class.id)}],
+    }
+    resp = await client.post("/students/promotions/bulk", json=payload, headers=teacher_auth)
+    assert resp.status_code == 403
+
+    resp = await client.post("/students/promotions/bulk", json=payload, headers=auth)
+    assert resp.status_code == 201
+
 
 @pytest.mark.asyncio
 async def test_bulk_promote_creates_record_and_assignment(

@@ -130,7 +130,7 @@
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <p class="text-sm font-semibold text-[var(--fg)]">Profile</p>
-    {#if !editing}
+    {#if !editing && student.can_edit}
       <button onclick={startEdit}
         class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

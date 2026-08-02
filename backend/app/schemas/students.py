@@ -143,6 +143,14 @@ class StudentDetail(StudentSummary):
     has_portal_access: bool = False
     medical_record: MedicalRecordRead | None = None
     guardians: list[StudentGuardianRead] = []
+    # Whether the caller can perform pastoral writes (profile/guardians/medical/
+    # photo/enrollment) vs admin-tier actions (portal access, deactivate,
+    # promotion) on THIS student specifically — see core/student_scope.py.
+    # Only get_student() computes real values from the caller's identity; every
+    # other StudentDetail response (a mutation that just succeeded) defaults
+    # both to True.
+    can_edit: bool = True
+    can_manage: bool = True
 
 
 class PortalAccessResult(BaseModel):

@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
-from app.core.permissions import resolve_permissions
+from app.core.student_scope import resolve_student_view_scope
 from app.schemas.documents import ImportBatchResult
 from app.schemas.students import StudentCreate, StudentDetail, StudentSummary
 from app.services import student as svc
@@ -69,39 +69,26 @@ async def list_students(
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.auth import User
     user_id, school_id = ids
 
     # Staff whose only relevant permission is students.view (e.g. a subject teacher)
     # or students.edit (a class teacher editing their own students' records) see
-    # only their own students — resolved below via ClassTeacher/SubjectTeacher/
-    # HouseMaster assignment (services/student_list.py). Staff with a genuinely
-    # broader administrative permission — one that requires the full roster to do
-    # their job (fee collection, housing assignment, score approval) — are NOT
-    # scoped, since they legitimately need to find students outside their own
-    # classes (e.g. a Bursar recording a payment, a Housemaster assigning a new
-    # student to their house, an Exam Officer approving another teacher's scores).
-    # students.edit is deliberately NOT in this list: a class teacher holds it to
-    # edit their own students, not to browse the whole school (previously included
-    # here, which silently defeated the scoping below for every class teacher).
-    staff_member_id = None
-    user = await db.get(User, user_id)
-    if user and not user.is_superadmin and user.staff_member_id:
-        perms = await resolve_permissions(user.staff_member_id, db)
-        broad_access_perms = (
-            "fees.collect", "fees.manage",
-            "housing.assign", "housing.manage",
-            "assessments.approve_scores",
-        )
-        if not any(perms.get(p, False) for p in broad_access_perms):
-            staff_member_id = user.staff_member_id
+    # only their own students — resolved via ClassTeacher/SubjectTeacher/HouseMaster
+    # assignment (core/student_scope.py::resolve_student_view_scope). Staff with a
+    # genuinely broader administrative permission — one that requires the full
+    # roster to do their job (fee collection, housing assignment, score approval,
+    # or students.delete) — are NOT scoped, since they legitimately need to find
+    # students outside their own classes (e.g. a Bursar recording a payment, a
+    # Housemaster assigning a new student to their house, an Exam Officer approving
+    # another teacher's scores).
+    scope = await resolve_student_view_scope(user_id, school_id, db)
 
     items, total = await list_svc.list_students(
         school_id, db,
         active_only=active_only, skip=skip, limit=limit,
         search=search, class_id=class_id, term_id=term_id,
         gender=gender, level=level, year_group=year_group,
-        staff_member_id=staff_member_id, graduated=graduated,
+        scope=scope, graduated=graduated,
         sort_by=sort_by, sort_dir=sort_dir,
     )
     response.headers["X-Total-Count"] = str(total)

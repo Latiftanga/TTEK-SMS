@@ -342,6 +342,19 @@ async def test_bulk_register_reason_alone_insufficient_without_permission(
     await db_session.flush()
 
     teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    # Give the teacher an actual ClassTeacher assignment on this class, so the
+    # request clears core/student_scope.py's Category A scoping check and this
+    # test can isolate the term-lock-permission behaviour it's actually about.
+    from app.models.academic import ClassTeacher
+    teacher_user = await db_session.scalar(
+        select(User).where(User.email == "class_teacher@presec-test.edu.gh")
+    )
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=teacher_user.staff_member_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
     resp = await client.post(
         f"/students/classes/{school_class.id}/subjects/bulk-register-core",
         json={

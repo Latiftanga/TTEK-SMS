@@ -5,9 +5,14 @@ docstring for the full file split.
 
 ACCESS CONTROL
 --------------
-GET  /students/graduation          students.edit
-POST /students/graduation/bulk     students.edit
-POST /students/promotions/bulk     students.edit
+Admin-tier only (Category D, core/student_scope.py) — irreversible,
+school-wide structural actions, not a class teacher's own-class job, even
+for their own homeroom. Matches nav.ts's existing admin-only gating of the
+bulk /admin/academic/promote and /graduation pages.
+
+GET  /students/graduation          students.delete
+POST /students/graduation/bulk     students.delete
+POST /students/promotions/bulk     students.delete
 """
 from __future__ import annotations
 import uuid
@@ -31,7 +36,7 @@ router = APIRouter(prefix="/students", tags=["students"])
 async def list_graduation_records(
     academic_year_id: uuid.UUID | None = Query(None),
     student_id: uuid.UUID | None = Query(None),
-    ids=Depends(require_permission("students", "edit")),
+    ids=Depends(require_permission("students", "delete")),
     db: AsyncSession = Depends(get_db),
 ):
     """List graduation records, optionally filtered by academic year and/or student."""
@@ -44,7 +49,7 @@ async def list_graduation_records(
 @router.post("/graduation/bulk", response_model=BulkGraduateResult, status_code=201)
 async def bulk_graduate(
     req: BulkGraduateRequest,
-    ids=Depends(require_permission("students", "edit")),
+    ids=Depends(require_permission("students", "delete")),
     db: AsyncSession = Depends(get_db),
 ):
     """Process year-end exit outcomes (graduated/withdrawn/transferred) for a batch of students."""
@@ -55,7 +60,7 @@ async def bulk_graduate(
 @router.post("/promotions/bulk", response_model=BulkPromoteResult, status_code=201)
 async def bulk_promote(
     req: BulkPromoteRequest,
-    ids=Depends(require_permission("students", "edit")),
+    ids=Depends(require_permission("students", "delete")),
     db: AsyncSession = Depends(get_db),
 ):
     """Process year-end progression outcomes (promoted/repeated/demoted) for a batch of students."""

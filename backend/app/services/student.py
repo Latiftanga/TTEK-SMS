@@ -93,7 +93,13 @@ def _to_detail(
     s: Student,
     has_portal_access: bool = False,
     guardian_portal_ids: set[uuid.UUID] | None = None,
+    can_edit: bool = True,
+    can_manage: bool = True,
 ) -> StudentDetail:
+    """can_edit/can_manage default to True — a caller reaching this via a
+    mutation endpoint already proved they could act on this student, so
+    there's nothing to recompute. get_student() is the one call site that
+    passes real values, resolved from the caller's identity."""
     guardian_portal_ids = guardian_portal_ids or set()
     return StudentDetail(
         **_to_summary(s).model_dump(),
@@ -113,6 +119,8 @@ def _to_detail(
             _to_guardian_read(sg, has_portal_access=sg.guardian_id in guardian_portal_ids)
             for sg in s.guardians
         ],
+        can_edit=can_edit,
+        can_manage=can_manage,
     )
 
 
@@ -211,8 +219,14 @@ async def create_student(
 async def get_student(
     student_id: uuid.UUID,
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
 ) -> StudentDetail:
+    from app.core.permissions import user_has_permission
+    from app.core.student_scope import assert_can_view_student, can_write_student
+
+    await assert_can_view_student(user_id, student_id, school_id, db)
+
     student = await db.scalar(
         select(Student)
         .where(Student.id == student_id, Student.school_id == school_id)
@@ -227,7 +241,12 @@ async def get_student(
     guardian_portal_ids = await _guardian_portal_access_ids(
         [sg.guardian_id for sg in student.guardians], db
     )
-    return _to_detail(student, has_portal_access=portal, guardian_portal_ids=guardian_portal_ids)
+    can_edit = await can_write_student(user_id, student_id, db)
+    can_manage = await user_has_permission(user_id, "students", "delete", db)
+    return _to_detail(
+        student, has_portal_access=portal, guardian_portal_ids=guardian_portal_ids,
+        can_edit=can_edit, can_manage=can_manage,
+    )
 
 
 async def update_student(

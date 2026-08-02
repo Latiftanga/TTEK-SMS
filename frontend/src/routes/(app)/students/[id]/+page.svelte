@@ -103,7 +103,7 @@
   <div class="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="flex items-center gap-4">
-        <PhotoAvatar studentId={studentId} firstName={s.first_name} lastName={s.last_name} photoUrl={s.photo_url} />
+        <PhotoAvatar studentId={studentId} firstName={s.first_name} lastName={s.last_name} photoUrl={s.photo_url} canEdit={s.can_edit} />
         <div>
           <h1 class="text-xl font-bold text-[var(--fg)]">{s.display_name}</h1>
           <p class="mt-0.5 font-mono text-sm text-[var(--fg-muted)]">{s.admission_number}</p>
@@ -128,43 +128,45 @@
           class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
           {downloadingTranscript ? 'Generating…' : 'Download transcript'}
         </button>
-        {#if s.is_active}
-          {#if confirmDeactivate}
-            <span class="text-xs text-[var(--fg-muted)]">Deactivate this student?</span>
+        {#if s.can_manage}
+          {#if s.is_active}
+            {#if confirmDeactivate}
+              <span class="text-xs text-[var(--fg-muted)]">Deactivate this student?</span>
+              <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+                class="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-600/20 transition hover:bg-red-100 disabled:opacity-50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50">
+                {$toggleMut.isPending ? 'Deactivating…' : 'Yes, deactivate'}
+              </button>
+              <button onclick={() => confirmDeactivate = false}
+                class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
+                Cancel
+              </button>
+            {:else}
+              <button onclick={() => confirmDeactivate = true}
+                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+                Deactivate
+              </button>
+            {/if}
+          {:else if hasApprovedTransfer && confirmReactivate}
+            <span class="text-xs text-amber-600 dark:text-amber-400">This student has an approved transfer on record — reactivating won't undo it. Continue?</span>
             <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-              class="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-600/20 transition hover:bg-red-100 disabled:opacity-50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50">
-              {$toggleMut.isPending ? 'Deactivating…' : 'Yes, deactivate'}
+              class="rounded-xl bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 transition hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
+              {$toggleMut.isPending ? '…' : 'Yes, reactivate'}
             </button>
-            <button onclick={() => confirmDeactivate = false}
+            <button onclick={() => confirmReactivate = false}
               class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
               Cancel
             </button>
-          {:else}
-            <button onclick={() => confirmDeactivate = true}
+          {:else if hasApprovedTransfer}
+            <button onclick={() => confirmReactivate = true}
               class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-              Deactivate
+              Reactivate
+            </button>
+          {:else}
+            <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+              class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+              {$toggleMut.isPending ? '…' : 'Reactivate'}
             </button>
           {/if}
-        {:else if hasApprovedTransfer && confirmReactivate}
-          <span class="text-xs text-amber-600 dark:text-amber-400">This student has an approved transfer on record — reactivating won't undo it. Continue?</span>
-          <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-            class="rounded-xl bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 transition hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
-            {$toggleMut.isPending ? '…' : 'Yes, reactivate'}
-          </button>
-          <button onclick={() => confirmReactivate = false}
-            class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
-            Cancel
-          </button>
-        {:else if hasApprovedTransfer}
-          <button onclick={() => confirmReactivate = true}
-            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-            Reactivate
-          </button>
-        {:else}
-          <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
-            {$toggleMut.isPending ? '…' : 'Reactivate'}
-          </button>
         {/if}
       </div>
     </div>
@@ -199,11 +201,11 @@
   {:else if activeTab === 'guardians'}
     <GuardiansTab student={s} studentId={studentId} />
   {:else if activeTab === 'enrollment'}
-    <EnrollmentTab studentId={studentId} />
+    <EnrollmentTab studentId={studentId} canEdit={s.can_edit} canManage={s.can_manage} />
   {:else if activeTab === 'fees'}
     <FeesTab studentId={studentId} />
   {:else if activeTab === 'medical'}
-    <MedicalTab studentId={studentId} medical={s.medical_record} />
+    <MedicalTab studentId={studentId} medical={s.medical_record} canEdit={s.can_edit} />
   {:else if activeTab === 'behaviour'}
     <BehaviourTab studentId={studentId} />
   {/if}

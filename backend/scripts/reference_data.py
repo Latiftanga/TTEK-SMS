@@ -131,7 +131,11 @@ STAFF_POSITIONS = [
     ("DEPUTY_HEAD", "Deputy Headmaster", [
         ("school", "view"), ("school", "edit"),
         ("staff", "view"), ("staff", "create"), ("staff", "edit"),
-        ("students", "view"), ("students", "create"), ("students", "edit"),
+        # students.delete is the module's de-facto "admin tier" bypass (see
+        # core/student_scope.py) — grants unrestricted student access (not
+        # scoped to a specific ClassTeacher assignment) plus the
+        # transfer-approval queue and year-end actions.
+        ("students", "view"), ("students", "create"), ("students", "edit"), ("students", "delete"),
         ("academic", "view"), ("academic", "create"), ("academic", "edit"),
         ("attendance", "view"), ("attendance", "record"), ("attendance", "approve"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
@@ -143,7 +147,10 @@ STAFF_POSITIONS = [
     ("HOD", "Head of Department", [
         ("school", "view"),
         ("staff", "view"),
-        ("students", "view"), ("students", "edit"),
+        # students.delete — see the DEPUTY_HEAD comment above; a department
+        # head needs unrestricted student access across their department,
+        # not just the one class (if any) they happen to be ClassTeacher of.
+        ("students", "view"), ("students", "edit"), ("students", "delete"),
         ("academic", "view"), ("academic", "edit"),
         ("attendance", "view"), ("attendance", "record"),
         ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),

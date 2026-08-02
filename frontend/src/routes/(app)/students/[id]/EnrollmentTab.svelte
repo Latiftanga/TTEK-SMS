@@ -9,8 +9,8 @@
   import TermTimelineRow from './TermTimelineRow.svelte';
   import ClassActionPanel   from './ClassActionPanel.svelte';
 
-  interface Props { studentId: string; }
-  const { studentId }: Props = $props();
+  interface Props { studentId: string; canEdit?: boolean; canManage?: boolean; }
+  const { studentId, canEdit = true, canManage = true }: Props = $props();
 
   const qc = useQueryClient();
 
@@ -108,32 +108,34 @@
   <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
     <p class="text-sm font-semibold text-[var(--fg)]">No class assigned</p>
     <p class="mt-1 text-xs text-[var(--fg-muted)]">Assign this student to a class before registering them for a term.</p>
-    {#if !showFirstForm}
-      <button onclick={() => showFirstForm = true}
-        class="mt-3 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-        style="background: var(--brand)">Assign to class</button>
-    {:else}
-      <div class="mt-4 space-y-3 border-t border-[var(--border)] pt-4">
-        <div class="grid gap-2 sm:grid-cols-2">
-          <select bind:value={caYearId} class="sel">
-            <option value="">Academic year…</option>
-            {#each years as y}<option value={y.id}>{y.name}</option>{/each}
-          </select>
-          <select bind:value={caClassId} class="sel">
-            <option value="">Class…</option>
-            {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
-          </select>
+    {#if canEdit}
+      {#if !showFirstForm}
+        <button onclick={() => showFirstForm = true}
+          class="mt-3 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+          style="background: var(--brand)">Assign to class</button>
+      {:else}
+        <div class="mt-4 space-y-3 border-t border-[var(--border)] pt-4">
+          <div class="grid gap-2 sm:grid-cols-2">
+            <select bind:value={caYearId} class="sel">
+              <option value="">Academic year…</option>
+              {#each years as y}<option value={y.id}>{y.name}</option>{/each}
+            </select>
+            <select bind:value={caClassId} class="sel">
+              <option value="">Class…</option>
+              {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
+            </select>
+          </div>
+          {#if caError}<p class="text-xs text-red-600">{caError}</p>{/if}
+          <div class="flex gap-2">
+            <button onclick={() => { caError=''; if (!caYearId){caError='Select year.'; return;} if (!caClassId){caError='Select class.'; return;} $firstAssignMut.mutate(); }}
+              disabled={$firstAssignMut.isPending}
+              class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
+              style="background: var(--brand)">{$firstAssignMut.isPending ? 'Assigning…' : 'Assign'}</button>
+            <button onclick={() => { showFirstForm = false; caError = ''; }}
+              class="text-sm text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
+          </div>
         </div>
-        {#if caError}<p class="text-xs text-red-600">{caError}</p>{/if}
-        <div class="flex gap-2">
-          <button onclick={() => { caError=''; if (!caYearId){caError='Select year.'; return;} if (!caClassId){caError='Select class.'; return;} $firstAssignMut.mutate(); }}
-            disabled={$firstAssignMut.isPending}
-            class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
-            style="background: var(--brand)">{$firstAssignMut.isPending ? 'Assigning…' : 'Assign'}</button>
-          <button onclick={() => { showFirstForm = false; caError = ''; }}
-            class="text-sm text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
-        </div>
-      </div>
+      {/if}
     {/if}
   </div>
 
@@ -170,6 +172,7 @@
                 onWaiverReasonChange={(v) => waiverReason = v}
                 onWaive={() => { waiverError = ''; if (!waiverReason.trim()) { waiverError = 'Reason required.'; return; } $waiveMut.mutate(term.id); }}
                 onCancelWaiver={() => blocked = null}
+                {canEdit}
               />
             {/each}
           </div>
@@ -178,23 +181,26 @@
     {/each}
 
     <!-- Year-end / transfer actions — collapsed by default; year-round students never need this -->
-    {#if !yearEndOpen}
-      <button onclick={() => yearEndOpen = true}
-        class="flex w-full items-center justify-between rounded-2xl border border-dashed border-[var(--border)]
-               px-5 py-4 text-left transition hover:border-[var(--brand)]/40 hover:bg-[var(--brand)]/5">
-        <div>
-          <p class="text-sm font-semibold text-[var(--fg)]">Manage year-end status</p>
-          <p class="mt-0.5 text-xs text-[var(--fg-muted)]">Promote, repeat, demote, or transfer this student</p>
-        </div>
-        <svg class="h-4 w-4 shrink-0 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
-        </svg>
-      </button>
-    {:else}
-      <ClassActionPanel
-        {studentId} {activeClass} {classes} {years}
-        onDone={() => yearEndOpen = false}
-      />
+    {#if canEdit || canManage}
+      {#if !yearEndOpen}
+        <button onclick={() => yearEndOpen = true}
+          class="flex w-full items-center justify-between rounded-2xl border border-dashed border-[var(--border)]
+                 px-5 py-4 text-left transition hover:border-[var(--brand)]/40 hover:bg-[var(--brand)]/5">
+          <div>
+            <p class="text-sm font-semibold text-[var(--fg)]">Manage year-end status</p>
+            <p class="mt-0.5 text-xs text-[var(--fg-muted)]">Promote, repeat, demote, or transfer this student</p>
+          </div>
+          <svg class="h-4 w-4 shrink-0 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
+          </svg>
+        </button>
+      {:else}
+        <ClassActionPanel
+          {studentId} {activeClass} {classes} {years}
+          onDone={() => yearEndOpen = false}
+          {canEdit} {canManage}
+        />
+      {/if}
     {/if}
   </div>
 {/if}

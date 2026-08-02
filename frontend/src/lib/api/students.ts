@@ -55,6 +55,12 @@ export interface StudentDetail extends StudentSummary {
   has_portal_access: boolean;
   medical_record: MedicalRecord | null;
   guardians: Guardian[];
+  // Whether the caller can perform pastoral writes (profile/guardians/medical/
+  // photo/enrollment) vs admin-tier actions (portal access, deactivate,
+  // promotion) on THIS student specifically. Only reflects the caller's real
+  // scope on the GET response — mutation responses default both to true.
+  can_edit: boolean;
+  can_manage: boolean;
 }
 
 export interface PortalAccessResult {

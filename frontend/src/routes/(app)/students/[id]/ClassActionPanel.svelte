@@ -14,8 +14,14 @@
     classes: SchoolClass[];
     years: import('$lib/api/academic').AcademicYear[];
     onDone: (newAssignmentId: string) => void;
+    // Promote/Repeat/Demote/Graduate are admin-tier (Category D,
+    // core/student_scope.py) — irreversible, school-wide structural actions,
+    // not a class teacher's own-class job. Transfer-out creation stays
+    // pastoral (Category A), gated on canEdit like the rest of the tab.
+    canEdit?: boolean;
+    canManage?: boolean;
   }
-  const { studentId, activeClass, classes, years, onDone }: Props = $props();
+  const { studentId, activeClass, classes, years, onDone, canEdit = true, canManage = true }: Props = $props();
 
   const qc = useQueryClient();
 
@@ -138,60 +144,64 @@
 </script>
 
 {#if !actionMode && !showTransfer}
-  <!-- Year-end action cards -->
-  <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-    <p class="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Year-end actions</p>
-    {#if currentYearRecord}
-      <div class="mb-3 flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
-        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
-        <span>
-          Already {(OUTCOME_LABEL[currentYearRecord.graduation_type] ?? currentYearRecord.graduation_type).toLowerCase()} for {currentYear?.name}
-          (processed {new Date(currentYearRecord.processed_at).toLocaleDateString()}). Using the same year again below will be skipped, not reapplied.
-        </span>
-      </div>
-    {/if}
-    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {#each Object.entries(CARD) as [key, meta]}
-        <button onclick={() => openAction(key as ActionMode)}
-          class="rounded-xl border px-3 py-2.5 text-left transition hover:opacity-80 {meta.border} {meta.bg}">
-          <p class="text-xs font-semibold {meta.text}">{meta.label}</p>
-          <p class="mt-0.5 text-[10px] {meta.sub2}">{meta.sub}</p>
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <!-- Transfer — separate from year-end actions; can happen any time -->
-  <div class="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-    <p class="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Transfer to another school</p>
-    {#if pendingTransfer}
-      <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-800 dark:bg-amber-950/30">
-        <div>
-          <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">Transfer request pending review</p>
-          <p class="mt-0.5 text-[10px] text-amber-700 dark:text-amber-400">
-            Submitted {new Date(pendingTransfer.created_at).toLocaleDateString()}{pendingTransfer.reason ? ` — ${pendingTransfer.reason}` : ''}
-          </p>
+  <!-- Year-end action cards — admin-tier (Category D), never a class teacher's own-class job -->
+  {#if canManage}
+    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+      <p class="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Year-end actions</p>
+      {#if currentYearRecord}
+        <div class="mb-3 flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
+          <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+          <span>
+            Already {(OUTCOME_LABEL[currentYearRecord.graduation_type] ?? currentYearRecord.graduation_type).toLowerCase()} for {currentYear?.name}
+            (processed {new Date(currentYearRecord.processed_at).toLocaleDateString()}). Using the same year again below will be skipped, not reapplied.
+          </span>
         </div>
-        {#if $isSchoolAdmin}
-          <a href="/admin/transfers" class="shrink-0 text-xs font-medium text-amber-800 underline hover:no-underline dark:text-amber-200">
-            View in transfer queue →
-          </a>
-        {/if}
-      </div>
-    {:else}
-      {#if lastTransfer && lastTransfer.status !== 'PENDING'}
-        <p class="mb-2 text-[10px] text-[var(--fg-muted)]">
-          Last request: {lastTransfer.status.charAt(0) + lastTransfer.status.slice(1).toLowerCase()}
-          {#if lastTransfer.reviewed_at} on {new Date(lastTransfer.reviewed_at).toLocaleDateString()}{/if}
-        </p>
       {/if}
-      <button onclick={() => showTransfer = true}
-        class="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-left transition hover:border-[var(--fg-subtle)]">
-        <p class="text-xs font-semibold text-[var(--fg)]">Transfer out</p>
-        <p class="mt-0.5 text-[10px] text-[var(--fg-muted)]">Leave this school</p>
-      </button>
-    {/if}
-  </div>
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {#each Object.entries(CARD) as [key, meta]}
+          <button onclick={() => openAction(key as ActionMode)}
+            class="rounded-xl border px-3 py-2.5 text-left transition hover:opacity-80 {meta.border} {meta.bg}">
+            <p class="text-xs font-semibold {meta.text}">{meta.label}</p>
+            <p class="mt-0.5 text-[10px] {meta.sub2}">{meta.sub}</p>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Transfer — separate from year-end actions; can happen any time; pastoral (Category A) -->
+  {#if canEdit}
+    <div class="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+      <p class="mb-3 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Transfer to another school</p>
+      {#if pendingTransfer}
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-800 dark:bg-amber-950/30">
+          <div>
+            <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">Transfer request pending review</p>
+            <p class="mt-0.5 text-[10px] text-amber-700 dark:text-amber-400">
+              Submitted {new Date(pendingTransfer.created_at).toLocaleDateString()}{pendingTransfer.reason ? ` — ${pendingTransfer.reason}` : ''}
+            </p>
+          </div>
+          {#if $isSchoolAdmin}
+            <a href="/admin/transfers" class="shrink-0 text-xs font-medium text-amber-800 underline hover:no-underline dark:text-amber-200">
+              View in transfer queue →
+            </a>
+          {/if}
+        </div>
+      {:else}
+        {#if lastTransfer && lastTransfer.status !== 'PENDING'}
+          <p class="mb-2 text-[10px] text-[var(--fg-muted)]">
+            Last request: {lastTransfer.status.charAt(0) + lastTransfer.status.slice(1).toLowerCase()}
+            {#if lastTransfer.reviewed_at} on {new Date(lastTransfer.reviewed_at).toLocaleDateString()}{/if}
+          </p>
+        {/if}
+        <button onclick={() => showTransfer = true}
+          class="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5 text-left transition hover:border-[var(--fg-subtle)]">
+          <p class="text-xs font-semibold text-[var(--fg)]">Transfer out</p>
+          <p class="mt-0.5 text-[10px] text-[var(--fg-muted)]">Leave this school</p>
+        </button>
+      {/if}
+    </div>
+  {/if}
 
 {:else if actionMode}
   {@const isPromote = actionMode === 'promote'}

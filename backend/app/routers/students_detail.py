@@ -10,27 +10,39 @@ for the full file split.
 
 ACCESS CONTROL
 --------------
-GET  /students/{id}                          students.view
-PATCH /students/{id}                         students.edit
-PUT  /students/{id}/medical                  students.edit
-POST/DELETE /students/{id}/guardians          students.edit
+Every endpoint here also enforces per-student ownership scoping on top of the
+flat students.view/edit permission below — see core/student_scope.py's module
+docstring for the full class-teacher/subject-teacher design. In short:
+  view      — students.view + resolve_student_view_scope (404 outside scope)
+  pastoral  — students.edit + assert_can_write_student (404 unless the caller
+              is an active ClassTeacher of the student's current class this
+              year, or holds students.delete)
+  admin-tier— students.delete outright, no scoping (portal access grant/
+              revoke, and the is_active field specifically within PATCH)
+
+GET  /students/{id}                          students.view (scoped)
+PATCH /students/{id}                         students.edit (scoped) [+students.delete for is_active]
+PUT  /students/{id}/medical                  students.edit (scoped)
+POST/DELETE /students/{id}/guardians          students.edit (scoped)
 POST/DELETE /students/{id}/guardians/{gid}/grant-portal-access|revoke-portal-access
-                                               students.edit
-POST /students/{id}/enroll                    students.edit
-GET  /students/{id}/class-assignments         students.view
-GET  /students/{id}/term-enrollments          students.view
-POST/GET /students/{id}/transfers             students.edit / students.view
-POST /students/{id}/grant-portal-access       students.edit
-DELETE /students/{id}/revoke-portal-access    students.edit
-POST/DELETE /students/{id}/photo              students.edit
+                                               students.delete (admin-tier)
+POST /students/{id}/enroll                    students.edit (scoped)
+GET  /students/{id}/class-assignments         students.view (scoped)
+GET  /students/{id}/term-enrollments          students.view (scoped)
+POST/GET /students/{id}/transfers             students.edit (scoped) / students.view (scoped)
+POST /students/{id}/grant-portal-access       students.delete (admin-tier)
+DELETE /students/{id}/revoke-portal-access    students.delete (admin-tier)
+POST/DELETE /students/{id}/photo              students.edit (scoped)
 """
 from __future__ import annotations
 import uuid
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
+from app.core.permissions import user_has_permission
+from app.core.student_scope import assert_can_view_student, assert_can_write_student
 from app.schemas.students import (
     EnrollmentCreate, EnrollmentRead,
     GuardianCreate, GuardianPortalAccessResult, GuardianUpdate, StudentGuardianRead,
@@ -53,14 +65,24 @@ from app.services import student_transfer as transfer_svc
 router = APIRouter(prefix="/students", tags=["students"])
 
 
+async def _require_admin_tier(user_id: uuid.UUID, db: AsyncSession) -> None:
+    """Portal-access grant/revoke and deactivate/reactivate are admin-tier,
+    not scoped to a class teacher's own class — see core/student_scope.py."""
+    if not await user_has_permission(user_id, "students", "delete", db):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Permission denied: your role does not allow 'students.delete'.",
+        )
+
+
 @router.get("/{student_id}", response_model=StudentDetail)
 async def get_student(
     student_id: uuid.UUID,
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
-    return await svc.get_student(student_id, school_id, db)
+    user_id, school_id = ids
+    return await svc.get_student(student_id, school_id, user_id, db)
 
 
 @router.patch("/{student_id}", response_model=StudentDetail)
@@ -71,6 +93,9 @@ async def update_student(
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
+    if req.is_active is not None:
+        await _require_admin_tier(user_id, db)
     return await svc.update_student(student_id, req, school_id, user_id, db)
 
 
@@ -81,7 +106,8 @@ async def upsert_medical_record(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     return await svc.upsert_medical_record(student_id, req, school_id, db)
 
 
@@ -92,7 +118,8 @@ async def add_guardian(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     return await guardian_svc.add_guardian(student_id, req, school_id, db)
 
 
@@ -104,7 +131,8 @@ async def update_guardian(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     return await guardian_svc.update_guardian(student_id, guardian_id, req, school_id, db)
 
 
@@ -115,7 +143,8 @@ async def remove_guardian(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     await guardian_svc.remove_guardian(student_id, guardian_id, school_id, db)
 
 
@@ -129,7 +158,8 @@ async def grant_guardian_portal_access(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await _require_admin_tier(user_id, db)
     return await guardian_portal_svc.grant_portal_access(guardian_id, school_id, db)
 
 
@@ -140,7 +170,8 @@ async def revoke_guardian_portal_access(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await _require_admin_tier(user_id, db)
     await guardian_portal_svc.revoke_portal_access(guardian_id, school_id, db)
 
 
@@ -151,7 +182,8 @@ async def create_enrollment(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     return await enroll_svc.create_enrollment(student_id, req, school_id, db)
 
 
@@ -161,7 +193,8 @@ async def list_class_assignments(
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await class_svc.list_class_assignments(student_id, school_id, db)
 
 
@@ -171,7 +204,8 @@ async def list_term_enrollments(
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await enroll_svc.list_term_enrollments(student_id, school_id, db)
 
 
@@ -182,7 +216,8 @@ async def create_transfer_request(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     return await transfer_svc.create_transfer_request(student_id, req, school_id, db)
 
 
@@ -195,7 +230,8 @@ async def list_transfers_for_student(
     """A student's own transfer request history/status — visible to anyone who can
     view the student, independent of the higher `students.delete` bar required to
     review the school-wide pending queue (see students_enrollment.py's /transfers/pending)."""
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await transfer_svc.list_transfers_for_student(student_id, school_id, db)
 
 
@@ -205,7 +241,8 @@ async def grant_portal_access(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await _require_admin_tier(user_id, db)
     return await portal_svc.grant_portal_access(student_id, school_id, db)
 
 
@@ -215,7 +252,8 @@ async def revoke_portal_access(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await _require_admin_tier(user_id, db)
     await portal_svc.revoke_portal_access(student_id, school_id, db)
 
 
@@ -226,7 +264,8 @@ async def upload_photo(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     return await photo_svc.upload_student_photo(student_id, file, school_id, db)
 
 
@@ -236,5 +275,6 @@ async def delete_photo(
     ids=Depends(require_permission("students", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
+    await assert_can_write_student(user_id, student_id, db)
     await photo_svc.remove_student_photo(student_id, school_id, db)

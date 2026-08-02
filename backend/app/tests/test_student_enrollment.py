@@ -320,6 +320,81 @@ async def test_register_subjects_rejects_deactivated_term_enrollment(
     assert resp.status_code == 404
 
 
+# ── Category B scoping (class teacher OR the specific subject's teacher) ──────
+
+@pytest.mark.asyncio
+async def test_register_subjects_404_for_unrelated_teacher(
+    client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="SCOPE01", name="Scope Test Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    # No ClassTeacher/SubjectTeacher assignment anywhere for this staff member.
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=teacher_auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_register_subjects_allowed_for_own_subject_teacher(
+    client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """A SubjectTeacher (no ClassTeacher row) may register their own subject,
+    but not a different one in the same class."""
+    from app.models.academic import ClassSubject, Subject, SubjectTeacher
+
+    own_subject = Subject(school_id=school.id, code="SCOPE02", name="Own Subject", is_active=True)
+    other_subject = Subject(school_id=school.id, code="SCOPE03", name="Other Subject", is_active=True)
+    db_session.add_all([own_subject, other_subject])
+    await db_session.flush()
+    db_session.add_all([
+        ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=own_subject.id, is_active=True),
+        ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=other_subject.id, is_active=True),
+    ])
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    teacher_user = await db_session.scalar(
+        select(User).where(User.email == "class_teacher@presec-test.edu.gh")
+    )
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=school_class.id, subject_id=own_subject.id,
+        staff_member_id=teacher_user.staff_member_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(own_subject.id), "registration_type": "CORE"},
+    ]}, headers=teacher_auth)
+    assert resp.status_code == 201
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(other_subject.id), "registration_type": "CORE"},
+    ]}, headers=teacher_auth)
+    assert resp.status_code == 404
+
+
 @pytest.fixture
 async def locked_term_setup(client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm, db_session: AsyncSession, school: School):
     """A registered subject, a term enrollment, and the term locked afterward —
@@ -420,6 +495,21 @@ async def test_register_subject_reason_alone_insufficient_without_permission(
     await db_session.flush()
 
     teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    # Give the teacher an actual ClassTeacher assignment on this class, so the
+    # request clears core/student_scope.py's Category B scoping check and
+    # this test can isolate the term-lock-permission behaviour it's actually
+    # about (otherwise it would now 404 on scope before ever reaching the
+    # term-lock check).
+    from app.models.academic import ClassTeacher
+    teacher_user = await db_session.scalar(
+        select(User).where(User.email == "class_teacher@presec-test.edu.gh")
+    )
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=teacher_user.staff_member_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
     resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={
         "items": [{"subject_id": str(sub.id), "registration_type": "CORE"}],
         "override_reason": "I really need to add this",
@@ -655,6 +745,19 @@ async def test_fee_gate_waiver_ignored_without_fees_manage(
     await _enable_fee_gate(client, auth, academic_term.id)
 
     teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    # Give the teacher an actual ClassTeacher assignment on this class, so the
+    # request clears core/student_scope.py's Category A scoping check and
+    # this test can isolate the fee-gate-waiver behaviour it's actually about.
+    from app.models.academic import ClassTeacher
+    teacher_user = await db_session.scalar(
+        select(User).where(User.email == "class_teacher@presec-test.edu.gh")
+    )
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=teacher_user.staff_member_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
     resp = await client.post("/students/term-enrollments", json={
         "student_id": str(student.id), "academic_term_id": str(academic_term.id),
         "fee_waiver_reason": "trust me",

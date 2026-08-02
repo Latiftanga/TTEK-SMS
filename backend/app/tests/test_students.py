@@ -319,6 +319,141 @@ async def test_deactivate_student(client: AsyncClient, auth: dict):
     assert any(s["id"] == sid for s in all_list)
 
 
+# ── Class-teacher/subject-teacher scoping (core/student_scope.py) ─────────────
+
+async def _assign_class(
+    client: AsyncClient, auth: dict, sid: str, class_id, academic_year_id,
+) -> None:
+    resp = await client.post("/students/class-assignments", json={
+        "student_id": sid, "class_id": str(class_id), "academic_year_id": str(academic_year_id),
+    }, headers=auth)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_get_student_404_for_class_teacher_outside_scope(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.get(f"/students/{sid}", headers=teacher_auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_student_200_with_capability_flags_for_own_class_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, redis_permissions: None,
+):
+    from app.models.academic import ClassTeacher
+
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await _assign_class(client, auth, sid, school_class.id, academic_year.id)
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get(f"/students/{sid}", headers=teacher_auth)
+    assert resp.status_code == 200
+    assert resp.json()["can_edit"] is True
+    assert resp.json()["can_manage"] is False  # CLASS_TEACHER holds students.edit, not students.delete
+
+
+@pytest.mark.asyncio
+async def test_update_student_404_for_class_teacher_outside_scope(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.patch(f"/students/{sid}", json={"nationality": "Ghanaian"}, headers=teacher_auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_student_200_for_own_class_teacher(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, redis_permissions: None,
+):
+    from app.models.academic import ClassTeacher
+
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await _assign_class(client, auth, sid, school_class.id, academic_year.id)
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.patch(f"/students/{sid}", json={"nationality": "Ghanaian"}, headers=teacher_auth)
+    assert resp.status_code == 200
+    assert resp.json()["nationality"] == "Ghanaian"
+
+
+@pytest.mark.asyncio
+async def test_update_student_is_active_requires_students_delete_even_for_own_class(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, redis_permissions: None,
+):
+    """Deactivate/reactivate is admin-tier (Category D) — a class teacher
+    editing their own student's profile still can't flip is_active."""
+    from app.models.academic import ClassTeacher
+
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await _assign_class(client, auth, sid, school_class.id, academic_year.id)
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.patch(f"/students/{sid}", json={"is_active": False}, headers=teacher_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_grant_portal_access_requires_students_delete(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, redis_permissions: None,
+):
+    """Admin-tier (Category D) regardless of class-teacher scope."""
+    from app.models.academic import ClassTeacher
+
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    await _assign_class(client, auth, sid, school_class.id, academic_year.id)
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.post(f"/students/{sid}/grant-portal-access", headers=teacher_auth)
+    assert resp.status_code == 403
+
+    resp = await client.post(f"/students/{sid}/grant-portal-access", headers=auth)
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_deputy_head_and_hod_remain_unrestricted(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """students.delete added to DEPUTY_HEAD/HOD templates alongside this fix
+    — they must not regress to zero students under the new scoping."""
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    for position in ("DEPUTY_HEAD", "HOD"):
+        staff_auth, _staff_id = await _login_as_position(client, auth, db_session, school, position)
+        resp = await client.get(f"/students/{sid}", headers=staff_auth)
+        assert resp.status_code == 200, f"{position} should see any student: {resp.text}"
+        resp = await client.patch(f"/students/{sid}", json={"nationality": "Ghanaian"}, headers=staff_auth)
+        assert resp.status_code == 200, f"{position} should be able to edit any student: {resp.text}"
+
+
 # ── Medical record ────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

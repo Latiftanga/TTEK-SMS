@@ -19,12 +19,14 @@
     onWaiverReasonChange?: (v: string) => void;
     onWaive?: () => void;
     onCancelWaiver?: () => void;
+    canEdit?: boolean;
   }
   const {
     term, classDisplayName, assignmentActive, enrollment,
     isRegistering = false, registerError = '', isBlocked = false, blockedMessage = '',
     waiverReason = '', waiverError = '',
     onRegister, onWaiverReasonChange, onWaive, onCancelWaiver,
+    canEdit = true,
   }: Props = $props();
 
   let expanded = $state(false);
@@ -87,11 +89,13 @@
         </button>
       {:else}
         <span class="text-xs text-[var(--fg-subtle)]">{enrollment ? 'Withdrawn from this term' : 'Not registered'}</span>
-        <button onclick={onRegister} disabled={isRegistering}
-          class="rounded-lg px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
-          style="background: var(--brand)">
-          {isRegistering ? '…' : 'Register'}
-        </button>
+        {#if canEdit}
+          <button onclick={onRegister} disabled={isRegistering}
+            class="rounded-lg px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
+            style="background: var(--brand)">
+            {isRegistering ? '…' : 'Register'}
+          </button>
+        {/if}
       {/if}
     </div>
   </div>

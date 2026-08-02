@@ -59,7 +59,11 @@ def _active_class_assignment_subquery():
     provably 1:1 wherever it's used (list_students' count/sort, and here).
     """
     return (
-        select(StudentClassAssignment.student_id, StudentClassAssignment.class_id)
+        select(
+            StudentClassAssignment.student_id,
+            StudentClassAssignment.class_id,
+            StudentClassAssignment.academic_year_id,
+        )
         .where(StudentClassAssignment.is_active == True)  # noqa: E712
         .distinct(StudentClassAssignment.student_id)
         .order_by(StudentClassAssignment.student_id, StudentClassAssignment.created_at.desc())

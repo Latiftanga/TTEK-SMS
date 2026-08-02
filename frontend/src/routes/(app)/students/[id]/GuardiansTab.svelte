@@ -117,16 +117,18 @@
 <div class="space-y-4">
   <div class="flex items-center justify-between">
     <p class="text-sm text-[var(--fg-muted)]">People responsible for this student.</p>
-    <button onclick={() => { showForm = !showForm; formError = ''; editingId = null; }}
-      class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90" style="background: var(--brand)">
-      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-      </svg>
-      Add guardian
-    </button>
+    {#if student.can_edit}
+      <button onclick={() => { showForm = !showForm; formError = ''; editingId = null; }}
+        class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90" style="background: var(--brand)">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add guardian
+      </button>
+    {/if}
   </div>
 
-  {#if showForm}
+  {#if showForm && student.can_edit}
     <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
       <h3 class="mb-3 text-sm font-semibold text-[var(--fg)]">New guardian</h3>
       <div class="grid gap-3 sm:grid-cols-2">
@@ -191,24 +193,26 @@
               </p>
             </div>
             <div class="shrink-0 flex items-center gap-1">
-              <GuardianPortalAccessButton guardian={g} {studentId} />
-              <button onclick={() => editingId === g.guardian_id ? cancelEdit() : startEdit(g)}
-                class="rounded-lg p-1.5 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]" title="Edit">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/>
-                </svg>
-              </button>
-              <button onclick={() => confirmRemoveGid = g.guardian_id} disabled={$removeMut.isPending}
-                class="rounded-lg p-1.5 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-40" title="Remove">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
-                </svg>
-              </button>
+              <GuardianPortalAccessButton guardian={g} {studentId} canManage={student.can_manage} />
+              {#if student.can_edit}
+                <button onclick={() => editingId === g.guardian_id ? cancelEdit() : startEdit(g)}
+                  class="rounded-lg p-1.5 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]" title="Edit">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/>
+                  </svg>
+                </button>
+                <button onclick={() => confirmRemoveGid = g.guardian_id} disabled={$removeMut.isPending}
+                  class="rounded-lg p-1.5 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-40" title="Remove">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+                  </svg>
+                </button>
+              {/if}
             </div>
           </div>
 
           <!-- Inline edit form -->
-          {#if editingId === g.guardian_id}
+          {#if editingId === g.guardian_id && student.can_edit}
             <div class="border-t border-[var(--border)] px-4 pb-4 pt-3">
               <div class="grid gap-3 sm:grid-cols-2">
                 <div><label for="et-first-{g.guardian_id}" class="label">First name <span class="text-red-500">*</span></label><input id="et-first-{g.guardian_id}" bind:value={editForm.first_name} class="input" /></div>
@@ -247,7 +251,9 @@
     </div>
   {/if}
 
-  <PortalAccessCard {student} {studentId} />
+  {#if student.can_manage}
+    <PortalAccessCard {student} {studentId} />
+  {/if}
 </div>
 
 <ConfirmModal

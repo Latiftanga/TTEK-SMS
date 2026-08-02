@@ -36,6 +36,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import resolve_permissions
+from app.core.student_scope import resolve_class_teacher_scope
 from app.models.academic import AcademicTerm, Class, SHSProgramme
 from app.models.auth import User
 from app.models.fees import StudentFeeSummary
@@ -185,6 +186,11 @@ async def create_term_enrollment(
             detail="Student has no class assignment for this academic year. "
                    "Assign the student to a class before creating a term enrollment.",
         )
+
+    # Pastoral, class-teacher-scoped — see core/student_scope.py.
+    scope = await resolve_class_teacher_scope(user_id, term.academic_year_id, db)
+    if scope is not None and sca.class_id not in scope:
+        raise HTTPException(status_code=404, detail="Student not found.")
 
     fee_waived = False
     fee_waived_by_id = None

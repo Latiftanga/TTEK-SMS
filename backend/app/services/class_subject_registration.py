@@ -35,6 +35,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.student_scope import resolve_class_teacher_scope, resolve_subject_teacher_scope
 from app.models.academic import AcademicTerm, ClassSubject
 from app.models.assessments import Assessment, Score
 from app.models.students import Student, StudentClassAssignment, SubjectRegistration, TermEnrollment
@@ -50,6 +51,24 @@ from app.services.student_subject_registration import delete_subject_registratio
 from app.services.subject_roster import _display_name
 
 
+async def _assert_subject_scope(
+    class_id: uuid.UUID, subject_id: uuid.UUID | None, academic_year_id: uuid.UUID,
+    user_id: uuid.UUID, db: AsyncSession,
+) -> None:
+    """Category B — a class teacher may manage/view the whole class, or a
+    subject teacher may manage/view just their own (class, subject) pair.
+    subject_id=None is used by bulk_register_core_subjects (Category A: whole
+    class only, no single-subject bypass)."""
+    class_scope = await resolve_class_teacher_scope(user_id, academic_year_id, db)
+    if class_scope is None or class_id in class_scope:
+        return
+    if subject_id is not None:
+        subject_scope = await resolve_subject_teacher_scope(user_id, academic_year_id, db)
+        if subject_scope is not None and (class_id, subject_id) in subject_scope:
+            return
+    raise HTTPException(status_code=404, detail="Class not found.")
+
+
 async def bulk_register_core_subjects(
     class_id: uuid.UUID,
     req: BulkRegisterCoreSubjectsRequest,
@@ -60,6 +79,8 @@ async def bulk_register_core_subjects(
     term = await db.get(AcademicTerm, req.academic_term_id)
     if not term or term.school_id != school_id:
         raise HTTPException(status_code=404, detail="Academic term not found.")
+
+    await _assert_subject_scope(class_id, None, term.academic_year_id, user_id, db)
 
     core_subject_ids = list((await db.scalars(
         select(ClassSubject.subject_id).where(
@@ -156,10 +177,12 @@ async def get_subject_roster(
     subject_id: uuid.UUID,
     academic_term_id: uuid.UUID,
     school_id: uuid.UUID,
+    user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[SubjectRosterStudent]:
     await _class_subject(class_id, subject_id, school_id, db)
     _term, active_ids, te_by_student = await _roster_base(class_id, academic_term_id, school_id, db)
+    await _assert_subject_scope(class_id, subject_id, _term.academic_year_id, user_id, db)
     if not active_ids:
         return []
 
@@ -223,6 +246,7 @@ async def set_subject_roster(
 ) -> SetSubjectRosterResult:
     cs = await _class_subject(class_id, subject_id, school_id, db)
     _term, active_ids, te_by_student = await _roster_base(class_id, req.academic_term_id, school_id, db)
+    await _assert_subject_scope(class_id, subject_id, _term.academic_year_id, user_id, db)
 
     te_ids = list(te_by_student.values())
     existing_regs: dict[uuid.UUID, SubjectRegistration] = {}
