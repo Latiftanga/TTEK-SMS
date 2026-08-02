@@ -6,8 +6,9 @@
     assessments: Assessment[];
     typeName: (id: string) => string;
     onCreate: () => void;
+    creating: boolean;
   }
-  const { assessments, typeName, onCreate }: Props = $props();
+  const { assessments, typeName, onCreate, creating }: Props = $props();
 </script>
 
 <!-- One interaction pattern on every breakpoint: a plain tappable list, no
@@ -44,11 +45,13 @@
     </button>
   {/each}
 
-  <button onclick={onCreate}
-    class="flex w-full min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--border)] px-4 py-3.5 text-sm font-semibold text-[var(--fg-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]">
-    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-    </svg>
-    New assessment
-  </button>
+  {#if !creating}
+    <button onclick={onCreate}
+      class="flex w-full min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--border)] px-4 py-3.5 text-sm font-semibold text-[var(--fg-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+      </svg>
+      New assessment
+    </button>
+  {/if}
 </div>

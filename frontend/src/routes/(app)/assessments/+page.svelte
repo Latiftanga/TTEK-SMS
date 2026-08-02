@@ -7,7 +7,7 @@
     listAssessments, listAssessmentTypes, createAssessment, listMySubjects,
     formatAssessmentDate, type Assessment,
   } from '$lib/api/assessments';
-  import { listYears, updateTerm } from '$lib/api/academic';
+  import { listYears, listClasses, updateTerm } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
@@ -58,8 +58,8 @@
 
   // (class, subject) combos the caller can create assessments/enter scores
   // for — scoped to their own SubjectTeacher assignment(s) unless they hold
-  // assessments.approve_scores. Powers both the class picker and the create
-  // form's subject picker, cascaded by the selected class.
+  // assessments.approve_scores. Powers the create form's subject picker
+  // (and the class picker too, for a teacher) cascaded by the selected class.
   const mySubjectsQ = reactiveQuery(() => ({
     queryKey: ['my-subjects', termId] as const,
     queryFn:  () => listMySubjects(termId),
@@ -67,7 +67,23 @@
     staleTime: 5 * 60_000,
   }));
 
+  // Admin/approver aren't scoped to their own teaching load — the Class
+  // picker should show every class in the school, not just ones that
+  // happen to already have a subject assigned (a brand-new class with no
+  // subjects yet would otherwise silently vanish from the list, hiding
+  // exactly the thing an admin most needs to notice and go fix).
+  const allClassesQ = createQuery({
+    queryKey: ['academic-classes'], queryFn: listClasses,
+    staleTime: 5 * 60_000, enabled: () => canManage,
+  });
+
   const myClasses = $derived.by(() => {
+    if (canManage) {
+      return ($allClassesQ.data ?? [])
+        .filter(c => c.is_active)
+        .map(c => ({ id: c.id, display_name: c.display_name }))
+        .sort((a, b) => a.display_name.localeCompare(b.display_name));
+    }
     const seen = new Map<string, { id: string; display_name: string }>();
     for (const p of $mySubjectsQ.data ?? []) {
       if (!seen.has(p.class_id)) seen.set(p.class_id, { id: p.class_id, display_name: p.class_name });
@@ -244,33 +260,6 @@
   {/if}
 </div>
 
-<!-- Create form -->
-{#if showCreate}
-  <div class="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-    <p class="mb-1 text-sm font-semibold text-[var(--fg)]">New assessment</p>
-    <!-- Subject/Category aren't asked here — they're already the page's own
-         filters (the form can't even open without both set), so re-asking
-         would just be the same choice made twice. -->
-    <p class="mb-3 text-xs text-[var(--fg-subtle)]">
-      {subjectName(subjectId)} · <span class="font-medium text-[var(--fg-muted)]">{typeName(categoryId)}</span> — recorded as today, {formatAssessmentDate(new Date().toISOString())}
-    </p>
-    <div class="grid gap-3 sm:grid-cols-2">
-      <div><label for="cf-due" class="label">Date given to students</label><input id="cf-due" type="date" bind:value={cf.dueDate} class="input" /></div>
-      <div><label for="cf-max" class="label">Max score <span class="text-red-500">*</span></label><input id="cf-max" type="number" min="1" step="0.5" bind:value={cf.maxScore} class="input" /></div>
-      <div class="sm:col-span-2"><label for="cf-desc" class="label">Description (optional)</label><input id="cf-desc" bind:value={cf.description} placeholder="e.g. Covers chapters 3–4" class="input" /></div>
-    </div>
-    {#if cfError}<p class="mt-2 text-xs text-red-500">{cfError}</p>{/if}
-    <div class="mt-3 flex gap-2">
-      <button onclick={handleCreate} disabled={$createMut.isPending}
-        class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
-        {$createMut.isPending ? 'Creating…' : 'Create & open'}
-      </button>
-      <button onclick={() => { showCreate = false; cfError = ''; }}
-        class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
-    </div>
-  </div>
-{/if}
-
 <!-- Assessments list — Class, Subject, and Category are all required (in
      that order) before anything renders, on every breakpoint. That's what
      lets the create form skip asking for Subject/Category itself: by the
@@ -299,14 +288,16 @@
        before this point — picking filters comes first, creating after. -->
   <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center">
     <p class="text-sm font-medium text-[var(--fg-muted)]">No {typeName(categoryId)} recorded yet for this subject.</p>
-    <button onclick={openCreateForm}
-      class="mt-4 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-      style="background: var(--brand)">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-      </svg>
-      New assessment
-    </button>
+    {#if !showCreate}
+      <button onclick={openCreateForm}
+        class="mt-4 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+        style="background: var(--brand)">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        New assessment
+      </button>
+    {/if}
   </div>
 {:else}
   <!-- Same tappable list on every breakpoint — no separate desktop grid.
@@ -315,7 +306,37 @@
        state to reconcile on the way out (see the "spreadsheet is confusing"
        discussion — the previous split had desktop behaving differently from
        mobile for no real benefit). -->
-  <AssessmentCardList assessments={visibleAssessments} {typeName} onCreate={openCreateForm} />
+  <AssessmentCardList assessments={visibleAssessments} {typeName} onCreate={openCreateForm} creating={showCreate} />
+{/if}
+
+<!-- Create form — deliberately placed after the list, not before it: both
+     places that open it (the empty-state button and the card list's own
+     trailing row) sit at the bottom of the page, so the form should appear
+     right where the tap happened instead of jumping to the top. -->
+{#if showCreate}
+  <div class="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+    <p class="mb-1 text-sm font-semibold text-[var(--fg)]">New assessment</p>
+    <!-- Subject/Category aren't asked here — they're already the page's own
+         filters (the form can't even open without both set), so re-asking
+         would just be the same choice made twice. -->
+    <p class="mb-3 text-xs text-[var(--fg-subtle)]">
+      {subjectName(subjectId)} · <span class="font-medium text-[var(--fg-muted)]">{typeName(categoryId)}</span> — recorded as today, {formatAssessmentDate(new Date().toISOString())}
+    </p>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div><label for="cf-due" class="label">Date given to students</label><input id="cf-due" type="date" bind:value={cf.dueDate} class="input" /></div>
+      <div><label for="cf-max" class="label">Max score <span class="text-red-500">*</span></label><input id="cf-max" type="number" min="1" step="0.5" bind:value={cf.maxScore} class="input" /></div>
+      <div class="sm:col-span-2"><label for="cf-desc" class="label">Description (optional)</label><input id="cf-desc" bind:value={cf.description} placeholder="e.g. Covers chapters 3–4" class="input" /></div>
+    </div>
+    {#if cfError}<p class="mt-2 text-xs text-red-500">{cfError}</p>{/if}
+    <div class="mt-3 flex gap-2">
+      <button onclick={handleCreate} disabled={$createMut.isPending}
+        class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
+        {$createMut.isPending ? 'Creating…' : 'Create & open'}
+      </button>
+      <button onclick={() => { showCreate = false; cfError = ''; }}
+        class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
+    </div>
+  </div>
 {/if}
 
 <style>
