@@ -8,9 +8,6 @@
   import { getCurrentYear } from '$lib/api/academic';
   import { isOnline, isSyncing } from '$lib/offline/sync';
 
-  interface Props { toggleSidebar: () => void; }
-  const { toggleSidebar }: Props = $props();
-
   const today = new Date().toLocaleDateString('en-GH', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
   });
@@ -41,15 +38,6 @@
 <header class="sticky top-0 z-40 flex h-14 items-center gap-3
                bg-[var(--card)] px-4 lg:px-6"
         style="padding-top: env(safe-area-inset-top); box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(0,0,0,0.06);">
-
-  <!-- Mobile: hamburger -->
-  <button onclick={toggleSidebar} aria-label="Open navigation"
-    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--fg-muted)]
-           transition hover:bg-[var(--hover)] hover:text-[var(--fg)] lg:hidden">
-    <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-    </svg>
-  </button>
 
   <!-- Mobile: school identity -->
   <div class="flex min-w-0 items-center gap-2 lg:hidden">

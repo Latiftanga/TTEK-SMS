@@ -94,42 +94,24 @@
   const studentCount = $derived($studentsQ.data?.length ?? 0);
 
   // ── Status inputs ─────────────────────────────────────────────────────────────
+  // Exception-based: every student defaults to Present the moment the roster
+  // loads, so the teacher only ever taps the few who are Absent/Late/Excused —
+  // no separate "mark all present" step, no unmarked-students warning, no
+  // extra tap for the common case (most students present most days).
   let markInputs     = $state<Record<string, AttendanceStatus | ''>>({});
   let initializedFor = $state<string | null>(null);
 
   $effect(() => {
     const key = `${classId}-${calDay?.id ?? ''}`;
-    if ($recordsQ.data !== undefined && initializedFor !== key) {
+    if ($recordsQ.data !== undefined && $studentsQ.data !== undefined && initializedFor !== key) {
       const init: Record<string, AttendanceStatus | ''> = {};
       for (const r of $recordsQ.data) init[r.student_id] = r.status;
+      for (const s of $studentsQ.data) if (!(s.id in init)) init[s.id] = 'PRESENT';
       markInputs = init; initializedFor = key;
     }
   });
 
-  const unmarkedCount = $derived(($studentsQ.data ?? []).filter(s => !markInputs[s.id]).length);
-
-  // ── Mark-all-present with guard ────────────────────────────────────────────────
-  let confirmMarkAll = $state(false);
-
-  function markAllPresent() {
-    const hasNonPresent = ($studentsQ.data ?? []).some(s => markInputs[s.id] && markInputs[s.id] !== 'PRESENT');
-    if (hasNonPresent) { confirmMarkAll = true; return; }
-    for (const s of $studentsQ.data ?? []) markInputs[s.id] = 'PRESENT';
-  }
-  function doMarkAllPresent() {
-    for (const s of $studentsQ.data ?? []) markInputs[s.id] = 'PRESENT';
-    confirmMarkAll = false;
-  }
-  function markRemainingPresent() {
-    for (const s of $studentsQ.data ?? []) if (!markInputs[s.id]) markInputs[s.id] = 'PRESENT';
-    showUnmarkedWarning = false;
-  }
-
-  // ── Save guard ────────────────────────────────────────────────────────────────
-  let showUnmarkedWarning = $state(false);
-
   function handleSave() {
-    if (unmarkedCount > 0) { showUnmarkedWarning = true; return; }
     $markMut.mutate(undefined);
   }
 
@@ -139,16 +121,17 @@
 
   const markMut = createMutation({
     mutationFn: (overrideReason: string | undefined) => {
+      // A toggled-off status (tapping an already-active button clears it back
+      // to '') still counts as Present — blank means "no exception," not
+      // "unrecorded," under the exception-based model above.
       const records = ($studentsQ.data ?? [])
-        .filter(s => markInputs[s.id])
-        .map(s => ({ student_id: s.id, status: markInputs[s.id] as string }));
-      if (!records.length) throw new Error('Select a status for at least one student.');
+        .map(s => ({ student_id: s.id, status: (markInputs[s.id] || 'PRESENT') as string }));
       return markAttendance({ school_calendar_id: calDay!.id, class_id: classId, records, override_reason: overrideReason });
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['att-records'] });
       qc.invalidateQueries({ queryKey: ['att-summaries'] });
-      showUnmarkedWarning = false; markOverrideNeeded = false; markError = '';
+      markOverrideNeeded = false; markError = '';
       toast.success(`${res.length} record(s) saved.`);
     },
     onError: (e: unknown) => {
@@ -238,24 +221,13 @@
 
   <!-- Action bar -->
   <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-    <p class="text-xs text-[var(--fg-muted)]">{studentCount} student(s)</p>
-    <div class="flex gap-2">
-      {#if confirmMarkAll}
-        <div class="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-900 dark:bg-amber-950/30">
-          <span class="text-xs text-amber-700 dark:text-amber-300">Override existing marks?</span>
-          <button onclick={doMarkAllPresent} class="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 transition">Yes, mark all</button>
-          <button onclick={() => confirmMarkAll = false} class="rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
-        </div>
-      {:else}
-        <button onclick={markAllPresent} class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-          Mark all present
-        </button>
-      {/if}
-      <button onclick={handleSave} disabled={$markMut.isPending}
-        class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
-        {$markMut.isPending ? 'Saving…' : 'Save attendance'}
-      </button>
-    </div>
+    <p class="text-xs text-[var(--fg-muted)]">
+      {studentCount} student(s) · everyone starts Present — tap a student to change to Absent, Late, or Excused
+    </p>
+    <button onclick={handleSave} disabled={$markMut.isPending || studentCount === 0}
+      class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
+      {$markMut.isPending ? 'Saving…' : 'Save attendance'}
+    </button>
   </div>
 
   <!-- Student list -->
@@ -264,6 +236,14 @@
   {:else if studentCount === 0}
     <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">No students in this class.</div>
   {:else}
+    <!-- Legend — the row buttons are single-letter for space, spelled out once here
+         rather than relying on a hover title (doesn't work on touch). -->
+    <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-[var(--fg-muted)]">
+      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-green-500"></span>P = Present</span>
+      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-red-500"></span>A = Absent</span>
+      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>L = Late</span>
+      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>E = Excused</span>
+    </div>
     <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
       {#each $studentsQ.data ?? [] as student, i (student.id)}
         {@const cur = markInputs[student.id] ?? ''}
@@ -273,18 +253,6 @@
         />
       {/each}
     </div>
-
-    <!-- Unmarked students warning -->
-    {#if showUnmarkedWarning}
-      <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
-        <p class="text-sm font-medium text-amber-800 dark:text-amber-200">{unmarkedCount} student(s) have no status selected and won't be saved.</p>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <button onclick={markRemainingPresent} class="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition">Mark remaining as Present</button>
-          <button onclick={() => { showUnmarkedWarning = false; $markMut.mutate(undefined); }} class="rounded-lg px-3 py-1.5 text-xs font-semibold border border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Save anyway</button>
-          <button onclick={() => showUnmarkedWarning = false} class="rounded-lg px-3 py-1.5 text-xs text-[var(--fg-subtle)] hover:text-[var(--fg)] transition">Cancel</button>
-        </div>
-      </div>
-    {/if}
   {/if}
 {/if}
 

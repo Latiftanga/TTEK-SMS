@@ -32,7 +32,7 @@
   <Sidebar open={sidebarOpen} onclose={() => sidebarOpen = false} />
 
   <div class="flex flex-1 flex-col overflow-hidden">
-    <TopBar toggleSidebar={() => sidebarOpen = !sidebarOpen} />
+    <TopBar />
 
     {#if $pendingOutboxCount > 0}
       <div class="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2
