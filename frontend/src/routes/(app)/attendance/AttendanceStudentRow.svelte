@@ -35,10 +35,10 @@
       {/if}
     </div>
   </div>
-  <div class="flex gap-1">
+  <div class="flex gap-1.5">
     {#each STATUSES as s}
       <button onclick={() => onToggle(s.code)}
-        class="h-8 w-8 rounded-lg text-xs font-bold transition {status === s.code ? s.active : s.idle}"
+        class="min-h-[44px] min-w-[44px] rounded-lg text-sm font-bold transition {status === s.code ? s.active : s.idle}"
         title={s.code}>
         {s.label}
       </button>

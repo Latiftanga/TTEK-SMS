@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { TeacherDashboard } from '$lib/api/dashboard';
-  import StatCard from '$lib/components/StatCard.svelte';
 
   interface Props { data: TeacherDashboard; }
   const { data }: Props = $props();
@@ -12,216 +11,154 @@
     weekday: 'long', day: 'numeric', month: 'long',
   }));
 
-  // A class teacher can hold more than one class — aggregate across all of them
-  // for the header badge, task list, and stat row; the hero section still shows
-  // one card per class.
-  const hasClasses     = $derived(data.my_classes.length > 0);
+  // A class teacher can hold more than one class — only the ones not yet
+  // marked get the full "do this now" card treatment; already-marked classes
+  // collapse into one quiet line so the page never shows more than one
+  // action per class at a time.
+  const hasClasses      = $derived(data.my_classes.length > 0);
+  const unmarkedClasses = $derived(data.my_classes.filter(c => !c.attendance_marked_today));
+  const markedClasses   = $derived(data.my_classes.filter(c => c.attendance_marked_today));
   const multipleClasses = $derived(data.my_classes.length > 1);
-  const totalStudents  = $derived(data.my_classes.reduce((n, c) => n + c.student_count, 0));
-  const totalAbsent    = $derived(data.my_classes.reduce((n, c) => n + c.absent_today, 0));
-  const allMarked      = $derived(hasClasses && data.my_classes.every(c => c.attendance_marked_today));
+  const totalAbsent     = $derived(data.my_classes.reduce((n, c) => n + c.absent_today, 0));
 
   const absentStudents = $derived(
-    data.my_classes
-      .flatMap(c => c.absent_students.map(s => ({ ...s, className: c.name })))
-      .slice(0, 8)
+    data.my_classes.flatMap(c => c.absent_students.map(s => ({ ...s, className: c.name })))
   );
 
-  const tasks = $derived.by(() => [
-    {
-      href: '/attendance',
-      label: 'Mark Attendance',
-      badge: allMarked ? 'Done today' : 'Not yet marked',
-      urgent: !allMarked,
-    },
-    {
-      href: '/assessments',
-      label: 'Enter Scores',
-      badge: data.pending_score_assessments > 0 ? `${data.pending_score_assessments} pending` : 'No pending',
-      urgent: data.pending_score_assessments > 0,
-    },
-    { href: '/students', label: 'My Students', badge: `${totalStudents} enrolled`, urgent: false },
-    { href: '/reports',  label: 'Reports', badge: 'View & download', urgent: false },
-  ]);
+  // One priority action at a time, in order of urgency — everything else
+  // moves to the quieter zone below instead of competing for attention.
+  type Priority = 'attendance' | 'scores' | 'done' | 'no-class';
+  const priority = $derived<Priority>(
+    !hasClasses ? 'no-class'
+    : unmarkedClasses.length > 0 ? 'attendance'
+    : data.pending_score_assessments > 0 ? 'scores'
+    : 'done'
+  );
 
-  const icons = {
-    pencil: `<path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>`,
-    userMinus: `<path stroke-linecap="round" stroke-linejoin="round" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zm8-1h4"/>`,
-    users: `<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>`,
-  };
+  let showAbsent = $state(false);
 </script>
 
-<!-- Greeting — always full width -->
-<div class="mb-6 flex items-start justify-between">
-  <div>
-    <h1 class="text-2xl font-bold text-[var(--fg)]">{salutation}, {data.greeting_name.split(' ')[0]}.</h1>
-    <p class="mt-0.5 text-sm text-[var(--fg-muted)]">{todayLabel}</p>
-  </div>
-  {#if totalAbsent > 0}
-    <div class="flex items-center gap-1.5 rounded-full border border-red-200 dark:border-red-800
-                bg-red-50 dark:bg-red-950/40 px-3 py-1.5 text-xs font-semibold
-                text-red-600 dark:text-red-400">
-      <span class="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse"></span>
-      {totalAbsent} absent
-    </div>
-  {/if}
+<!-- Greeting — a courtesy line, not the headline -->
+<div class="mb-5">
+  <h1 class="text-lg font-semibold text-[var(--fg)]">{salutation}, {data.greeting_name.split(' ')[0]}.</h1>
+  <p class="text-sm text-[var(--fg-muted)]">{todayLabel}</p>
 </div>
 
-<!-- Two-column on xl: left = classes + stats, right = tasks + absences -->
-<div class="grid grid-cols-1 gap-5 xl:grid-cols-[3fr_2fr]">
+<div class="mx-auto max-w-2xl space-y-3">
 
-  <!-- LEFT COLUMN -->
-  <div class="space-y-5">
-
-    <!-- Class hero card(s) -->
-    {#if hasClasses}
-      <div class="space-y-3">
-        {#if multipleClasses}
-          <p class="text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Your Classes</p>
-        {/if}
-        {#each data.my_classes as cls (cls.id)}
-          {@const C = 2 * Math.PI * 30}
-          {@const pct = cls.attendance_marked_today && cls.student_count > 0
-            ? Math.round((cls.present_today / cls.student_count) * 100) : 0}
-          {@const low = cls.attendance_marked_today && pct < 75}
-
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            {#if !multipleClasses}
-              <p class="mb-4 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Your Class</p>
-            {/if}
-            <div class="flex items-center gap-5">
-              <div class="relative flex-shrink-0">
-                <svg class="w-20 h-20" viewBox="0 0 80 80">
-                  <circle cx="40" cy="40" r="30" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="6"/>
-                  <circle cx="40" cy="40" r="30" fill="none"
-                    stroke={!cls.attendance_marked_today ? '#d1d5db' : low ? '#f59e0b' : 'var(--brand)'}
-                    stroke-width="6" stroke-linecap="round"
-                    stroke-dasharray="{C}" stroke-dashoffset="{C * (1 - pct / 100)}"
-                    transform="rotate(-90 40 40)"
-                    style="transition: stroke-dashoffset 800ms cubic-bezier(0.4,0,0.2,1)"/>
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <span class="text-lg font-bold text-[var(--fg)]">
-                    {cls.attendance_marked_today ? `${pct}%` : '—'}
-                  </span>
-                </div>
-              </div>
-              <div class="min-w-0 flex-1">
-                <h2 class="text-xl font-bold text-[var(--fg)] truncate">{cls.name}</h2>
-                <p class="text-sm text-[var(--fg-muted)]">{cls.student_count} students enrolled</p>
-                <div class="mt-2.5 flex flex-wrap gap-2">
-                  {#if cls.attendance_marked_today}
-                    <span class="inline-flex items-center gap-1 rounded-full bg-green-600 px-2.5 py-0.5 text-[11px] font-semibold text-white dark:bg-green-700">
-                      <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                      {cls.present_today} present
-                    </span>
-                    {#if cls.absent_today > 0}
-                      <span class="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400">
-                        {cls.absent_today} absent
-                      </span>
-                    {/if}
-                  {:else}
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-                      <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      Not yet marked
-                    </span>
-                  {/if}
-                </div>
-              </div>
-            </div>
-            {#if !cls.attendance_marked_today}
-              <a href="/attendance"
-                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition active:scale-[0.99] hover:opacity-90"
-                 style="background-color: var(--brand)">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                </svg>
-                Mark attendance now
-              </a>
-            {/if}
-          </div>
-        {/each}
+  {#if priority === 'attendance'}
+    <!-- ── HERO: mark attendance ─────────────────────────────────────────── -->
+    {#each unmarkedClasses as cls (cls.id)}
+      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 text-center" style="box-shadow: var(--shadow-sm)">
+        <p class="text-xs font-semibold uppercase tracking-wide text-[var(--fg-subtle)]">Today's task</p>
+        <h2 class="mt-1 text-2xl font-bold text-[var(--fg)]">{cls.name}</h2>
+        <p class="mt-1 text-base text-[var(--fg-muted)]">{cls.student_count} students · attendance not marked yet</p>
+        <a href="/attendance"
+           class="mt-5 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl py-3 text-base font-semibold text-white transition active:scale-[0.98] hover:opacity-90"
+           style="background-color: var(--brand)">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+          </svg>
+          Mark attendance
+        </a>
       </div>
-    {:else}
-      <div class="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-6 text-center text-sm text-[var(--fg-muted)]">
-        No class assigned to you this term.
-      </div>
+    {/each}
+    {#if markedClasses.length > 0}
+      <p class="flex items-center gap-1.5 px-1 text-sm text-[var(--fg-muted)]">
+        <svg class="h-4 w-4 text-green-600 dark:text-green-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        {markedClasses.length === 1 ? `${markedClasses[0].name} already marked` : `${markedClasses.length} other classes already marked`}
+      </p>
     {/if}
 
-    <!-- Stat row -->
-    <div class="grid grid-cols-3 gap-3">
-      <StatCard label="Pending Scores" value={data.pending_score_assessments}
-        iconPath={icons.pencil}
-        color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
-        href="/assessments" alert={data.pending_score_assessments > 0} />
-      <StatCard label="Absent Today" value={totalAbsent}
-        iconPath={icons.userMinus}
-        color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"
-        href="/attendance" alert={totalAbsent > 0} />
-      <StatCard label="Class Size" value={totalStudents}
-        iconPath={icons.users}
-        color="bg-indigo-50 dark:bg-indigo-950/40" iconColor="text-indigo-600 dark:text-indigo-400"
-        href="/students" />
+  {:else if priority === 'scores'}
+    <!-- ── HERO: enter scores ────────────────────────────────────────────── -->
+    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 text-center" style="box-shadow: var(--shadow-sm)">
+      <p class="text-xs font-semibold uppercase tracking-wide text-[var(--fg-subtle)]">Today's task</p>
+      <h2 class="mt-1 text-2xl font-bold text-[var(--fg)]">Enter scores</h2>
+      <p class="mt-1 text-base text-[var(--fg-muted)]">
+        {data.pending_score_assessments} assessment{data.pending_score_assessments === 1 ? '' : 's'} waiting
+      </p>
+      <a href="/assessments"
+         class="mt-5 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl py-3 text-base font-semibold text-white transition active:scale-[0.98] hover:opacity-90"
+         style="background-color: var(--brand)">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+        </svg>
+        Enter scores
+      </a>
+    </div>
+    <p class="flex items-center gap-1.5 px-1 text-sm text-[var(--fg-muted)]">
+      <svg class="h-4 w-4 text-green-600 dark:text-green-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Attendance marked for today
+    </p>
+
+  {:else if priority === 'done'}
+    <!-- ── All caught up ─────────────────────────────────────────────────── -->
+    <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 text-center" style="box-shadow: var(--shadow-sm)">
+      <svg class="mx-auto h-12 w-12 text-green-600 dark:text-green-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10"/><polyline points="8 12.5 11 15.5 16 9"/>
+      </svg>
+      <h2 class="mt-3 text-xl font-bold text-[var(--fg)]">You're all caught up</h2>
+      <p class="mt-1 text-sm text-[var(--fg-muted)]">Attendance is marked and there are no scores waiting.</p>
     </div>
 
-  </div>
-
-  <!-- RIGHT COLUMN -->
-  <div class="space-y-5">
-
-    <!-- Task list -->
-    <div>
-      <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Today's tasks</p>
-      <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
-        {#each tasks as task}
-          <a href={task.href} class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-[var(--bg)]">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
-                        {task.urgent ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-gray-100 dark:bg-gray-800'}">
-              {#if task.urgent}
-                <span class="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
-              {:else}
-                <svg class="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              {/if}
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-[var(--fg)]">{task.label}</p>
-              <p class="text-[11px] {task.urgent ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-[var(--fg-muted)]'}">{task.badge}</p>
-            </div>
-            <svg class="h-4 w-4 text-gray-300 dark:text-gray-700 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </a>
-        {/each}
-      </div>
+  {:else}
+    <!-- ── No class assigned — nothing to claim "done" here, this dashboard
+         doesn't track subject-only teaching workload ─────────────────────── -->
+    <div class="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] p-8 text-center">
+      <h2 class="text-lg font-semibold text-[var(--fg)]">No class assigned to you this term</h2>
+      <p class="mt-1 text-sm text-[var(--fg-muted)]">If you teach a subject, go to Assessments to enter scores.</p>
+      <a href="/assessments"
+         class="mt-4 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base font-semibold text-white transition hover:opacity-90"
+         style="background-color: var(--brand)">
+        Go to Assessments
+      </a>
     </div>
+  {/if}
 
-    <!-- Absent students -->
-    {#if absentStudents.length > 0}
-      <div>
-        <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
-          Absent today · {totalAbsent}
-        </p>
-        <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+  <!-- ── Quieter zone: everything else, one tap away ─────────────────────── -->
+  {#if hasClasses}
+    <div class="mt-2 overflow-hidden rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
+      <a href="/students" class="flex items-center justify-between gap-3 px-4 py-3 text-sm transition hover:bg-[var(--hover)]">
+        <span class="font-medium text-[var(--fg)]">My Students</span>
+        <span class="text-[var(--fg-muted)]">View &amp; register →</span>
+      </a>
+      <a href="/reports" class="flex items-center justify-between gap-3 px-4 py-3 text-sm transition hover:bg-[var(--hover)]">
+        <span class="font-medium text-[var(--fg)]">Reports</span>
+        <span class="text-[var(--fg-muted)]">View &amp; download →</span>
+      </a>
+    </div>
+  {/if}
+
+  <!-- ── Absent today — collapsed by default, one tap to see names ───────── -->
+  {#if absentStudents.length > 0}
+    <div class="overflow-hidden rounded-xl border border-[var(--border)]">
+      <button onclick={() => showAbsent = !showAbsent}
+        class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm transition hover:bg-[var(--hover)]">
+        <span class="font-medium text-[var(--fg)]">Absent today · {totalAbsent}</span>
+        <svg class="h-4 w-4 shrink-0 text-[var(--fg-subtle)] transition-transform duration-150 {showAbsent ? 'rotate-90' : ''}"
+          fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+        </svg>
+      </button>
+      {#if showAbsent}
+        <div class="divide-y divide-[var(--border)] border-t border-[var(--border)]">
           {#each absentStudents as s}
-            <div class="flex items-center gap-3.5 px-5 py-3">
-              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/50 text-[11px] font-bold text-red-600 dark:text-red-400">
+            <div class="flex items-center gap-3 px-4 py-2.5">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/50 text-xs font-bold text-red-600 dark:text-red-400">
                 {s.name.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()}
               </span>
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-medium text-[var(--fg)]">{s.name}</p>
-                <p class="text-[11px] text-[var(--fg-muted)]">
+                <p class="text-xs text-[var(--fg-muted)]">
                   {s.admission_number}{multipleClasses ? ` · ${s.className}` : ''}
                 </p>
               </div>
             </div>
           {/each}
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
+  {/if}
 
-  </div>
 </div>

@@ -44,6 +44,13 @@
     staleTime: 5 * 60_000,
   }));
 
+  // Auto-select when there's only one class — same courtesy as the class/
+  // subject/category auto-selects on /assessments (assessments/+page.svelte).
+  $effect(() => {
+    const classes = $classesQ.data ?? [];
+    if (classes.length === 1 && !classId) classId = classes[0].id;
+  });
+
   // ── Calendar for current term ──────────────────────────────────────────────────
   const calendarQ = reactiveQuery(() => ({
     queryKey: ['calendar', currentTermId] as const,
