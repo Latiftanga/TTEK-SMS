@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
 from app.core.student_scope import resolve_class_teacher_scope, resolve_subject_teacher_scope
+from app.core.teacher_scope import enforce_current_term_for_subject_registration
 from app.models.academic import AcademicTerm, Subject
 from app.models.students import (
     StudentClassAssignment,
@@ -107,6 +108,7 @@ async def register_subjects(
     await _assert_can_register(
         sca.class_id, [item.subject_id for item in items], term.academic_year_id, user_id, db,
     )
+    await enforce_current_term_for_subject_registration(user_id, term.id, db)
     resolved_reason = await check_term_lock_override(term.id, override_reason, user_id, db)
     for item in items:
         if not await class_subject_exists(sca.class_id, item.subject_id, school_id, db):
@@ -207,6 +209,7 @@ async def delete_subject_registration(
             # match against, so deny rather than silently fall through.
             if await resolve_class_teacher_scope(user_id, term.academic_year_id, db) is not None:
                 raise HTTPException(status_code=404, detail="Subject registration not found.")
+        await enforce_current_term_for_subject_registration(user_id, te.academic_term_id, db)
         resolved_reason = await check_term_lock_override(te.academic_term_id, override_reason, user_id, db)
     db.add(SubjectRegistrationAuditLog(
         school_id=school_id, registration_id=reg.id, term_enrollment_id=te_id,

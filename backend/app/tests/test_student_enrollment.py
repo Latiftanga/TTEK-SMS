@@ -3,6 +3,8 @@ Student enrollment integration tests — initial enrollment, term enrollment,
 subject registration, and transfer requests.
 Run inside Docker: docker compose exec api pytest app/tests/test_student_enrollment.py -v
 """
+from datetime import date
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -539,6 +541,137 @@ async def test_delete_subject_registration_allowed_with_override(
         f"/students/term-enrollments/{te_id}/subjects/{reg_id}?override_reason=Correction+approved",
         headers=hod_auth,
     )
+    assert resp.status_code == 204
+
+
+@pytest.fixture
+async def non_current_term_registration(
+    client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School,
+):
+    """A subject already registered against a TermEnrollment for a term that
+    isn't the current one — the state every 'not the current term' test
+    starts from. Registration itself is done as the superadmin `auth`
+    fixture (which bypasses the new check) since a scoped caller can't
+    create this state through the API at all — that's the behaviour under
+    test in the sibling 'blocked' cases."""
+    from app.models.academic import ClassSubject, Subject
+
+    non_current_term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_term.academic_year_id,
+        term_number=2, name="Term 2",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 1), is_current=False,
+    )
+    db_session.add(non_current_term)
+    await db_session.flush()
+
+    sub = Subject(school_id=school.id, code="NCT01", name="Non-Current Term Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(non_current_term.id),
+    }, headers=auth)).json()["id"]
+    reg_id = (await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=auth)).json()[0]["id"]
+
+    return te_id, reg_id, sub, non_current_term
+
+
+async def _class_teacher_auth(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_term: AcademicTerm,
+) -> dict:
+    """A CLASS_TEACHER login with a real ClassTeacher assignment on
+    school_class, so the request clears student_scope's Category B check
+    and any remaining rejection is attributable to the behaviour under
+    test."""
+    from app.models.academic import ClassTeacher
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    teacher_user = await db_session.scalar(
+        select(User).where(User.email == "class_teacher@presec-test.edu.gh")
+    )
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=teacher_user.staff_member_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+    return teacher_auth
+
+
+@pytest.mark.asyncio
+async def test_register_subject_blocked_on_non_current_term(
+    client: AsyncClient, auth: dict, non_current_term_registration, db_session: AsyncSession,
+    school: School, school_class: Class, academic_term: AcademicTerm, redis_permissions: None,
+):
+    """A class/subject teacher can't register a subject against a term
+    that isn't the one currently running — same reasoning as attendance
+    and scoring being restricted to the current term."""
+    _te_id, _reg_id, sub, non_current_term = non_current_term_registration
+    teacher_auth = await _class_teacher_auth(client, auth, db_session, school, school_class, academic_term)
+
+    sid = await _create_student(client, auth, num="NCT-BLOCKED")
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(non_current_term.id),
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=teacher_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_subject_allowed_on_non_current_term_for_approve_scores_holder(
+    client: AsyncClient, auth: dict, non_current_term_registration, db_session: AsyncSession,
+    school: School, school_class: Class, academic_term: AcademicTerm, redis_permissions: None,
+):
+    """HOD holds assessments.approve_scores — the same permission that
+    already bypasses the results_locked override — so backfilling a
+    non-current term's registrations is still possible for senior staff."""
+    _te_id, _reg_id, sub, non_current_term = non_current_term_registration
+    hod_auth = await _login_as_position(client, auth, db_session, school, "HOD")
+
+    sid = await _create_student(client, auth, num="NCT-ALLOWED")
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid, "academic_term_id": str(non_current_term.id),
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=hod_auth)
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_delete_subject_registration_blocked_on_non_current_term(
+    client: AsyncClient, auth: dict, non_current_term_registration, db_session: AsyncSession,
+    school: School, school_class: Class, academic_term: AcademicTerm, redis_permissions: None,
+):
+    te_id, reg_id, _sub, _non_current_term = non_current_term_registration
+    teacher_auth = await _class_teacher_auth(client, auth, db_session, school, school_class, academic_term)
+
+    resp = await client.delete(f"/students/term-enrollments/{te_id}/subjects/{reg_id}", headers=teacher_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_subject_registration_allowed_on_non_current_term_for_approve_scores_holder(
+    client: AsyncClient, auth: dict, non_current_term_registration, db_session: AsyncSession,
+    school: School, redis_permissions: None,
+):
+    te_id, reg_id, _sub, _non_current_term = non_current_term_registration
+    hod_auth = await _login_as_position(client, auth, db_session, school, "HOD")
+
+    resp = await client.delete(f"/students/term-enrollments/{te_id}/subjects/{reg_id}", headers=hod_auth)
     assert resp.status_code == 204
 
 

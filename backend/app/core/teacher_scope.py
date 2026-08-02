@@ -156,6 +156,31 @@ async def enforce_current_term_for_scoring(
         )
 
 
+async def enforce_current_term_for_subject_registration(
+    user_id: uuid.UUID,
+    academic_term_id: uuid.UUID | None,
+    db: AsyncSession,
+) -> None:
+    """Same as enforce_current_term_for_attendance/scoring, gated on
+    assessments.approve_scores — the same permission that already governs
+    the results_locked override for this exact registration flow (see
+    services/student_subject_registration.py). Registering or removing a
+    subject against a term that isn't the one currently running doesn't
+    make sense for a class/subject teacher; unlike results_locked (an
+    explicit admin toggle with its own audited override_reason), there's no
+    "unlock" here — a non-current term is just structurally the wrong place
+    to be touching a student's curriculum, so this is a hard block rather
+    than an override-with-reason."""
+    if academic_term_id is None or await user_has_permission(user_id, "assessments", "approve_scores", db):
+        return
+    term = await db.get(AcademicTerm, academic_term_id)
+    if term and not term.is_current:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Subjects can only be registered or removed for the current term.",
+        )
+
+
 async def classes_for_scope(
     class_ids: set[uuid.UUID] | None,
     school_id: uuid.UUID,
