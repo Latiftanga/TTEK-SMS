@@ -12,12 +12,9 @@ from app.models.documents import GraduationRecord, GraduationType
 from app.models.academic import Class
 from app.models.students import Student, TermEnrollment
 from app.schemas.students import StudentSummary
+from app.services.class_progression import CLASS_LEVEL_ORDER
 from app.services.student import _to_summary
 from app.services.student_display import _active_class_assignment_subquery, _get_class_map
-
-# Pedagogical order — Class.level is a free-text column, not a DB-enforced enum,
-# so plain alphabetical ORDER BY would put "Basic" before "Creche".
-_CLASS_LEVEL_ORDER = ["Creche", "Nursery", "KG", "Basic", "SHS"]
 
 
 async def list_students(
@@ -102,9 +99,9 @@ async def list_students(
         order_cols = [Student.admission_number.desc() if desc else Student.admission_number.asc()]
     elif sort_by == "class":
         level_rank = case(
-            {lvl: i for i, lvl in enumerate(_CLASS_LEVEL_ORDER)},
+            {lvl: i for i, lvl in enumerate(CLASS_LEVEL_ORDER)},
             value=Class.level,
-            else_=len(_CLASS_LEVEL_ORDER),
+            else_=len(CLASS_LEVEL_ORDER),
         )
         order_cols = [
             c.desc().nulls_last() if desc else c.asc().nulls_last()

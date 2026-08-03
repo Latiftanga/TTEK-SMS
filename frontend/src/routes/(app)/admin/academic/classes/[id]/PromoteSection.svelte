@@ -3,6 +3,9 @@
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
   import { listStudents, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
+  import { detailOf, isLocked } from '$lib/apiError';
+  import TargetClassPicker from '$lib/components/TargetClassPicker.svelte';
+  import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
   interface Props { classId: string; classData: SchoolClass; }
   const { classId, classData }: Props = $props();
@@ -17,24 +20,14 @@
   const studentsQ = createQuery({ queryKey: ['students', 'class', classId],
     queryFn: () => listStudents({ class_id: classId, active_only: true }), staleTime: 60_000 });
 
-  const otherClasses = $derived<SchoolClass[]>(($classesQ.data ?? []).filter(c => c.id !== classId));
+  const allClasses = $derived<SchoolClass[]>($classesQ.data ?? []);
   const years        = $derived<AcademicYear[]>([...($yearsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date)));
   const students     = $derived($studentsQ.data ?? []);
 
-  // ── Target class suggestion ───────────────────────────────────────────────────
+  // ── Target class ──────────────────────────────────────────────────────────────
   let toClassId    = $state('');
   let toYearId     = $state('');
   let alsoEnroll   = $state(true);
-  let toClassManual = $state(false);
-
-  const suggestedClass = $derived(otherClasses.find(
-    c => c.level === classData.level
-      && c.year_group === classData.year_group + 1
-      && c.programme_id === classData.programme_id
-      && (c.stream ?? null) === (classData.stream ?? null)
-  ) ?? null);
-
-  $effect(() => { if (suggestedClass && !toClassManual) toClassId = suggestedClass.id; });
 
   const targetYear = $derived(years.find(y => y.id === toYearId));
   const firstTerm  = $derived([...(targetYear?.terms ?? [])].sort((a, b) => a.start_date.localeCompare(b.start_date))[0] ?? null);
@@ -63,8 +56,11 @@
     promote: 'PROMOTED', repeat: 'REPEATED', demote: 'DEMOTED',
   };
 
+  let overrideNeeded = $state(false);
+  let overrideError  = $state('');
+
   const promoteMut = createMutation({
-    mutationFn: () => {
+    mutationFn: (overrideReason?: string) => {
       const records: PromotionRecordCreate[] = [...selected].map(sid => ({
         student_id: sid, class_id: toClassId, graduation_type: ACTION_TO_TYPE[actionType],
       }));
@@ -72,16 +68,18 @@
         academic_year_id: toYearId,
         academic_term_id: alsoEnroll && firstTerm ? firstTerm.id : null,
         records,
+        override_reason: overrideReason,
       });
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['students', 'class', classId] });
       const label = ACTION[actionType].label;
       toast.success(`${label}: ${res.processed} student(s). Skipped: ${res.skipped} (already processed for this year).`);
-      selected = new Set(); confirmOpen = false; error = '';
+      selected = new Set(); confirmOpen = false; error = ''; overrideNeeded = false; overrideError = '';
     },
     onError: (e: unknown) => {
-      error = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not complete.';
+      if (isLocked(e)) { overrideNeeded = true; overrideError = detailOf(e) ?? 'This mismatch needs a reason.'; return; }
+      error = detailOf(e) ?? 'Could not complete.';
       confirmOpen = false;
     },
   });
@@ -116,7 +114,7 @@
     <!-- Action type -->
     <div class="flex gap-2">
       {#each Object.entries(ACTION) as [key, meta]}
-        <button onclick={() => { actionType = key as ActionType; toClassManual = false; }}
+        <button onclick={() => { actionType = key as ActionType; toClassId = ''; }}
           class="flex-1 rounded-xl border px-3 py-2.5 text-left transition
                  {actionType === key
                    ? 'border-[var(--brand)] bg-[var(--brand)]/5 ring-1 ring-[var(--brand)]'
@@ -137,18 +135,10 @@
             {#each years as y}<option value={y.id}>{y.name}{y.is_current ? ' (current)' : ''}</option>{/each}
           </select>
         </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
-            Target class *
-            {#if suggestedClass && !toClassManual}
-              <span class="ml-1 rounded-full bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-950/30 dark:text-green-400">suggested</span>
-            {/if}
-          </label>
-          <select bind:value={toClassId} onchange={() => toClassManual = true} class={sel}>
-            <option value="">Select class…</option>
-            {#each otherClasses as c}<option value={c.id}>{c.display_name}</option>{/each}
-          </select>
-        </div>
+        <TargetClassPicker
+          fromClass={classData} classes={allClasses}
+          value={toClassId} onChange={(id) => toClassId = id} mode={actionType}
+          label="Target class *" />
       </div>
       {#if toYearId && firstTerm}
         <label class="flex cursor-pointer items-center gap-2.5">
@@ -204,7 +194,7 @@
           <p class="text-sm text-[var(--fg-muted)]">
             Move <strong>{selected.size}</strong> student{selected.size > 1 ? 's' : ''} from
             <strong>{classData.display_name}</strong> →
-            <strong>{otherClasses.find(c => c.id === toClassId)?.display_name ?? '—'}</strong>
+            <strong>{allClasses.find(c => c.id === toClassId)?.display_name ?? '—'}</strong>
             ({years.find(y => y.id === toYearId)?.name ?? '—'})
             {#if alsoEnroll && firstTerm}, then register in <strong>{firstTerm.name}</strong>{/if}.
           </p>
@@ -214,7 +204,7 @@
             </p>
           {/if}
           <div class="flex gap-2">
-            <button onclick={() => $promoteMut.mutate()} disabled={$promoteMut.isPending}
+            <button onclick={() => $promoteMut.mutate(undefined)} disabled={$promoteMut.isPending}
               class="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
               style="background: {actionType === 'demote' ? '#dc2626' : 'var(--brand)'}">
               {$promoteMut.isPending ? 'Processing…' : `Confirm ${ACTION[actionType].label}`}
@@ -230,3 +220,12 @@
 
   </div>
 {/if}
+
+<OverrideReasonModal
+  open={overrideNeeded}
+  title="Class mismatch"
+  errorMessage={overrideError}
+  isPending={$promoteMut.isPending}
+  onSubmit={(reason) => $promoteMut.mutate(reason)}
+  onCancel={() => { overrideNeeded = false; overrideError = ''; }}
+/>

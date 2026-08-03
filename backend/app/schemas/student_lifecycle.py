@@ -30,6 +30,11 @@ class GraduationRecordRead(BaseModel):
     notes: str | None
     processed_at: datetime
     processed_by_id: uuid.UUID
+    # Populated only for a promotion whose target class didn't continue the
+    # student's programme/stream track (services/class_progression.py) —
+    # always null for graduation/withdrawal/transfer records.
+    override_reason: str | None = None
+    source_class_id: uuid.UUID | None = None
     model_config = {"from_attributes": True}
 
 
@@ -60,6 +65,11 @@ class BulkPromoteRequest(BaseModel):
     academic_year_id: uuid.UUID
     academic_term_id: uuid.UUID | None = None
     records: list[PromotionRecordCreate]
+    # Every record in a batch shares one target class per source class, so a
+    # mismatch is by construction the same mismatch across the batch — one
+    # reason, not one per record. Required only if class_progression.py finds
+    # a programme/stream mismatch; ignored otherwise.
+    override_reason: str | None = None
 
 
 class BulkPromoteResult(BaseModel):

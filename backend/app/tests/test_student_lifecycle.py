@@ -132,23 +132,6 @@ async def test_bulk_promote_creates_record_and_assignment(
 
 
 @pytest.mark.asyncio
-async def test_bulk_promote_demoted_type_accepted(
-    client: AsyncClient, auth: dict,
-    school_class: Class, academic_year: AcademicYear,
-    next_class: Class, next_year: AcademicYear,
-):
-    sid = await _create_student(client, auth)
-    await _assign_class(client, auth, sid, school_class, academic_year)
-
-    resp = await client.post("/students/promotions/bulk", json={
-        "academic_year_id": str(next_year.id),
-        "records": [{"student_id": sid, "graduation_type": "DEMOTED", "class_id": str(next_class.id)}],
-    }, headers=auth)
-    assert resp.status_code == 201
-    assert resp.json()["records"][0]["graduation_type"] == "DEMOTED"
-
-
-@pytest.mark.asyncio
 async def test_bulk_promote_rejects_exit_type(
     client: AsyncClient, auth: dict,
     school_class: Class, academic_year: AcademicYear,

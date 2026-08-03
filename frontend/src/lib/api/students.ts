@@ -418,6 +418,11 @@ export interface GraduationRecord {
   notes: string | null;
   processed_at: string;
   processed_by_id: string;
+  // Set only when a promotion's target class didn't continue the student's
+  // programme/stream track and the caller overrode that — always null for
+  // graduation/withdrawal/transfer records.
+  override_reason: string | null;
+  source_class_id: string | null;
 }
 
 export interface GraduationRecordCreate {
@@ -461,5 +466,9 @@ export const bulkPromoteStudents = (req: {
   academic_year_id: string;
   academic_term_id?: string | null;
   records: PromotionRecordCreate[];
+  // Required only if the target class doesn't continue the student's
+  // programme/stream track — ignored otherwise. One reason per batch since
+  // every record in a batch shares one target class per source class.
+  override_reason?: string | null;
 }): Promise<BulkPromoteResult> =>
   api.post('/students/promotions/bulk', req).then(r => r.data);

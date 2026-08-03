@@ -129,6 +129,15 @@ class GraduationRecord(Base, UUIDPrimaryKey, SchoolScopedMixin):
     processed_by_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
     )
+    # Set only when a promotion's target class didn't continue the student's
+    # programme/stream track and the caller overrode that (services/
+    # class_progression.py) — null for a clean match and for every
+    # graduation/withdrawal/transfer outcome. source_class_id is SET NULL
+    # (not CASCADE) so this record survives the class being deleted later.
+    override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_class_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("class.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class OfflineSyncConflict(Base, UUIDPrimaryKey, SchoolScopedMixin):

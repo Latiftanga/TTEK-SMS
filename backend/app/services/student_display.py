@@ -50,22 +50,31 @@ def _photo_url(photo_path: str | None) -> str | None:
     return f"{settings.app_base_url.rstrip('/')}/uploads/{photo_path}"
 
 
-def _active_class_assignment_subquery():
+def _active_class_assignment_subquery(*, exclude_academic_year_id: uuid.UUID | None = None):
     """Most-recent active StudentClassAssignment per student.
 
     A promoted (not graduated/withdrawn) student is never deactivated from their
     prior year's assignment, so 2+ is_active=True rows can coexist for one student.
     DISTINCT ON collapses that to exactly one row per student, keeping this join
     provably 1:1 wherever it's used (list_students' count/sort, and here).
+
+    exclude_academic_year_id excludes a specific year's row *before* DISTINCT ON
+    collapses the set — used by class_progression.py's promotion validator to find
+    a student's *source* class when they may already have a manually-created
+    assignment for the *target* year (that row would otherwise be the most recent
+    and get picked as its own "source", making a promotion look like a no-op).
+    Filtering after the subquery would drop the student entirely instead of
+    falling through to their real previous-year row.
     """
+    q = select(
+        StudentClassAssignment.student_id,
+        StudentClassAssignment.class_id,
+        StudentClassAssignment.academic_year_id,
+    ).where(StudentClassAssignment.is_active == True)  # noqa: E712
+    if exclude_academic_year_id is not None:
+        q = q.where(StudentClassAssignment.academic_year_id != exclude_academic_year_id)
     return (
-        select(
-            StudentClassAssignment.student_id,
-            StudentClassAssignment.class_id,
-            StudentClassAssignment.academic_year_id,
-        )
-        .where(StudentClassAssignment.is_active == True)  # noqa: E712
-        .distinct(StudentClassAssignment.student_id)
+        q.distinct(StudentClassAssignment.student_id)
         .order_by(StudentClassAssignment.student_id, StudentClassAssignment.created_at.desc())
         .subquery()
     )

@@ -20,6 +20,7 @@ from app.schemas.student_lifecycle import (
     BulkPromoteRequest, BulkPromoteResult, GraduationRecordRead,
 )
 from app.schemas.students import StudentClassAssignmentCreate, TermEnrollmentCreate
+from app.services.class_progression import validate_promotion_batch
 from app.services.student_class_assignment import create_class_assignment
 from app.services.student_enrollment import create_term_enrollment
 
@@ -34,7 +35,13 @@ async def process_bulk_promotion(
     Idempotent: if a GraduationRecord for (student, academic_year) already exists
     it is skipped (counted in `skipped`, not `processed`) — the student keeps
     whatever class assignment resulted from the original processing.
+
+    Every record is validated against the student's actual source class
+    (programme/stream continuity, graduation_type direction) before anything
+    is written — see class_progression.py::validate_promotion_batch().
     """
+    validated = await validate_promotion_batch(req, school_id, db)
+
     now = datetime.now(timezone.utc)
     records: list[GraduationRecord] = []
     skipped = 0
@@ -52,6 +59,7 @@ async def process_bulk_promotion(
             records.append(existing)
             continue
 
+        source_class_id, override_reason = validated.get(item.student_id, (None, None))
         record = GraduationRecord(
             school_id=school_id,
             student_id=item.student_id,
@@ -60,6 +68,8 @@ async def process_bulk_promotion(
             notes=item.notes,
             processed_at=now,
             processed_by_id=user_id,
+            source_class_id=source_class_id,
+            override_reason=override_reason,
         )
         try:
             async with db.begin_nested():

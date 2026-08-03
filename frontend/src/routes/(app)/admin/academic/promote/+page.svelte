@@ -5,7 +5,11 @@
   import { writable } from 'svelte/store';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import { detailOf, isLocked } from '$lib/apiError';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import TargetClassPicker from '$lib/components/TargetClassPicker.svelte';
+  import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
+  import PromoteStudentList from './PromoteStudentList.svelte';
 
   const qc = useQueryClient();
   setPageTitle('Promotion');
@@ -24,23 +28,7 @@
     [...($yearsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date))
   );
 
-  // Suggest the next-year class when "from" is chosen
-  const fromClass = $derived(classes.find(c => c.id === fromClassId));
-  const suggestedToClass = $derived.by(() => {
-    if (!fromClass) return null;
-    return classes.find(
-      c => c.level === fromClass.level
-        && c.year_group === fromClass.year_group + 1
-        && c.programme_id === fromClass.programme_id
-        && (c.stream ?? null) === (fromClass.stream ?? null)
-    ) ?? null;
-  });
-
-  // Auto-fill target class when suggestion available and not yet manually chosen
-  let toClassManual = $state(false);
-  $effect(() => {
-    if (suggestedToClass && !toClassManual) toClassId = suggestedToClass.id;
-  });
+  const fromClass = $derived(classes.find(c => c.id === fromClassId) ?? null);
 
   // First term of target year (for enroll-on-promote)
   const targetYear = $derived(years.find(y => y.id === toYearId));
@@ -94,9 +82,16 @@
   let actionType: ActionType = $state('promote');
   let confirmOpen = $state(false);
   let promoteErr  = $state('');
+  let overrideNeeded = $state(false);
+  let overrideError  = $state('');
+
+  // Reset the target class whenever the source class or action type changes,
+  // so TargetClassPicker re-suggests fresh rather than carrying over a
+  // choice made for a different context.
+  $effect(() => { void fromClassId; void actionType; toClassId = ''; });
 
   const promoteMut = createMutation({
-    mutationFn: () => {
+    mutationFn: (overrideReason?: string) => {
       const records: PromotionRecordCreate[] = [...selected].map(sid => ({
         student_id: sid, class_id: toClassId, graduation_type: ACTION_TO_TYPE[actionType],
       }));
@@ -104,6 +99,7 @@
         academic_year_id: toYearId,
         academic_term_id: alsoEnroll && firstTerm ? firstTerm.id : null,
         records,
+        override_reason: overrideReason,
       });
     },
     onSuccess: (res) => {
@@ -111,11 +107,11 @@
       qc.invalidateQueries({ queryKey: ['student-class-assignments'] });
       const label = actionType === 'promote' ? 'Promoted' : actionType === 'repeat' ? 'Re-enrolled' : 'Demoted';
       toast.success(`${label}: ${res.processed} student(s). Skipped: ${res.skipped} (already processed for this year).`);
-      selected = new Set(); confirmOpen = false; promoteErr = '';
+      selected = new Set(); confirmOpen = false; promoteErr = ''; overrideNeeded = false; overrideError = '';
     },
     onError: (e: unknown) => {
-      promoteErr = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Could not complete operation.';
+      if (isLocked(e)) { overrideNeeded = true; overrideError = detailOf(e) ?? 'This mismatch needs a reason.'; return; }
+      promoteErr = detailOf(e) ?? 'Could not complete operation.';
       confirmOpen = false;
     },
   });
@@ -143,7 +139,7 @@
   <!-- Action type selector -->
   <div class="flex gap-2">
     {#each Object.entries(ACTION_LABELS) as [key, meta]}
-      <button onclick={() => { actionType = key as ActionType; toClassManual = false; }}
+      <button onclick={() => { actionType = key as ActionType; }}
         class="flex-1 rounded-xl border px-4 py-3 text-left transition
                {actionType === key
                  ? 'border-[var(--brand)] bg-[var(--brand)]/5 ring-1 ring-[var(--brand)]'
@@ -162,7 +158,7 @@
         <p class="text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">From</p>
         <div>
           <label class="lx">Source class</label>
-          <select bind:value={fromClassId} onchange={() => toClassManual = false} class="sel mt-1">
+          <select bind:value={fromClassId} class="sel mt-1">
             <option value="">Select class…</option>
             {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
           </select>
@@ -179,17 +175,10 @@
             {#each years as y}<option value={y.id}>{y.name}{y.is_current ? ' (current)' : ''}</option>{/each}
           </select>
         </div>
-        <div>
-          <label class="lx">Target class
-            {#if suggestedToClass && !toClassManual}
-              <span class="ml-1 rounded-full bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-950/30 dark:text-green-400">suggested</span>
-            {/if}
-          </label>
-          <select bind:value={toClassId} onchange={() => toClassManual = true} class="sel mt-1">
-            <option value="">Select class…</option>
-            {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
-          </select>
-        </div>
+        <TargetClassPicker
+          {fromClass} {classes}
+          value={toClassId} onChange={(id) => toClassId = id} mode={actionType}
+          label="Target class" />
       </div>
     </div>
 
@@ -216,36 +205,7 @@
       <p class="text-sm text-[var(--fg-muted)]">No active students found in this class.</p>
     </div>
   {:else}
-    <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      <!-- List header -->
-      <div class="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <label class="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-[var(--fg)]">
-          <input type="checkbox" checked={allSelected} onchange={toggleAll} class="h-4 w-4 rounded accent-[var(--brand)]" />
-          {selected.size > 0 ? `${selected.size} of ${students.length} selected` : `${students.length} students`}
-        </label>
-        {#if selected.size > 0}
-          <button onclick={() => selected = new Set()} class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
-            Clear selection
-          </button>
-        {/if}
-      </div>
-
-      {#each students as s (s.id)}
-        <label class="flex cursor-pointer items-center gap-3 border-b border-[var(--border)] px-4 py-3 last:border-0
-                       transition hover:bg-[var(--hover)] {selected.has(s.id) ? 'bg-[var(--brand)]/5' : ''}">
-          <input type="checkbox" checked={selected.has(s.id)} onchange={() => toggleOne(s.id)}
-            class="h-4 w-4 shrink-0 rounded accent-[var(--brand)]" />
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-[var(--fg)]">{s.display_name}</p>
-            <p class="text-[10px] font-mono text-[var(--fg-subtle)]">{s.admission_number}</p>
-          </div>
-          <span class="shrink-0 text-[10px] font-medium
-                        {s.gender === 'MALE' ? 'text-blue-600 dark:text-blue-400' : 'text-pink-600 dark:text-pink-400'}">
-            {s.gender ?? '—'}
-          </span>
-        </label>
-      {/each}
-    </div>
+    <PromoteStudentList {students} {selected} onToggleOne={toggleOne} onToggleAll={toggleAll} onClear={() => selected = new Set()} />
 
     <!-- Action bar -->
     {#if promoteErr}
@@ -274,7 +234,7 @@
           </p>
         {/if}
         <div class="mt-4 flex gap-2">
-          <button onclick={() => $promoteMut.mutate()} disabled={$promoteMut.isPending}
+          <button onclick={() => $promoteMut.mutate(undefined)} disabled={$promoteMut.isPending}
             class="rounded-xl px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
             style="background: {actionType === 'demote' ? '#dc2626' : 'var(--brand)'}">
             {$promoteMut.isPending ? 'Processing…' : `Confirm ${ACTION_LABELS[actionType].label}`}
@@ -288,6 +248,15 @@
     {/if}
   {/if}
 </div>
+
+<OverrideReasonModal
+  open={overrideNeeded}
+  title="Class mismatch"
+  errorMessage={overrideError}
+  isPending={$promoteMut.isPending}
+  onSubmit={(reason) => $promoteMut.mutate(reason)}
+  onCancel={() => { overrideNeeded = false; overrideError = ''; }}
+/>
 
 <style>
   @reference "tailwindcss";
