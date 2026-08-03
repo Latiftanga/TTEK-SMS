@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.housing_scope import assert_house_in_scope, current_year_id, resolve_house_scope
 from app.models.housing import House, HouseGender, Room, StudentHouseAssignment
 from app.models.students import Student
 from app.schemas.housing import (
@@ -16,7 +17,9 @@ def _to_assignment(a: StudentHouseAssignment) -> AssignmentRead:
     return AssignmentRead.model_validate(a)
 
 
-async def assign_student(req: AssignmentCreate, school_id: uuid.UUID, db: AsyncSession) -> AssignmentRead:
+async def assign_student(
+    req: AssignmentCreate, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> AssignmentRead:
     student = await db.scalar(
         select(Student).where(Student.id == req.student_id, Student.school_id == school_id)
     )
@@ -27,6 +30,7 @@ async def assign_student(req: AssignmentCreate, school_id: uuid.UUID, db: AsyncS
     )
     if not house:
         raise HTTPException(404, "House not found.")
+    await assert_house_in_scope(req.house_id, user_id, school_id, req.academic_year_id, db)
     if house.gender != HouseGender.MIXED:
         if student.gender is None:
             raise HTTPException(
@@ -76,7 +80,7 @@ async def assign_student(req: AssignmentCreate, school_id: uuid.UUID, db: AsyncS
 
 
 async def vacate_assignment(
-    assignment_id: uuid.UUID, req: AssignmentVacate, school_id: uuid.UUID, db: AsyncSession
+    assignment_id: uuid.UUID, req: AssignmentVacate, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> AssignmentRead:
     assignment = await db.scalar(
         select(StudentHouseAssignment).where(
@@ -86,6 +90,7 @@ async def vacate_assignment(
     )
     if not assignment:
         raise HTTPException(404, "Assignment not found.")
+    await assert_house_in_scope(assignment.house_id, user_id, school_id, assignment.academic_year_id, db)
     if assignment.vacated_at:
         raise HTTPException(409, "Assignment is already vacated.")
     if req.vacated_at < assignment.assigned_at:
@@ -96,7 +101,7 @@ async def vacate_assignment(
 
 
 async def get_student_current_assignment(
-    student_id: uuid.UUID, year_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    student_id: uuid.UUID, year_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> AssignmentRead | None:
     assignment = await db.scalar(
         select(StudentHouseAssignment).where(
@@ -106,12 +111,21 @@ async def get_student_current_assignment(
             StudentHouseAssignment.vacated_at.is_(None),
         )
     )
-    return _to_assignment(assignment) if assignment else None
+    if not assignment:
+        return None
+    # A scoped housemaster looking up a student outside their own house gets
+    # the same "nothing to see" response as no assignment at all — never a
+    # signal that the student is (or was) assigned somewhere else.
+    scope = await resolve_house_scope(user_id, school_id, year_id, db)
+    if scope is not None and assignment.house_id not in scope:
+        return None
+    return _to_assignment(assignment)
 
 
 async def list_house_students(
-    house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    house_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> list[StudentInHouseRead]:
+    await assert_house_in_scope(house_id, user_id, school_id, await current_year_id(school_id, db), db)
     rows = (await db.execute(
         select(
             StudentHouseAssignment.id,

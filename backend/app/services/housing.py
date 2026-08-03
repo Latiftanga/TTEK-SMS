@@ -7,8 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.housing_scope import assert_house_in_scope, assert_unrestricted, current_year_id, resolve_house_scope
 from app.models.academic import AcademicYear
-from app.models.auth import User
 from app.models.housing import House, HouseMaster, Room
 from app.models.staff import StaffMember
 from app.schemas.housing import (
@@ -31,7 +31,9 @@ def _to_hm(hm: HouseMaster) -> HouseMasterRead:
     return HouseMasterRead.model_validate(hm)
 
 
-async def _fetch_house(house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> House:
+async def _fetch_house(
+    house_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> House:
     h = await db.scalar(
         select(House)
         .where(House.id == house_id, House.school_id == school_id)
@@ -39,10 +41,19 @@ async def _fetch_house(house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSessi
     )
     if not h:
         raise HTTPException(404, "House not found.")
+    year_id = await current_year_id(school_id, db)
+    await assert_house_in_scope(house_id, user_id, school_id, year_id, db)
     return h
 
 
-async def create_house(req: HouseCreate, school_id: uuid.UUID, db: AsyncSession) -> HouseDetail:
+async def create_house(
+    req: HouseCreate, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> HouseDetail:
+    year_id = await current_year_id(school_id, db)
+    await assert_unrestricted(
+        user_id, school_id, year_id, db,
+        "Only a school administrator can create a new house.",
+    )
     house = House(
         school_id=school_id,
         name=req.name,
@@ -62,47 +73,31 @@ async def create_house(req: HouseCreate, school_id: uuid.UUID, db: AsyncSession)
     return _to_detail(house)
 
 
-async def list_houses(school_id: uuid.UUID, db: AsyncSession) -> list[HouseDetail]:
-    rows = (await db.scalars(
-        select(House)
-        .where(House.school_id == school_id)
-        .options(selectinload(House.rooms))
-        .order_by(House.name)
-    )).all()
+async def list_houses(user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> list[HouseDetail]:
+    """Every house for an unrestricted caller (admin/HEAD/DEPUTY_HEAD/
+    Assistant Head - Boarding); only the house(s) the caller is an active
+    HouseMaster of this year otherwise. GET /houses and GET /houses/mine are
+    the same scoped query — /mine exists only as a clearer name for the
+    housemaster-facing frontend, not a different access level."""
+    year_id = await current_year_id(school_id, db)
+    scope = await resolve_house_scope(user_id, school_id, year_id, db)
+    q = select(House).where(House.school_id == school_id).options(selectinload(House.rooms))
+    if scope is not None:
+        q = q.where(House.id.in_(scope))
+    rows = (await db.scalars(q.order_by(House.name))).all()
     return [_to_detail(h) for h in rows]
 
 
-async def list_my_houses(user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> list[HouseDetail]:
-    """Returns only the houses the caller manages as an active housemaster.
-    If the caller has no HouseMaster record (admin / head / deputy), returns all houses."""
-    user = await db.get(User, user_id)
-    if user and user.staff_member_id:
-        managed_ids = list(await db.scalars(
-            select(HouseMaster.house_id).where(
-                HouseMaster.staff_member_id == user.staff_member_id,
-                HouseMaster.school_id == school_id,
-                HouseMaster.is_active.is_(True),
-            )
-        ))
-        if managed_ids:
-            rows = (await db.scalars(
-                select(House)
-                .where(House.id.in_(managed_ids), House.school_id == school_id)
-                .options(selectinload(House.rooms))
-                .order_by(House.name)
-            )).all()
-            return [_to_detail(h) for h in rows]
-    return await list_houses(school_id, db)
-
-
-async def get_house(house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> HouseDetail:
-    return _to_detail(await _fetch_house(house_id, school_id, db))
+async def get_house(
+    house_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> HouseDetail:
+    return _to_detail(await _fetch_house(house_id, user_id, school_id, db))
 
 
 async def update_house(
-    house_id: uuid.UUID, req: HouseUpdate, school_id: uuid.UUID, db: AsyncSession
+    house_id: uuid.UUID, req: HouseUpdate, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> HouseDetail:
-    house = await _fetch_house(house_id, school_id, db)
+    house = await _fetch_house(house_id, user_id, school_id, db)
     for k, v in req.model_dump(exclude_unset=True).items():
         setattr(house, k, v)
     await db.flush()
@@ -110,9 +105,9 @@ async def update_house(
 
 
 async def add_room(
-    house_id: uuid.UUID, req: RoomCreate, school_id: uuid.UUID, db: AsyncSession
+    house_id: uuid.UUID, req: RoomCreate, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> RoomRead:
-    await _fetch_house(house_id, school_id, db)
+    await _fetch_house(house_id, user_id, school_id, db)
     room = Room(
         school_id=school_id,
         house_id=house_id,
@@ -126,9 +121,9 @@ async def add_room(
 
 
 async def list_rooms(
-    house_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    house_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> list[RoomRead]:
-    await _fetch_house(house_id, school_id, db)
+    await _fetch_house(house_id, user_id, school_id, db)
     rows = (await db.scalars(
         select(Room)
         .where(Room.house_id == house_id, Room.school_id == school_id)
@@ -139,9 +134,9 @@ async def list_rooms(
 
 async def update_room(
     house_id: uuid.UUID, room_id: uuid.UUID, req: RoomUpdate,
-    school_id: uuid.UUID, db: AsyncSession,
+    user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
 ) -> RoomRead:
-    await _fetch_house(house_id, school_id, db)
+    await _fetch_house(house_id, user_id, school_id, db)
     room = await db.scalar(
         select(Room).where(
             Room.id == room_id,
@@ -158,9 +153,18 @@ async def update_room(
 
 
 async def assign_house_master(
-    house_id: uuid.UUID, req: HouseMasterAssign, school_id: uuid.UUID, db: AsyncSession
+    house_id: uuid.UUID, req: HouseMasterAssign, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> HouseMasterRead:
-    await _fetch_house(house_id, school_id, db)
+    # Deciding WHO manages a house is an administrative appointment, not
+    # day-to-day house management — even a caller who already manages a
+    # different house can't reassign themselves or anyone else.
+    await assert_unrestricted(
+        user_id, school_id, req.academic_year_id, db,
+        "Only a school administrator can assign a housemaster.",
+    )
+    house = await db.scalar(select(House).where(House.id == house_id, House.school_id == school_id))
+    if not house:
+        raise HTTPException(404, "House not found.")
     staff = await db.scalar(
         select(StaffMember).where(
             StaffMember.id == req.staff_member_id,
@@ -199,8 +203,9 @@ async def assign_house_master(
 
 
 async def get_current_house_master(
-    house_id: uuid.UUID, year_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    house_id: uuid.UUID, year_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> HouseMasterRead | None:
+    await assert_house_in_scope(house_id, user_id, school_id, year_id, db)
     hm = await db.scalar(
         select(HouseMaster).where(
             HouseMaster.house_id == house_id,
