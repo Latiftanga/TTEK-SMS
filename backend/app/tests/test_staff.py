@@ -34,6 +34,24 @@ async def _get_head_position_id(db_session: AsyncSession) -> str:
     return str(pos.id)
 
 
+async def _other_school_position_id(db_session: AsyncSession) -> str:
+    """Create a second school and a position it owns (school_id set, not a
+    shared template) — mirrors a real school's own forked position
+    (routers/permissions.py's fork-on-edit). Returns the position id."""
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Other Test School", school_code="OTHER_STAFF", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+    pos = StaffPosition(code="CUSTOM_HOD", name="Custom HOD", school_id=other_school.id, is_template=False)
+    db_session.add(pos)
+    await db_session.flush()
+    return str(pos.id)
+
+
 async def _seed_rank(db_session: AsyncSession) -> tuple[str, str]:
     """Create a template category + rank and return (category_id, rank_id)."""
     cat = await db_session.scalar(
@@ -126,6 +144,35 @@ async def test_update_staff(client: AsyncClient, auth: dict, db_session: AsyncSe
     resp = await client.patch(f"/staff/{staff_id}", json={"position_ids": [pos_id]}, headers=auth)
     assert resp.status_code == 200
     assert pos_id in resp.json()["position_ids"]
+
+
+@pytest.mark.asyncio
+async def test_create_staff_rejects_cross_school_position(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """A position belonging to a *different* school must never be assignable
+    — resolve_permissions() unions purely by position_id with no school
+    check of its own, so this would otherwise directly grant that other
+    school's exact permission set."""
+    other_pos_id = await _other_school_position_id(db_session)
+    resp = await client.post("/staff", json={
+        **_staff_payload(staff_number="TSTXSCHOOL"), "position_ids": [other_pos_id],
+    }, headers=auth)
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_update_staff_rejects_cross_school_position(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    other_pos_id = await _other_school_position_id(db_session)
+    resp = await client.patch(f"/staff/{staff_id}", json={"position_ids": [other_pos_id]}, headers=auth)
+    assert resp.status_code == 404, resp.text
+
+    # Confirm nothing was actually linked.
+    detail = (await client.get(f"/staff/{staff_id}", headers=auth)).json()
+    assert other_pos_id not in detail["position_ids"]
 
 
 @pytest.mark.asyncio

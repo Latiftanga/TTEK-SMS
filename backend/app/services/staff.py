@@ -25,6 +25,32 @@ from app.schemas.staff import (
 from app.services.staff_admin_guard import guard_last_admin, guard_last_admin_deactivation
 
 
+async def _assert_positions_owned(
+    position_ids: list[uuid.UUID],
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Every position_id being assigned must be either a shared platform
+    template (school_id IS NULL) or one this school owns/forked — without
+    this, nothing stopped a caller from linking a staff member to a
+    *different* school's own forked position (routers/permissions.py's
+    fork-on-edit, 12ap). resolve_permissions() unions permissions purely by
+    position_id with no school check of its own, so that would directly
+    grant the foreign position's exact permission set — and keep tracking
+    it, so a later edit to that other school's fork silently changes this
+    staff member's permissions too."""
+    if not position_ids:
+        return
+    owned = set(await db.scalars(
+        select(StaffPosition.id).where(
+            StaffPosition.id.in_(position_ids),
+            or_(StaffPosition.school_id == school_id, StaffPosition.school_id.is_(None)),
+        )
+    ))
+    if set(position_ids) - owned:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Position not found.")
+
+
 def _display_name(first: str, middle: str | None, last: str) -> str:
     parts = [first]
     if middle:
@@ -76,6 +102,7 @@ async def create_staff(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> StaffMemberDetail:
+    await _assert_positions_owned(req.position_ids, school_id, db)
     member = StaffMember(
         school_id=school_id,
         staff_number=req.staff_number.strip(),
@@ -211,6 +238,7 @@ async def update_staff(
         setattr(member, field, val)
 
     if new_position_ids is not None:
+        await _assert_positions_owned(new_position_ids, school_id, db)
         await guard_last_admin(staff_id, school_id, new_position_ids, db)
 
         await db.execute(

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class, ClassTeacher
-from app.models.auth import LoginType, StaffPosition, User
+from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.staff import StaffMember, staff_member_positions
 
@@ -226,3 +226,49 @@ async def test_class_teacher_fork_does_not_leak_to_other_school(
     # (would fail if the union incorrectly included the untouched template).
     resp = await client.get("/fees/types", headers=ct_auth)
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_resolve_permissions_ignores_directly_assigned_cross_school_position(
+    db_session: AsyncSession, school: School, redis_permissions,
+):
+    """Defense in depth for resolve_permissions()'s Layer 2 lookup: even if a
+    staff_member_positions row somehow links a staff member to a *different*
+    school's own position (the write path now blocks this at assignment time
+    — services/staff.py::_assert_positions_owned — this covers any stray or
+    historical row bypassing that), the resolved permission map must not
+    include that other school's grants. Inserted directly via the DB rather
+    than through POST/PATCH /staff, which now reject this outright — this
+    test is about the resolution layer, not the write guard."""
+    from app.core.permissions import resolve_permissions
+
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Other Resolve School", school_code="OTHER_RESOLVE", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+
+    other_pos = StaffPosition(
+        code="CUSTOM_ADMIN", name="Custom Admin", school_id=other_school.id, is_template=False,
+    )
+    db_session.add(other_pos)
+    await db_session.flush()
+    db_session.add(PositionPermission(
+        position_id=other_pos.id, module="staff", action="delete", is_allowed=True,
+    ))
+
+    staff = StaffMember(
+        school_id=school.id, staff_number="PERM_XSCHOOL", first_name="Perm", last_name="Cross", is_active=True,
+    )
+    db_session.add(staff)
+    await db_session.flush()
+    await db_session.execute(
+        staff_member_positions.insert().values(staff_member_id=staff.id, position_id=other_pos.id)
+    )
+    await db_session.flush()
+
+    perms = await resolve_permissions(staff.id, db_session)
+    assert perms.get("staff.delete") is not True

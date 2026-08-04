@@ -159,7 +159,23 @@ async def resolve_permissions(
                 staff_member_positions.c.staff_member_id == staff_member_id
             )
         )
-        position_ids = list(r[0] for r in pos_id_rows)
+        directly_assigned_ids = [r[0] for r in pos_id_rows]
+        # Scoped to this staff member's own school_id as defense in depth,
+        # mirroring Layer 1's override scoping below: the write path
+        # (services/staff.py::_assert_positions_owned) already enforces this
+        # at assignment time, but a stray or historical cross-school
+        # position_id in staff_member_positions would otherwise still be
+        # picked up here and directly grant that other school's permission
+        # set — the exact leak the fork-on-edit mechanism (12ap) exists to
+        # prevent, reached through a different, unguarded door.
+        position_ids: list[uuid.UUID] = []
+        if directly_assigned_ids:
+            position_ids = list(await db.scalars(
+                select(StaffPosition.id).where(
+                    StaffPosition.id.in_(directly_assigned_ids),
+                    or_(StaffPosition.school_id == staff.school_id, StaffPosition.school_id.is_(None)),
+                )
+            ))
 
         # Auto-derive CLASS_TEACHER and HOUSEMASTER positions from actual
         # assignments — staff don't get manually granted these roles.
