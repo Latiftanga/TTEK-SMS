@@ -178,7 +178,7 @@ async def test_transcript_excludes_unpublished_scores(
         is_published=False,
     )
 
-    context = await assemble_transcript(student.id, school.id, db_session)
+    context = await assemble_transcript(student.id, school.id, school_admin.id, db_session)
     term_ctx = context["years"][0]["terms"][0]
     assert term_ctx["subject_weighted"] == {}
 
@@ -193,3 +193,20 @@ async def test_transcript_requires_assessments_view(
     housemaster_auth = await _login_as_position(client, auth, db_session, school, "HOUSEMASTER")
     resp = await client.get(f"/students/{student.id}/transcript", headers=housemaster_auth)
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_transcript_scoped_to_students_the_caller_teaches(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, student: Student, redis_permissions: None,
+):
+    """assessments.view alone doesn't imply cross-class visibility — a
+    TEACHER holding the right permission but with no ClassTeacher/
+    SubjectTeacher assignment to this student's class must 404, matching
+    the same boundary a single report card already enforces
+    (resolve_report_card_scope). Regression for a gap where
+    assemble_transcript() never received user_id at all and so could not
+    apply any per-caller scoping."""
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    resp = await client.get(f"/students/{student.id}/transcript", headers=teacher_auth)
+    assert resp.status_code == 404, resp.text

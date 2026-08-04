@@ -31,8 +31,14 @@ async def export_students_csv(
     search: str | None = None,
     level: str | None = None,
     year_group: int | None = None,
+    scope: set[uuid.UUID] | None = None,
 ) -> bytes:
     q = select(Student).where(Student.school_id == school_id)
+    if scope is not None:
+        # Restrict to students the caller is directly responsible for — see
+        # core/student_scope.py::resolve_student_view_scope(). Same gate
+        # list_students applies; export must never be a way around it.
+        q = q.where(Student.id.in_(scope))
     if active_only:
         q = q.where(Student.is_active == True)  # noqa: E712
     if gender:

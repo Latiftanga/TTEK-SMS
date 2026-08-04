@@ -108,11 +108,13 @@ async def export_students(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.student_export import export_students_csv
-    _, school_id = ids
+    user_id, school_id = ids
+    scope = await resolve_student_view_scope(user_id, school_id, db)
     csv_bytes = await export_students_csv(
         school_id, db,
         active_only=active_only, class_id=class_id, term_id=term_id,
         gender=gender, level=level, year_group=year_group, search=search,
+        scope=scope,
     )
     return StreamingResponse(
         iter([csv_bytes]),
@@ -137,13 +139,15 @@ async def export_students_custom(
 ):
     """Export students with caller-selected fields as CSV or Excel."""
     from app.services.student_custom_export import export_students_custom as _export
-    _, school_id = ids
+    user_id, school_id = ids
+    scope = await resolve_student_view_scope(user_id, school_id, db)
     field_list = [f.strip() for f in fields.split(",") if f.strip()]
     data = await _export(
         school_id, db,
         fields=field_list, fmt=fmt,
         active_only=active_only, class_id=class_id, term_id=term_id,
         gender=gender, level=level, year_group=year_group, search=search,
+        scope=scope,
     )
     if fmt == "excel":
         return StreamingResponse(

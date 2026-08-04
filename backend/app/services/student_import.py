@@ -137,6 +137,20 @@ async def process_import(
             failed += 1
             continue
 
+        # admission_number is optional on StudentCreate (the single-create
+        # endpoint auto-generates one when omitted), but the import template
+        # marks it required — both on the sheet header and the Instructions
+        # tab — and process_import doesn't auto-generate. Without this check
+        # a blank cell would pass Pydantic validation, then fail the model's
+        # NOT NULL constraint and get reported back as a misleading "already
+        # exists" error instead of the real reason.
+        if req.admission_number is None:
+            msg = "admission_number: Field is required."
+            _log_row(db, batch.id, school_id, row_num, raw, "error", msg)
+            results.append(ImportRowResult(row=row_num, ref=an, status="failed", error=msg))
+            failed += 1
+            continue
+
         student = Student(
             school_id=school_id,
             admission_number=req.admission_number,

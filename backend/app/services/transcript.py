@@ -25,6 +25,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.student_scope import assert_can_view_student
 from app.models.academic import AcademicTerm, AcademicYear, Class, SHSProgramme, Subject
 from app.models.assessments import Assessment, AssessmentType, Score, StudentBehaviourRecord
 from app.models.school import School
@@ -42,12 +43,21 @@ def _class_name(cls: Class, programme_name: str | None) -> str:
     return " ".join(parts)
 
 
-async def assemble_transcript(student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> dict:
+async def assemble_transcript(
+    student_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
+) -> dict:
     student = await db.scalar(
         select(Student).where(Student.id == student_id, Student.school_id == school_id)
     )
     if not student:
         raise HTTPException(404, "Student not found.")
+    # Same "can this caller view this student" boundary as the rest of the
+    # Students module (core/student_scope.py) — assessments.view alone (the
+    # permission gating this route) doesn't imply cross-class visibility; a
+    # scoped caller must actually be this student's ClassTeacher/SubjectTeacher/
+    # HouseMaster (of their *current* class) or hold one of the broad-access
+    # permissions resolve_student_view_scope() recognizes.
+    await assert_can_view_student(user_id, student_id, school_id, db)
     school = await db.get(School, school_id)
 
     term_rows = (await db.execute(

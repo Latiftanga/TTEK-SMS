@@ -6,6 +6,10 @@ they've been enrolled in so far, not just a graduated student's final record.
 
 Permission is assessments.view (matching report_cards.py), not students.view —
 this exposes score data, same bar as pulling a single report card.
+
+Scoped via core/student_scope.py::assert_can_view_student() (same boundary as
+the rest of the Students module) — assessments.view alone doesn't imply
+cross-class visibility.
 """
 from __future__ import annotations
 import asyncio
@@ -29,8 +33,8 @@ async def get_transcript(
     auth=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    context = await transcript_svc.assemble_transcript(student_id, school_id, db)
+    user_id, school_id = auth
+    context = await transcript_svc.assemble_transcript(student_id, school_id, user_id, db)
     # WeasyPrint is synchronous and CPU-heavy — off the event loop, matching
     # every other report-card render site.
     pdf_bytes = await asyncio.to_thread(render_transcript, context)

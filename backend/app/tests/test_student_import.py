@@ -130,6 +130,31 @@ async def test_import_duplicate_admission_number(client: AsyncClient, auth: dict
 
 
 @pytest.mark.asyncio
+async def test_import_blank_admission_number_rejected_with_clear_message(
+    client: AsyncClient, auth: dict, school: School,
+):
+    """The template marks admission_number required (sheet header + Instructions
+    tab), but StudentCreate itself allows it to be omitted (the single-create
+    endpoint auto-generates one) — a blank cell must be reported as a clear
+    validation failure, not fall through to the DB's NOT NULL constraint and
+    come back mislabeled as a duplicate."""
+    rows = [
+        _row("ADM001", "Ama", "Boateng"),
+        _row(None, "Yaw", "Mensah"),  # blank admission number, otherwise valid
+    ]
+    resp = await client.post(
+        "/students/import",
+        files={"file": ("students.xlsx", _make_xlsx(rows, school.school_code), _XLSX_CT)},
+        headers=auth,
+    )
+    data = resp.json()
+    assert data["created"] == 1
+    assert data["failed"] == 1
+    assert "required" in data["errors"][0]["error"].lower()
+    assert "already exists" not in data["errors"][0]["error"]
+
+
+@pytest.mark.asyncio
 async def test_import_rejects_existing_admission_number(client: AsyncClient, auth: dict, school: School):
     """Admission number already in DB is rejected."""
     await client.post("/students", json={
