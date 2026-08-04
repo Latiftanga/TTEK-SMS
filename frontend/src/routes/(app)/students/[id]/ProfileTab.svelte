@@ -106,6 +106,19 @@
         } catch { housingFailed = true; }
         qc.invalidateQueries({ queryKey: ['student-assignment', studentId] });
       }
+    } else if (!form.is_boarding) {
+      // Boarding turned off — vacate any still-active house assignment so the
+      // student stops occupying a room/bed. The reverse (vacating a house
+      // doesn't auto-flip is_boarding off) is a deliberate separate decision
+      // (services/housing_assignment.py); this direction has no such
+      // ambiguity — a day student shouldn't stay assigned to a house.
+      const current = $assignmentQ.data;
+      if (current && !current.vacated_at) {
+        try {
+          await vacateAssignment(current.id, new Date().toISOString().slice(0, 10));
+        } catch { housingFailed = true; }
+        qc.invalidateQueries({ queryKey: ['student-assignment', studentId] });
+      }
     }
 
     qc.invalidateQueries({ queryKey: ['student', studentId] });
