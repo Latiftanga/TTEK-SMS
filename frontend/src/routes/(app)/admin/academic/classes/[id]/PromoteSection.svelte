@@ -1,9 +1,10 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
-  import { listStudents, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
+  import { listStudents, listGraduationRecords, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
   import { detailOf, isLocked } from '$lib/apiError';
+  import { reactiveQuery } from '$lib/query.svelte';
   import TargetClassPicker from '$lib/components/TargetClassPicker.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
@@ -31,6 +32,17 @@
 
   const targetYear = $derived(years.find(y => y.id === toYearId));
   const firstTerm  = $derived([...(targetYear?.terms ?? [])].sort((a, b) => a.start_date.localeCompare(b.start_date))[0] ?? null);
+
+  // Which of this class's students already have a GraduationRecord for the
+  // target year — surfaced per-row so staff aren't selecting blind and only
+  // learning who got skipped after submitting.
+  const gradRecordsQ = reactiveQuery(() => ({
+    queryKey: ['student-graduation-records', 'year', toYearId] as const,
+    queryFn:  () => listGraduationRecords({ academic_year_id: toYearId }),
+    enabled:  !!toYearId,
+    staleTime: 30_000,
+  }));
+  const alreadyProcessed = $derived(new Set(($gradRecordsQ.data ?? []).map(r => r.student_id)));
 
   // ── Student selection ─────────────────────────────────────────────────────────
   let selected = $state(new Set<string>());
@@ -169,6 +181,11 @@
                          transition hover:bg-[var(--hover)] {selected.has(s.id) ? 'bg-[var(--brand)]/5' : ''}">
             <input type="checkbox" checked={selected.has(s.id)} onchange={() => toggleOne(s.id)} class="h-4 w-4 shrink-0 rounded accent-[var(--brand)]" />
             <span class="flex-1 text-sm font-medium text-[var(--fg)]">{s.display_name}</span>
+            {#if alreadyProcessed.has(s.id)}
+              <span class="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
+                Already processed
+              </span>
+            {/if}
             <span class="font-mono text-[10px] text-[var(--fg-subtle)]">{s.admission_number}</span>
           </label>
         {/each}

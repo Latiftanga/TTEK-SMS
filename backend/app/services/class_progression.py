@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class, SHSProgramme
 from app.models.documents import GraduationRecord, GraduationType
+from app.models.students import Student
 from app.schemas.student_lifecycle import BulkPromoteRequest
 from app.services.student_display import _active_class_assignment_subquery, _class_display_name
 
@@ -118,6 +119,18 @@ async def validate_promotion_batch(
     student_ids = [r.student_id for r in req.records]
     if not student_ids:
         return {}
+
+    # Every student_id must belong to the calling school before anything else
+    # touches it — without this, a cross-school id's active class assignment
+    # (level/year_group/programme/stream) could be resolved as its "source"
+    # class below and echoed back in a 422/423 message, even though the
+    # eventual write is separately blocked by create_class_assignment's own
+    # ownership check. Same convention as the target-class check just below.
+    owned_student_ids = set(await db.scalars(
+        select(Student.id).where(Student.id.in_(student_ids), Student.school_id == school_id)
+    ))
+    if set(student_ids) - owned_student_ids:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Student not found.")
 
     already_processed = set(await db.scalars(
         select(GraduationRecord.student_id).where(

@@ -7,11 +7,12 @@
   interface Props {
     students: StudentSummary[];
     selected: Set<string>;
+    alreadyProcessed?: Set<string>;
     onToggleOne: (id: string) => void;
     onToggleAll: () => void;
     onClear: () => void;
   }
-  const { students, selected, onToggleOne, onToggleAll, onClear }: Props = $props();
+  const { students, selected, alreadyProcessed = new Set(), onToggleOne, onToggleAll, onClear }: Props = $props();
 
   const allSelected = $derived(students.length > 0 && selected.size === students.length);
 </script>
@@ -39,6 +40,11 @@
         <p class="text-sm font-medium text-[var(--fg)]">{s.display_name}</p>
         <p class="text-[10px] font-mono text-[var(--fg-subtle)]">{s.admission_number}</p>
       </div>
+      {#if alreadyProcessed.has(s.id)}
+        <span class="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
+          Already processed
+        </span>
+      {/if}
       <span class="shrink-0 text-[10px] font-medium
                     {s.gender === 'MALE' ? 'text-blue-600 dark:text-blue-400' : 'text-pink-600 dark:text-pink-400'}">
         {s.gender ?? '—'}

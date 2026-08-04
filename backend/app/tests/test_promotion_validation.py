@@ -463,3 +463,55 @@ async def test_cross_school_target_class_404s(
         json=_promote_payload(next_year, sid, other_target, "PROMOTED"), headers=auth,
     )
     assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_cross_school_source_student_404s_without_leaking_class_info(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear, next_year: AcademicYear,
+):
+    """A student_id belonging to a *different* school must never have its
+    current class (level/programme/stream) resolved as the promotion
+    "source" — that data would otherwise leak into the 422/423 validation
+    message even though the eventual write is separately blocked. Mirrors
+    test_cross_school_target_class_404s but for the source side of the
+    lookup, which previously had no school_id scoping at all."""
+    from app.models.school import GhanaDistrict, GhanaRegion, SchoolType
+    from app.models.students import Student, StudentClassAssignment
+
+    region = await db_session.scalar(select(GhanaRegion))
+    district = await db_session.scalar(select(GhanaDistrict))
+    other_school = School(
+        name="Other School Ltd", school_code="OTHR8", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+
+    other_class = await _make_class(db_session, other_school, "SHS", 2, "A")
+    other_year = AcademicYear(
+        school_id=other_school.id, name="2098/2099",
+        start_date=date(2098, 9, 1), end_date=date(2099, 7, 31), is_current=False,
+    )
+    db_session.add(other_year)
+    await db_session.flush()
+    other_student = Student(
+        school_id=other_school.id, admission_number="OTHRSTU01",
+        first_name="Foreign", last_name="Student", is_active=True,
+    )
+    db_session.add(other_student)
+    await db_session.flush()
+    db_session.add(StudentClassAssignment(
+        school_id=other_school.id, student_id=other_student.id, class_id=other_class.id,
+        academic_year_id=other_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    target = await _make_class(db_session, school, "SHS", 3, "A")
+
+    resp = await client.post(
+        "/students/promotions/bulk",
+        json=_promote_payload(next_year, str(other_student.id), target, "PROMOTED"), headers=auth,
+    )
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Student not found."

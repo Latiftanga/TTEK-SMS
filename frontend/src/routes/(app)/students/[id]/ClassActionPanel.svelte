@@ -32,9 +32,13 @@
   // show "already processed" instead of presenting Promote/Repeat/Demote as if
   // nothing has happened yet, and warn before a duplicate submission that the
   // server would just silently skip.
+  // GET /students/graduation is admin-tier (students.delete) — only fetch when
+  // canManage, so a class-teacher-only caller opening this panel just to use
+  // TransferOutPanel doesn't eat an avoidable 403.
   const graduationRecordsQ = createQuery({
     queryKey: ['student-graduation-records', studentId],
     queryFn:  () => listGraduationRecords({ student_id: studentId }),
+    enabled: canManage,
     staleTime: 30_000,
   });
   const currentYear = $derived(years.find(y => y.is_current) ?? null);

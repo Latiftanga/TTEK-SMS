@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
-  import { listStudents, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
+  import { listStudents, listGraduationRecords, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { writable } from 'svelte/store';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import { detailOf, isLocked } from '$lib/apiError';
+  import { reactiveQuery } from '$lib/query.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import TargetClassPicker from '$lib/components/TargetClassPicker.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
@@ -35,6 +36,17 @@
   const firstTerm  = $derived(
     [...(targetYear?.terms ?? [])].sort((a, b) => a.start_date.localeCompare(b.start_date))[0] ?? null
   );
+
+  // Which students already have a GraduationRecord for the target year —
+  // surfaced per-row so staff aren't selecting blind and only learning who
+  // got skipped after submitting.
+  const gradRecordsQ = reactiveQuery(() => ({
+    queryKey: ['student-graduation-records', 'year', toYearId] as const,
+    queryFn:  () => listGraduationRecords({ academic_year_id: toYearId }),
+    enabled:  !!toYearId,
+    staleTime: 30_000,
+  }));
+  const alreadyProcessed = $derived(new Set(($gradRecordsQ.data ?? []).map(r => r.student_id)));
 
   // ── Load students from source class ──────────────────────────────────────────
   const studentOpts = writable({
@@ -205,7 +217,7 @@
       <p class="text-sm text-[var(--fg-muted)]">No active students found in this class.</p>
     </div>
   {:else}
-    <PromoteStudentList {students} {selected} onToggleOne={toggleOne} onToggleAll={toggleAll} onClear={() => selected = new Set()} />
+    <PromoteStudentList {students} {selected} {alreadyProcessed} onToggleOne={toggleOne} onToggleAll={toggleAll} onClear={() => selected = new Set()} />
 
     <!-- Action bar -->
     {#if promoteErr}
