@@ -11,7 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, Class
-from app.models.assessments import Assessment, AssessmentType, GradingScale
+from app.models.assessments import (
+    AggregationStrategy, Assessment, AssessmentType, GradingScale,
+)
 from app.models.students import Student
 
 
@@ -181,6 +183,137 @@ async def test_list_assessment_types(client: AsyncClient, auth: dict):
     assert len(resp.json()) >= 1
 
 
+# ── Assessment type — aggregation engine fields ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_assessment_type_defaults_are_behavior_preserving(client: AsyncClient, auth: dict):
+    """Not specifying the 3 new fields must resolve to the exact same
+    defaults the migration backfilled every pre-existing row to — the whole
+    point of the migration's chosen default (see alembic/versions/
+    f8a9b0c1d2e3_*.py's own docstring)."""
+    resp = await client.post("/assessments/types", json={
+        "name": "Legacy Style", "code": "LEGACY", "weight": "30.00",
+    }, headers=auth)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["category"] == "FORMATIVE"
+    assert data["allow_multiple_entries"] is True
+    assert data["aggregation_strategy"] == "SUM_NORMALIZE"
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_type_with_new_fields(client: AsyncClient, auth: dict):
+    resp = await client.post("/assessments/types", json={
+        "name": "Placement Test", "code": "PLACE", "weight": "1.00",
+        "category": "DIAGNOSTIC",
+        "allow_multiple_entries": True, "aggregation_strategy": "AVERAGE",
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["category"] == "DIAGNOSTIC"
+    assert resp.json()["aggregation_strategy"] == "AVERAGE"
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_type_rejects_none_strategy_with_multiple_entries_allowed(
+    client: AsyncClient, auth: dict,
+):
+    resp = await client.post("/assessments/types", json={
+        "name": "Bad Combo", "code": "BADCOMBO1", "weight": "10.00",
+        "allow_multiple_entries": True, "aggregation_strategy": "NONE",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_type_rejects_non_none_strategy_when_multiple_disallowed(
+    client: AsyncClient, auth: dict,
+):
+    resp = await client.post("/assessments/types", json={
+        "name": "Bad Combo 2", "code": "BADCOMBO2", "weight": "10.00",
+        "allow_multiple_entries": False, "aggregation_strategy": "AVERAGE",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_type_partial_update_checked_against_resulting_row(
+    client: AsyncClient, auth: dict,
+):
+    """A single-field PATCH (only aggregation_strategy) can't be checked by
+    the schema alone — the service layer must check it against the row's
+    *other*, unchanged field."""
+    create = await client.post("/assessments/types", json={
+        "name": "Single Exam", "code": "SINGLEEX", "weight": "70.00",
+        "allow_multiple_entries": False, "aggregation_strategy": "NONE",
+    }, headers=auth)
+    type_id = create.json()["id"]
+
+    # allow_multiple_entries is still False on the row — AVERAGE is invalid.
+    resp = await client.patch(f"/assessments/types/{type_id}", json={
+        "aggregation_strategy": "AVERAGE",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+    # Flip allow_multiple_entries first — now AVERAGE is valid.
+    ok = await client.patch(f"/assessments/types/{type_id}", json={
+        "allow_multiple_entries": True, "aggregation_strategy": "AVERAGE",
+    }, headers=auth)
+    assert ok.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_type_rejects_narrowing_when_multi_entry_data_exists(
+    db_session: AsyncSession, client: AsyncClient, auth: dict,
+    school_class: Class, subject, academic_term: AcademicTerm,
+):
+    """create_assessment() only guards against a *new* second entry once a
+    type is allow_multiple_entries=False — nothing previously stopped
+    narrowing an existing multi-entry type down to single-entry after real
+    data already violated that (resolve_type_score() would then raise at
+    report-card time). Reproduces the exact real-world scenario: a type
+    created with multiple entries allowed, two assessments already recorded
+    for the same class+subject+term, then narrowed via PATCH."""
+    create = await client.post("/assessments/types", json={
+        "name": "Individual Redux", "code": "INDREDUX", "weight": "20.00",
+        "allow_multiple_entries": True, "aggregation_strategy": "AVERAGE",
+    }, headers=auth)
+    type_id = create.json()["id"]
+
+    for i in range(2):
+        db_session.add(Assessment(
+            school_id=school_class.school_id, class_id=school_class.id, subject_id=subject.id,
+            assessment_type_id=type_id, academic_term_id=academic_term.id,
+            recorded_date=date.today() - timedelta(days=i), max_score=Decimal("20.00"),
+        ))
+    await db_session.commit()
+
+    resp = await client.patch(f"/assessments/types/{type_id}", json={
+        "allow_multiple_entries": False, "aggregation_strategy": "NONE",
+    }, headers=auth)
+    assert resp.status_code == 409
+    assert "more than one assessment" in resp.json()["detail"]
+
+    # Confirm the row was left untouched by the rejected update.
+    still_multi = await client.get("/assessments/types", headers=auth)
+    t = next(t for t in still_multi.json() if t["id"] == type_id)
+    assert t["allow_multiple_entries"] is True
+
+
+@pytest.mark.asyncio
+async def test_type_presets_endpoint_returns_waec_ges_shs(client: AsyncClient, auth: dict):
+    resp = await client.get("/assessments/type-presets", headers=auth)
+    assert resp.status_code == 200
+    presets = resp.json()
+    assert "waec_ges_shs" in presets
+    entries = presets["waec_ges_shs"]
+    assert len(entries) == 2
+    codes = {e["code"] for e in entries}
+    assert codes == {"CAT", "EXAM"}
+    exam = next(e for e in entries if e["code"] == "EXAM")
+    assert exam["allow_multiple_entries"] is False
+    assert exam["aggregation_strategy"] == "NONE"
+
+
 # ── Assessments ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -307,6 +440,48 @@ async def test_same_category_different_day_allowed(
 
 
 @pytest.mark.asyncio
+async def test_create_assessment_allow_multiple_entries_false_rejects_second_assessment(
+    db_session: AsyncSession, client: AsyncClient, auth: dict,
+    school_class: Class, subject, academic_term: AcademicTerm,
+):
+    """A type with allow_multiple_entries=False must never accumulate a
+    second Assessment row for the same class+subject+term — this is what
+    keeps resolve_type_score()'s NONE-strategy invariant ("exactly one
+    entry") true by construction, not just by convention."""
+    single_type = AssessmentType(
+        school_id=school_class.school_id, name="Final Exam", code="FINALEXAM",
+        weight=Decimal("70.00"), allow_multiple_entries=False, aggregation_strategy=AggregationStrategy.NONE,
+    )
+    db_session.add(single_type)
+    await db_session.flush()
+
+    payload = {
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(single_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": "100.00",
+    }
+    first = await client.post("/assessments", json=payload, headers=auth)
+    assert first.status_code == 201
+
+    # A different recorded_date would normally be allowed (see
+    # test_same_category_different_day_allowed) — allow_multiple_entries=False
+    # must block it anyway, at the school+class+subject+term+type level.
+    yesterday = Assessment(
+        school_id=school_class.school_id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=single_type.id, academic_term_id=academic_term.id,
+        recorded_date=date.today() - timedelta(days=1), max_score=Decimal("100.00"),
+    )
+    db_session.add(yesterday)
+    await db_session.flush()
+
+    second = await client.post("/assessments", json={**payload, "max_score": "50.00"}, headers=auth)
+    assert second.status_code == 409
+    assert "allow_multiple_entries" in second.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_list_assessments(
     client: AsyncClient, auth: dict,
     assessment: Assessment, school_class: Class, academic_term: AcademicTerm,
@@ -326,6 +501,158 @@ async def test_publish_assessment(
     resp = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
     assert resp.status_code == 200
     assert resp.json()["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_publish_rejects_assessment_with_unapproved_score(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    assessment: Assessment, student: Student, school_admin,
+):
+    """Single publish must reject loudly (422), not silently publish unreviewed
+    marks — the same underlying risk bulk_publish_assessments() guards against
+    by skipping, just surfaced as a hard error for a single deliberate click."""
+    from app.models.assessments import Score
+
+    db_session.add(Score(
+        school_id=assessment.school_id, assessment_id=assessment.id, student_id=student.id,
+        raw_score=Decimal("70.00"), is_approved=False, entered_by_id=school_admin.id,
+    ))
+    await db_session.flush()
+
+    resp = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+    assert resp.status_code == 422
+    assert "unapproved" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_publish_rejects_already_published_assessment(
+    client: AsyncClient, auth: dict, assessment: Assessment,
+):
+    first = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+    assert first.status_code == 200
+
+    second = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+    assert second.status_code == 422
+
+
+# ── Unpublish ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_unpublish_reverses_publish_and_logs_reason(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, assessment: Assessment,
+):
+    from app.models.assessments import AssessmentAuditLog
+
+    publish = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+    assert publish.status_code == 200
+
+    resp = await client.post(f"/assessments/{assessment.id}/unpublish", json={
+        "reason": "Wrong scores entered — recalling to fix before parents see it.",
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["is_published"] is False
+
+    log = await db_session.scalar(
+        select(AssessmentAuditLog).where(AssessmentAuditLog.assessment_id == assessment.id)
+    )
+    assert log is not None
+    assert log.reason == "Wrong scores entered — recalling to fix before parents see it."
+    assert log.old_values == {"is_published": "True"}
+    assert log.new_values == {"is_published": "False"}
+
+
+@pytest.mark.asyncio
+async def test_unpublish_requires_a_reason(
+    client: AsyncClient, auth: dict, assessment: Assessment,
+):
+    await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+    resp = await client.post(f"/assessments/{assessment.id}/unpublish", json={"reason": "   "}, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_unpublish_rejects_a_draft_assessment(
+    client: AsyncClient, auth: dict, assessment: Assessment,
+):
+    resp = await client.post(f"/assessments/{assessment.id}/unpublish", json={
+        "reason": "Testing",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_unpublish_hides_report_when_it_was_the_only_publish(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school, school_class: Class, academic_term: AcademicTerm, student: Student, school_admin,
+):
+    """is_report_published() is a live query, not a cached flag — unpublishing
+    the only published assessment for a class+term must re-hide the report
+    from the parent portal with no extra bookkeeping."""
+    from app.models.students import StudentClassAssignment
+    from app.services.portal import is_report_published
+
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    from app.models.academic import ClassSubject, SchoolLevel, SubjectCatalogue, SubjectType
+    from app.models.academic import Subject as SubjectModel
+
+    cat = SubjectCatalogue(name="Unpublish Test Subject", code="UNPUB_SUBJ", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    subj = SubjectModel(school_id=school.id, catalogue_id=cat.id, code="UNPUB_SUBJ", name="Unpublish Test Subject", is_active=True)
+    db_session.add(subj)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))
+    atype = AssessmentType(school_id=school.id, name="Unpublish Type", code="UNPUB_TYPE", weight=Decimal("100.00"))
+    db_session.add(atype)
+    await db_session.flush()
+    a = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subj.id,
+        assessment_type_id=atype.id, academic_term_id=academic_term.id,
+        description="Unpublish test", recorded_date=date.today(), max_score=Decimal("100.00"),
+    )
+    db_session.add(a)
+    await db_session.flush()
+    a_id = a.id
+
+    assert (await is_report_published(student.id, academic_term.id, school.id, db_session)) is False
+
+    publish = await client.post(f"/assessments/{a_id}/publish", headers=auth)
+    assert publish.status_code == 200
+    assert (await is_report_published(student.id, academic_term.id, school.id, db_session)) is True
+
+    unpub = await client.post(f"/assessments/{a_id}/unpublish", json={"reason": "Testing"}, headers=auth)
+    assert unpub.status_code == 200
+    assert (await is_report_published(student.id, academic_term.id, school.id, db_session)) is False
+
+
+@pytest.mark.asyncio
+async def test_republish_after_unpublish_enqueues_notification_again(
+    client: AsyncClient, auth: dict, assessment: Assessment,
+):
+    """If unpublishing genuinely re-hid the report (nothing else for this
+    class+term was still published), publishing again is a real re-unlock —
+    it must enqueue a fresh notification, not be treated as a duplicate."""
+    import unittest.mock as mock
+
+    mock_arq = mock.AsyncMock()
+
+    async def _fake_get_arq():
+        return mock_arq
+
+    with mock.patch("app.services.assessment_publish.get_arq", _fake_get_arq):
+        first = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+        assert first.status_code == 200
+        unpub = await client.post(f"/assessments/{assessment.id}/unpublish", json={"reason": "Testing"}, headers=auth)
+        assert unpub.status_code == 200
+        second = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+        assert second.status_code == 200
+
+    assert mock_arq.enqueue_job.call_count == 2, "genuinely re-unlocking the class+term must notify again"
 
 
 @pytest.mark.asyncio

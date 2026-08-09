@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, AcademicYear, Class, SchoolLevel, Subject, SubjectCatalogue, SubjectType
-from app.models.assessments import Assessment, AssessmentType, Score
+from app.models.assessments import Assessment, AssessmentCategory, AssessmentType, Score
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, SubjectRegistration, TermEnrollment
 from app.services.report_card_rank import compute_rank
@@ -34,8 +34,10 @@ async def _subject(db: AsyncSession, school: School, code: str, name: str) -> Su
     return subj
 
 
-async def _assessment_type(db: AsyncSession, school: School, code: str) -> AssessmentType:
-    at = AssessmentType(school_id=school.id, name=code, code=code, weight=Decimal("100.00"))
+async def _assessment_type(
+    db: AsyncSession, school: School, code: str, category: AssessmentCategory = AssessmentCategory.FORMATIVE,
+) -> AssessmentType:
+    at = AssessmentType(school_id=school.id, name=code, code=code, weight=Decimal("100.00"), category=category)
     db.add(at)
     await db.flush()
     return at
@@ -221,3 +223,42 @@ async def test_rank_excludes_withdrawn_student(
     )
     assert class_size == 1
     assert rank == 1
+
+
+@pytest.mark.asyncio
+async def test_rank_excludes_diagnostic_category_scores(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, academic_term: AcademicTerm, school_admin,
+):
+    """A DIAGNOSTIC-category type (e.g. a placement test) must never feed the
+    class-position number — the aggregation engine's hard rule, checked here
+    at the raw-SQL rank query, a separate code path from
+    report_card_scoring.py's own exclusion of the same rule."""
+    english = await _subject(db_session, school, "ENG-DIAG", "English")
+    formative = await _assessment_type(db_session, school, "EOT-DIAG", AssessmentCategory.FORMATIVE)
+    diagnostic = await _assessment_type(db_session, school, "PLACE-DIAG", AssessmentCategory.DIAGNOSTIC)
+
+    higher = Student(school_id=school.id, admission_number="RANK030", first_name="Abena", last_name="Frimpong", is_active=True)
+    lower = Student(school_id=school.id, admission_number="RANK031", first_name="Kojo", last_name="Antwi", is_active=True)
+    db_session.add_all([higher, lower])
+    await db_session.flush()
+
+    for s in (higher, lower):
+        await _enroll(db_session, school, s, school_class, academic_year, academic_term, school_admin.id)
+
+    # `higher` wins on the only score that should count (formative). `lower`
+    # has a much stronger diagnostic score — if that leaked into rank, it
+    # would flip the outcome and `lower` would incorrectly come out on top.
+    await _score(db_session, school, school_class, academic_term, formative, english, higher, "60.00", school_admin.id)
+    await _score(db_session, school, school_class, academic_term, formative, english, lower, "50.00", school_admin.id)
+    await _score(db_session, school, school_class, academic_term, diagnostic, english, lower, "100.00", school_admin.id)
+
+    higher_rank, class_size = await compute_rank(
+        higher.id, school_class.id, academic_term.id, academic_year.id, school.id, db_session,
+    )
+    lower_rank, _ = await compute_rank(
+        lower.id, school_class.id, academic_term.id, academic_year.id, school.id, db_session,
+    )
+    assert class_size == 2
+    assert higher_rank == 1
+    assert lower_rank == 2

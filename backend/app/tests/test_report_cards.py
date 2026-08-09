@@ -6,7 +6,7 @@ These tests run against the real DB. PDF generation uses WeasyPrint so the
 container must have libpango/libcairo installed (it does — see Dockerfile).
 """
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -252,6 +252,89 @@ async def test_assemble_groups_scores_by_subject_with_total_and_grade(
     # (18/20)*20 + (16/20)*20 + (15/20)*20 + (30/40)*40 = 18+16+15+30 = 79
     assert group["total"] == Decimal("79.00")
     assert group["grade"] == "B2"  # shared seeded scale: B2 = 75-79.99
+
+
+@pytest.mark.asyncio
+async def test_assemble_excludes_diagnostic_category_and_averages_multi_entry_type(
+    db_session: AsyncSession,
+    school: School, student: Student, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User,
+):
+    """Two aggregation-engine rules checked together: (1) a DIAGNOSTIC-
+    category type never appears on the report card at all, individually or
+    in the subject total — a placement test isn't "counted," it's excluded
+    outright, unlike a zero-weight formative type. (2) a FORMATIVE type
+    configured allow_multiple_entries=True/AVERAGE resolves its 3 recorded
+    entries to their mean percentage, not a sum — the new behavior this
+    session's aggregation engine adds on top of the old always-sum math."""
+    from decimal import Decimal
+    from app.models.academic import ClassSubject, SchoolLevel, Subject, SubjectCatalogue, SubjectType
+    from app.models.assessments import AggregationStrategy, Assessment, AssessmentCategory, AssessmentType, Score
+
+    cat = SubjectCatalogue(name="Integrated Science", code="SCI_DIAG", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    subject = Subject(school_id=school.id, catalogue_id=cat.id, code="SCI_DIAG", name="Integrated Science", is_active=True)
+    db_session.add(subject)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subject.id, is_active=True))
+    await db_session.flush()
+
+    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+
+    # A DIAGNOSTIC placement test — must be entirely invisible on the report card.
+    diag_type = AssessmentType(
+        school_id=school.id, name="Placement Test", code="PLACE_RC", weight=Decimal("100.00"),
+        category=AssessmentCategory.DIAGNOSTIC,
+    )
+    db_session.add(diag_type)
+    await db_session.flush()
+    diag_assessment = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=diag_type.id, academic_term_id=academic_term.id,
+        recorded_date=date.today(), max_score=Decimal("100.00"), is_published=True,
+    )
+    db_session.add(diag_assessment)
+    await db_session.flush()
+    db_session.add(Score(
+        school_id=school.id, assessment_id=diag_assessment.id, student_id=student.id,
+        raw_score=Decimal("10.00"), is_approved=True, entered_by_id=school_admin.id,
+    ))
+
+    # A FORMATIVE type allowing multiple entries, averaged — 3 class tests
+    # (80%, 60%, 100%) must resolve to their mean (80%), not their sum.
+    cat_type = AssessmentType(
+        school_id=school.id, name="Class Assessment", code="CAT_RC", weight=Decimal("100.00"),
+        category=AssessmentCategory.FORMATIVE, allow_multiple_entries=True,
+        aggregation_strategy=AggregationStrategy.AVERAGE,
+    )
+    db_session.add(cat_type)
+    await db_session.flush()
+    for i, raw in enumerate(("16.00", "12.00", "20.00")):  # out of 20 -> 80%, 60%, 100%
+        a = Assessment(
+            school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+            assessment_type_id=cat_type.id, academic_term_id=academic_term.id,
+            recorded_date=date.today() - timedelta(days=i), max_score=Decimal("20.00"), is_published=True,
+        )
+        db_session.add(a)
+        await db_session.flush()
+        db_session.add(Score(
+            school_id=school.id, assessment_id=a.id, student_id=student.id,
+            raw_score=Decimal(raw), is_approved=True, entered_by_id=school_admin.id,
+        ))
+    await db_session.flush()
+
+    from app.services.report_card import assemble
+    context = await assemble(te.id, school.id, school_admin.id, db_session)
+
+    groups = context["subject_groups"]
+    assert len(groups) == 1
+    group = groups[0]
+    # Only the 3 CAT rows — the diagnostic score never reaches _load_scores at all.
+    assert len(group["rows"]) == 3
+    assert all(r["type_name"] == "Class Assessment" for r in group["rows"])
+    # AVERAGE(80, 60, 100) = 80%, * weight 100 / 100 = 80.00 — not a sum.
+    assert group["total"] == Decimal("80.00")
 
 
 # ── Class enrollment list (report card selection) ─────────────────────────────

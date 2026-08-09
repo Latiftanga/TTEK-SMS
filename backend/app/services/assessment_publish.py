@@ -1,11 +1,20 @@
 """
-Assessment publishing — single and bulk. Split out of services/assessment.py
-to stay under the 300-line cap.
+Assessment publishing — single, bulk, and unpublish. Split out of
+services/assessment.py to stay under the 300-line cap.
 
-Publishing is one-way — there is no un-publish endpoint — and stays
-assessments.approve_scores-gated (routers/assessments.py), unlike
-create/update/delete: it's a guardian-facing, notification-firing
+Publishing stays assessments.approve_scores-gated (routers/assessments.py),
+unlike create/update/delete: it's a guardian-facing, notification-firing
 finalization step, not "creating an assignment".
+
+unpublish_assessment() reverses a mistaken publish — reopens the assessment
+for edits and, unless another assessment for the same class+term is still
+published, hides the report from the parent portal again (is_report_published()
+is a live query, not a cached flag, so this falls out for free — no extra
+bookkeeping needed). It cannot recall a notification already sent; that's
+real and unavoidable, not something the endpoint pretends to fix. Always
+requires a reason (AssessmentUnpublishRequest), recorded in
+AssessmentAuditLog — reversing a publish is itself worth an audit trail
+regardless of whether the term happens to be locked.
 
 Guardian notifications fire only on the FIRST assessment published for a
 (class, term) — matching services/portal.py::is_report_published(), which
@@ -21,14 +30,16 @@ gateway/SMTP calls, which would otherwise block the publish request itself
 for however long that takes. Enqueueing is best-effort (see _enqueue_notify)
 so a Redis hiccup can never fail the publish that already succeeded in the DB.
 
-bulk_publish_assessments() additionally skips any assessment that still has
-an unapproved score — a batch sweep is far more likely to accidentally catch
-something nobody reviewed yet than a single deliberate publish click, and
-this codebase's other bulk endpoints (bulk_promote, bulk_term_enrollment)
-already follow "validate before writing, skip what doesn't qualify."
+Both single and bulk publish reject an assessment that still has an
+unapproved score (422) rather than publishing it — bulk reports this as a
+per-item skip (see bulk_publish_assessments' docstring below); single raises
+directly, matching the "Cannot X a published assessment" convention already
+used by update_assessment/delete_assessment/submit_scores/approve_scores for
+every other is_published-gated action in this codebase.
 """
 from __future__ import annotations
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -36,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import get_arq
 from app.models.academic import AcademicTerm, Class
-from app.models.assessments import Assessment, Score
+from app.models.assessments import Assessment, AssessmentAuditLog, Score
 from app.schemas.assessments import AssessmentRead, BulkPublishResult
 
 
@@ -91,6 +102,18 @@ async def publish_assessment(
     )
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    if a.is_published:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot publish a published assessment.")
+
+    has_unapproved = await db.scalar(
+        select(Score.id).where(Score.assessment_id == a.id, Score.is_approved.is_(False))
+    ) is not None
+    if has_unapproved:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot publish — this assessment has unapproved scores. Approve them first.",
+        )
+
     a.is_published = True
     await db.flush()
 
@@ -103,9 +126,40 @@ async def publish_assessment(
     return AssessmentRead.model_validate(a)
 
 
+async def unpublish_assessment(
+    assessment_id: uuid.UUID, reason: str, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
+) -> AssessmentRead:
+    """Reverses a mistaken publish. See module docstring for what this does
+    and does not undo."""
+    a = await db.scalar(
+        select(Assessment).where(
+            Assessment.id == assessment_id, Assessment.school_id == school_id
+        )
+    )
+    if not a:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
+    if not a.is_published:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Assessment is not published.")
+
+    a.is_published = False
+    db.add(AssessmentAuditLog(
+        school_id=school_id, assessment_id=a.id, changed_by_id=user_id,
+        old_values={"is_published": "True"}, new_values={"is_published": "False"},
+        reason=reason, changed_at=datetime.now(timezone.utc),
+    ))
+    await db.flush()
+    return AssessmentRead.model_validate(a)
+
+
 async def bulk_publish_assessments(
     class_id: uuid.UUID, academic_term_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
 ) -> BulkPublishResult:
+    """Publish every approved, not-yet-published assessment for a class+term.
+    Unlike publish_assessment(), an assessment with an unapproved score is
+    skipped (counted in skipped_unapproved) rather than failing the whole
+    batch — a single deliberate publish click should reject loudly, but one
+    bad item in a school-wide sweep shouldn't block every other assessment
+    that's actually ready."""
     cls = await db.get(Class, class_id)
     if not cls or cls.school_id != school_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Class not found.")

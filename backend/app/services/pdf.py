@@ -40,7 +40,7 @@ def render_report_card(context: dict) -> bytes:
     hiding scores or looping forever.
 
     Args:
-        context: The assembled ReportCardData dict (as returned by report_card.assemble).
+        context: The assembled context dict (as returned by report_card.assemble).
                  One unified template regardless of school type — is_early_years in the
                  context switches the milestone-vs-numeric section, not a separate file.
 

@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, engine
+from app.core.redis import close_redis, init_redis
 
 # Every mapped model must be imported before any job runs — SQLAlchemy
 # resolves relationship() string references (e.g. StaffMember -> "StaffPosition")
@@ -41,16 +42,26 @@ from app.services.report_notify_job import notify_class_report_published
 # ── Lifecycle hooks ───────────────────────────────────────────────────────────
 
 async def startup(ctx: dict) -> None:
-    """Probe the DB and store the session factory in the job context."""
+    """Probe the DB, store the session factory in the job context, and
+    initialise the app-level Redis client (core/redis.py — separate from
+    ARQ's own Redis connection used for job queuing/polling below). Job code
+    reuses ordinary request-path services like report_card.py::assemble(),
+    which resolve caller permissions through core/permissions.py's Redis
+    cache — without this, any job touching that path fails for every item
+    with "Redis not initialised", silently swallowed by whichever job
+    catches per-item exceptions (e.g. bulk_generate_report_cards writing an
+    error file per student instead of crashing the whole batch)."""
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
     ctx["db"] = AsyncSessionLocal
-    print("[worker] startup complete — DB reachable")
+    await init_redis()
+    print("[worker] startup complete — DB and Redis reachable")
 
 
 async def shutdown(ctx: dict) -> None:
-    """Dispose the DB connection pool on clean exit."""
+    """Dispose the DB connection pool and close the Redis client on clean exit."""
     await engine.dispose()
+    await close_redis()
     print("[worker] shutdown complete")
 
 

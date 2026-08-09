@@ -41,7 +41,7 @@ from app.core.permissions import check_term_lock_override
 from app.core.teacher_scope import enforce_current_term_for_scoring, resolve_assessment_scope, year_for_term
 from app.models.assessments import Assessment, Score, ScoreAuditLog
 from app.models.students import Student
-from app.schemas.assessments import BulkScoreSubmit, ScoreApproveRequest, ScoreRead
+from app.schemas.scoring import BulkScoreSubmit, ScoreApproveRequest, ScoreRead
 from app.services.grading import resolve_grade
 from app.services.subject_roster import filter_eligible_for_subject
 
@@ -177,9 +177,7 @@ async def approve_scores(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Cannot approve scores on a published assessment.",
         )
-    await check_term_lock_override(
-        assessment.academic_term_id, req.override_reason, user_id, db
-    )
+    await check_term_lock_override(assessment.academic_term_id, req.override_reason, user_id, db)
 
     # Batch-load all requested scores at once
     scores = list(await db.scalars(

@@ -1,5 +1,9 @@
 """
-Assessments router — grading scales, assessment types, assessments, scores.
+Assessments router — the assessment CRUD + publish/unpublish itself.
+Grading scales (routers/grading.py), assessment types (routers/
+assessment_types.py), and scores (routers/scoring.py) were split out to stay
+under the 300-line cap — all four share the /assessments prefix and are
+registered together in main.py.
 
 Permission map:
   assessments.approve_scores → grading scale management, assessment type
@@ -10,6 +14,15 @@ Permission map:
                                caller's own SubjectTeacher class+subject) and
                                submit scores — the subject teacher's own job.
   assessments.view           → read-only access to everything
+
+ROUTE ORDERING — main.py must register routers/grading.py and routers/
+assessment_types.py (both literal path segments like /grading-scales,
+/types) before this router, since /{assessment_id} is a typed UUID path
+param but this codebase's convention (matching students_detail.py) treats
+literal-vs-dynamic route ordering as load-bearing regardless. Within this
+file, /my-subjects is registered before /{assessment_id} for the same
+reason — a literal segment would otherwise be swallowed by the UUID path
+param.
 """
 from __future__ import annotations
 import uuid
@@ -18,133 +31,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_auth, require_permission
+from app.core.dependencies import require_permission
 from app.schemas.assessments import (
-    AssessmentCreate, AssessmentRead, AssessmentRosterStudent, AssessmentUpdate,
-    AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
-    BulkPublishRequest, BulkPublishResult, BulkScoreSubmit, GradeCreate, GradeRead,
-    GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
-    MySubjectAssignment, ScoreApproveRequest, ScoreRead,
+    AssessmentCreate, AssessmentRead, AssessmentRosterStudent, AssessmentUnpublishRequest, AssessmentUpdate,
+    BulkPublishRequest, BulkPublishResult, MySubjectAssignment,
 )
 from app.services import assessment as assess_svc
 from app.services import assessment_publish as publish_svc
-from app.services import assessment_type as atype_svc
-from app.services import grading as grade_svc
-from app.services import scoring as score_svc
 from app.services.subject_roster import list_assessment_roster
 from app.services.subject_roster import list_my_subjects as list_my_subjects_svc
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 
-
-# ── Grading scales ────────────────────────────────────────────────────────────
-
-@router.post("/grading-scales", response_model=GradingScaleRead, status_code=201)
-async def create_grading_scale(
-    req: GradingScaleCreate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return GradingScaleRead.model_validate(
-        await grade_svc.create_grading_scale(req, school_id, db)
-    )
-
-
-@router.get("/grading-scales", response_model=list[GradingScaleRead])
-async def list_grading_scales(
-    ids=Depends(require_permission("assessments", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return [
-        GradingScaleRead.model_validate(s)
-        for s in await grade_svc.list_grading_scales(school_id, db)
-    ]
-
-
-@router.get("/grading-scales/{scale_id}", response_model=GradingScaleRead)
-async def get_grading_scale(
-    scale_id: uuid.UUID,
-    ids=Depends(require_permission("assessments", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return GradingScaleRead.model_validate(
-        await grade_svc.get_grading_scale(scale_id, school_id, db)
-    )
-
-
-@router.patch("/grading-scales/{scale_id}", response_model=GradingScaleRead)
-async def update_grading_scale(
-    scale_id: uuid.UUID,
-    req: GradingScaleUpdate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return GradingScaleRead.model_validate(
-        await grade_svc.update_grading_scale(scale_id, req, school_id, db)
-    )
-
-
-@router.post("/grading-scales/{scale_id}/grades", response_model=GradeRead, status_code=201)
-async def add_grade(
-    scale_id: uuid.UUID,
-    req: GradeCreate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return GradeRead.model_validate(
-        await grade_svc.add_grade(scale_id, req, school_id, db)
-    )
-
-
-@router.delete("/grading-scales/{scale_id}/grades/{grade_id}", status_code=204)
-async def delete_grade(
-    scale_id: uuid.UUID,
-    grade_id: uuid.UUID,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    await grade_svc.delete_grade(scale_id, grade_id, school_id, db)
-
-
-# ── Assessment types ──────────────────────────────────────────────────────────
-
-@router.post("/types", response_model=AssessmentTypeRead, status_code=201)
-async def create_assessment_type(
-    req: AssessmentTypeCreate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return await atype_svc.create_assessment_type(req, school_id, db)
-
-
-@router.get("/types", response_model=list[AssessmentTypeRead])
-async def list_assessment_types(
-    ids=Depends(require_permission("assessments", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return await atype_svc.list_assessment_types(school_id, db)
-
-
-@router.patch("/types/{type_id}", response_model=AssessmentTypeRead)
-async def update_assessment_type(
-    type_id: uuid.UUID,
-    req: AssessmentTypeUpdate,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    _, school_id = ids
-    return await atype_svc.update_assessment_type(type_id, req, school_id, db)
-
-
-# ── Assessments ───────────────────────────────────────────────────────────────
 
 @router.post("", response_model=AssessmentRead, status_code=201)
 async def create_assessment(
@@ -155,7 +53,8 @@ async def create_assessment(
     """Creating an assessment is the subject teacher's own job — scoped to
     their SubjectTeacher assignment(s) (services/assessment.py), not gated
     on assessments.approve_scores. Admins only manage assessment *types*
-    (categories) and grading scales, see the endpoints above."""
+    (categories) and grading scales, see routers/grading.py and
+    routers/assessment_types.py."""
     user_id, school_id = ids
     return await assess_svc.create_assessment(req, school_id, user_id, db)
 
@@ -243,6 +142,21 @@ async def publish_assessment(
     return await publish_svc.publish_assessment(assessment_id, school_id, db)
 
 
+@router.post("/{assessment_id}/unpublish", response_model=AssessmentRead)
+async def unpublish_assessment(
+    assessment_id: uuid.UUID,
+    req: AssessmentUnpublishRequest,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reverses a mistaken publish — reopens the assessment for edits and,
+    unless another assessment for the same class+term is still published,
+    hides the report from the parent portal again. Cannot recall a
+    notification already sent. See services/assessment_publish.py."""
+    user_id, school_id = ids
+    return await publish_svc.unpublish_assessment(assessment_id, req.reason, school_id, user_id, db)
+
+
 @router.post("/bulk-publish", response_model=BulkPublishResult)
 async def bulk_publish_assessments(
     req: BulkPublishRequest,
@@ -256,37 +170,3 @@ async def bulk_publish_assessments(
     return await publish_svc.bulk_publish_assessments(
         req.class_id, req.academic_term_id, school_id, db
     )
-
-
-# ── Scores ────────────────────────────────────────────────────────────────────
-
-@router.post("/{assessment_id}/scores", response_model=list[ScoreRead], status_code=201)
-async def submit_scores(
-    assessment_id: uuid.UUID,
-    req: BulkScoreSubmit,
-    ids=Depends(require_permission("assessments", "enter_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    return await score_svc.submit_scores(assessment_id, req, school_id, user_id, db)
-
-
-@router.get("/{assessment_id}/scores", response_model=list[ScoreRead])
-async def list_scores(
-    assessment_id: uuid.UUID,
-    ids=Depends(require_permission("assessments", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    return await score_svc.list_scores(assessment_id, school_id, user_id, db)
-
-
-@router.post("/{assessment_id}/scores/approve", response_model=list[ScoreRead])
-async def approve_scores(
-    assessment_id: uuid.UUID,
-    req: ScoreApproveRequest,
-    ids=Depends(require_permission("assessments", "approve_scores")),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    return await score_svc.approve_scores(assessment_id, req, school_id, user_id, db)

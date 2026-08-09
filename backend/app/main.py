@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.limiter import RateLimitMiddleware
 from app.core.redis import close_redis, init_redis
-from app.routers import academic, academic_structure, ai, assessments, attendance, auth, dashboard, documents, email, fees, housing, permissions, portal, programme_summary, report_cards, schools, sms, staff, staff_admin, staff_category, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync
+from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, auth, dashboard, documents, email, fees, grading, housing, permissions, portal, programme_summary, report_cards, schools, scoring, sms, staff, staff_admin, staff_category, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync
 
 # ── Sentry ───────────────────────────────────────────────────────────────────
 if settings.sentry_dsn and settings.sentry_dsn.startswith("https://"):
@@ -90,7 +90,10 @@ app.include_router(academic.router)
 app.include_router(academic_structure.router)
 app.include_router(subject_summary.router)
 app.include_router(programme_summary.router)
+app.include_router(grading.router)
+app.include_router(assessment_types.router)  # /types, /type-presets — literal segments, must precede assessments.router's /{assessment_id}
 app.include_router(assessments.router)
+app.include_router(scoring.router)
 app.include_router(staff_category.router)
 app.include_router(staff.router)
 app.include_router(staff_records.router)

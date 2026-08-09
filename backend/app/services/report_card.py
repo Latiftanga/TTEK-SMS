@@ -19,7 +19,9 @@ from sqlalchemy.orm import selectinload
 
 from app.core.teacher_scope import resolve_report_card_scope
 from app.models.academic import AcademicTerm, AcademicYear, Class, ClassTeacher, Subject
-from app.models.assessments import Assessment, AssessmentType, GradingScale, Score, StudentBehaviourRecord
+from app.models.assessments import (
+    Assessment, AssessmentCategory, AssessmentType, GradingScale, Score, StudentBehaviourRecord,
+)
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
@@ -73,6 +75,10 @@ def _group_by_subject(
 async def _load_scores(
     student_id: uuid.UUID, term_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> list[dict]:
+    """Diagnostic-category types are excluded here at the query level — per
+    the aggregation engine's hard rule, they never enter term aggregation or
+    report-card output at all, individually or in a total (services/
+    aggregation.py)."""
     rows = (await db.execute(
         select(
             Score.raw_score,
@@ -80,6 +86,7 @@ async def _load_scores(
             Assessment.max_score,
             AssessmentType.name.label("type_name"),
             AssessmentType.weight.label("type_weight"),
+            AssessmentType.aggregation_strategy.label("type_aggregation_strategy"),
             Subject.name.label("subject_name"),
         )
         .join(Assessment, Assessment.id == Score.assessment_id)
@@ -91,6 +98,7 @@ async def _load_scores(
             Score.is_approved.is_(True),
             Assessment.academic_term_id == term_id,
             Assessment.is_published.is_(True),
+            AssessmentType.category != AssessmentCategory.DIAGNOSTIC,
         )
         .order_by(Subject.name, AssessmentType.name)
     )).mappings().all()

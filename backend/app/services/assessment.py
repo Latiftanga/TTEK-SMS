@@ -98,6 +98,28 @@ async def create_assessment(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"due_date {req.due_date} falls outside the term ({term.start_date} – {term.end_date}).",
         )
+    # allow_multiple_entries=False means exactly one Assessment row of this
+    # type may ever exist for this class+subject+term — keeps
+    # resolve_type_score()'s NONE-strategy invariant ("exactly one recorded
+    # entry") true by construction rather than just by convention, so it can
+    # never raise at report-card time (services/aggregation.py).
+    if not atype.allow_multiple_entries:
+        existing_single = await db.scalar(
+            select(Assessment).where(
+                Assessment.school_id == school_id,
+                Assessment.class_id == req.class_id,
+                Assessment.subject_id == req.subject_id,
+                Assessment.academic_term_id == req.academic_term_id,
+                Assessment.assessment_type_id == req.assessment_type_id,
+            )
+        )
+        if existing_single:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{atype.name} only allows one assessment per term for this subject "
+                "(allow_multiple_entries is off).",
+            )
+
     recorded_date = date.today()
     duplicate = await db.scalar(
         select(Assessment).where(

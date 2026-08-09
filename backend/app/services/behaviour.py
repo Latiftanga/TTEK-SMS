@@ -39,7 +39,7 @@ from app.core.teacher_scope import resolve_report_card_scope
 from app.models.academic import AcademicTerm
 from app.models.assessments import BehaviourAuditLog, StudentBehaviourRecord
 from app.models.students import Student
-from app.schemas.assessments import BehaviourRecordCreate, BehaviourRecordRead
+from app.schemas.behaviour import BehaviourRecordCreate, BehaviourRecordRead
 
 
 def _to_read(r: StudentBehaviourRecord) -> BehaviourRecordRead:

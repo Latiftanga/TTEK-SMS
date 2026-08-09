@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.student_scope import assert_can_view_student
 from app.models.academic import AcademicTerm, AcademicYear, Class, SHSProgramme, Subject
-from app.models.assessments import Assessment, AssessmentType, Score, StudentBehaviourRecord
+from app.models.assessments import Assessment, AssessmentCategory, AssessmentType, Score, StudentBehaviourRecord
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.services.attendance_stats import compute_attendance_stats
@@ -114,6 +114,7 @@ async def assemble_transcript(
             Assessment.max_score,
             AssessmentType.name.label("type_name"),
             AssessmentType.weight.label("type_weight"),
+            AssessmentType.aggregation_strategy.label("type_aggregation_strategy"),
             Subject.name.label("subject_name"),
         )
         .join(Assessment, Assessment.id == Score.assessment_id)
@@ -125,6 +126,7 @@ async def assemble_transcript(
             Score.is_approved.is_(True),
             Assessment.academic_term_id.in_(term_ids),
             Assessment.is_published.is_(True),
+            AssessmentType.category != AssessmentCategory.DIAGNOSTIC,
         )
     )).mappings().all()
     scores_by_term: dict[uuid.UUID, list[dict]] = defaultdict(list)

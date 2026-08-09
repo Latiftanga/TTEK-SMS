@@ -3,11 +3,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.assessments import AssessmentType
-from app.schemas.assessments import AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate
+from app.models.assessments import Assessment, AssessmentType
+from app.schemas.assessment_type import (
+    AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate, _check_strategy_matches_multiplicity,
+)
 
 
 def _type_read(t: AssessmentType) -> AssessmentTypeRead:
@@ -35,6 +37,9 @@ async def create_assessment_type(
         name=req.name,
         code=req.code,
         weight=req.weight,
+        category=req.category,
+        allow_multiple_entries=req.allow_multiple_entries,
+        aggregation_strategy=req.aggregation_strategy,
     )
     db.add(t)
     await db.flush()
@@ -66,12 +71,49 @@ async def update_assessment_type(
                 status.HTTP_409_CONFLICT,
                 f"Assessment type with {field} '{value}' already exists.",
             )
+    # create_assessment() guards against a *new* second Assessment ever being
+    # recorded once allow_multiple_entries is False, but nothing previously
+    # stopped narrowing an existing multi-entry type down to single-entry
+    # after real data already violated that — resolve_type_score() would
+    # then raise at report-card time for every class/term that already has
+    # more than one recorded entry. Check before mutating anything, so a
+    # rejected update never leaves the row dirty in the session.
+    new_allow_multiple = req.allow_multiple_entries if req.allow_multiple_entries is not None else t.allow_multiple_entries
+    if not new_allow_multiple:
+        violation = await db.execute(
+            select(Assessment.class_id)
+            .where(Assessment.assessment_type_id == type_id)
+            .group_by(Assessment.class_id, Assessment.subject_id, Assessment.academic_term_id)
+            .having(func.count() > 1)
+            .limit(1)
+        )
+        if violation.first() is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{t.name} already has more than one assessment recorded for the same "
+                "class, subject, and term — resolve those before making it single-entry.",
+            )
+
     if req.name is not None:
         t.name = req.name
     if req.code is not None:
         t.code = req.code
     if req.weight is not None:
         t.weight = req.weight
+    if req.category is not None:
+        t.category = req.category
+    if req.allow_multiple_entries is not None:
+        t.allow_multiple_entries = req.allow_multiple_entries
+    if req.aggregation_strategy is not None:
+        t.aggregation_strategy = req.aggregation_strategy
+    # The schema only cross-checks allow_multiple_entries/aggregation_strategy
+    # when both arrive in the same request — a partial update touching just
+    # one is checked here against the resulting full row instead, so a type
+    # can never end up in an invalid NONE/allow_multiple combination either way.
+    try:
+        _check_strategy_matches_multiplicity(t.allow_multiple_entries, t.aggregation_strategy)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
     await db.flush()
     return _type_read(t)
 

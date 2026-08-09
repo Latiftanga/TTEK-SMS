@@ -20,12 +20,35 @@ export interface GradingScale {
   grades: Grade[];
 }
 
+// Fixed 3-way split — core assessment theory, not per-school configurable.
+// DIAGNOSTIC never enters term aggregation or report-card output at all —
+// it identifies a learning gap or guides a decision (e.g. placement into
+// the right programme/subject combination), administered whenever a
+// teacher or admin decides it's needed rather than on a schedule.
+export type AssessmentCategory = 'DIAGNOSTIC' | 'FORMATIVE' | 'SUMMATIVE';
+
+// How multiple recorded entries for one type collapse into a single score.
+// Only meaningful when allow_multiple_entries is true — NONE otherwise.
+export type AggregationStrategy = 'NONE' | 'BEST_OF' | 'AVERAGE' | 'SUM_NORMALIZE';
+
 export interface AssessmentType {
   id: string;
   name: string;
   code: string;
   weight: number;
+  category: AssessmentCategory;
+  allow_multiple_entries: boolean;
+  aggregation_strategy: AggregationStrategy;
   is_active: boolean;
+}
+
+export interface AssessmentTypePreset {
+  name: string;
+  code: string;
+  weight: number;
+  category: AssessmentCategory;
+  allow_multiple_entries: boolean;
+  aggregation_strategy: AggregationStrategy;
 }
 
 export interface Assessment {
@@ -92,13 +115,23 @@ export const listAssessmentTypes = (): Promise<AssessmentType[]> =>
 
 export const createAssessmentType = (data: {
   name: string; code: string; weight: number;
+  category: AssessmentCategory;
+  allow_multiple_entries: boolean; aggregation_strategy: AggregationStrategy;
 }): Promise<AssessmentType> =>
   api.post('/assessments/types', data).then(r => r.data);
 
 export const updateAssessmentType = (typeId: string, data: {
   name?: string; code?: string; weight?: number;
+  category?: AssessmentCategory;
+  allow_multiple_entries?: boolean; aggregation_strategy?: AggregationStrategy;
 }): Promise<AssessmentType> =>
   api.patch(`/assessments/types/${typeId}`, data).then(r => r.data);
+
+// Static, school-agnostic pre-fill config for the type-creation form — see
+// backend/app/services/assessment_type_presets.py. Picking one just fills
+// the form fields; nothing here is special-cased once a type is created.
+export const listTypePresets = (): Promise<Record<string, AssessmentTypePreset[]>> =>
+  api.get('/assessments/type-presets').then(r => r.data);
 
 // ── Assessments ───────────────────────────────────────────────────────────────
 
@@ -138,6 +171,9 @@ export const deleteAssessment = (id: string): Promise<void> =>
 
 export const publishAssessment = (id: string): Promise<Assessment> =>
   api.post(`/assessments/${id}/publish`).then(r => r.data);
+
+export const unpublishAssessment = (id: string, reason: string): Promise<Assessment> =>
+  api.post(`/assessments/${id}/unpublish`, { reason }).then(r => r.data);
 
 export interface BulkPublishResult {
   published: number;

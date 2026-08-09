@@ -15,10 +15,8 @@ from app.core.teacher_scope import classes_for_scope, resolve_report_card_scope,
 from app.models.academic import AcademicTerm, Class, SHSProgramme
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.schemas.academic import ClassRead
-from app.schemas.assessments import (
-    BehaviourRecordCreate, BehaviourRecordRead,
-    BulkReportJobRead, BulkReportRequest,
-)
+from app.schemas.assessments import BulkReportJobRead, BulkReportRequest
+from app.schemas.behaviour import BehaviourRecordCreate, BehaviourRecordRead
 from app.schemas.students import EnrollmentForReport
 from app.services import behaviour as beh_svc
 from app.services import report_card as rc_svc

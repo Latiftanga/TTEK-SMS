@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessments import Grade, GradingScale, Score
-from app.schemas.assessments import GradeCreate, GradingScaleCreate, GradingScaleRead, GradingScaleUpdate
+from app.schemas.grading import GradeCreate, GradingScaleCreate, GradingScaleRead, GradingScaleUpdate
 
 
 async def create_grading_scale(

@@ -6,7 +6,7 @@
   import { get } from 'svelte/store';
   import {
     getAssessment, getAssessmentRoster, listScores, submitScores, approveScores,
-    publishAssessment, updateAssessment, deleteAssessment,
+    publishAssessment, unpublishAssessment, updateAssessment, deleteAssessment,
     listAssessmentTypes, assessmentLabel, type Score,
   } from '$lib/api/assessments';
   import { listSubjects, listAllTerms } from '$lib/api/academic';
@@ -166,6 +166,20 @@
     onError: () => { confirmPublish = false; toast.error('Could not publish.'); },
   });
 
+  // Reverses a mistaken publish — always asks for a reason (written to the
+  // audit log), unlike the term-lock override flow below which only prompts
+  // when the term happens to be locked.
+  let showUnpublish = $state(false);
+  const unpublishMut = createMutation({
+    mutationFn: (reason: string) => unpublishAssessment(assessmentId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assessment', assessmentId] });
+      showUnpublish = false;
+      toast.success('Unpublished — reopened for editing.');
+    },
+    onError: () => toast.error('Could not unpublish.'),
+  });
+
   // ── Edit ──────────────────────────────────────────────────────────────────────
   let editing  = $state(false);
   let editForm = $state({ description: '', maxScore: '', dueDate: '' });
@@ -301,6 +315,13 @@
             onDelete={() => $deleteMut.mutate()}
             canApprovePublish={canManage}
           />
+        {:else if a.is_published && canManage}
+          <!-- Same senior-staff tier as publish itself — reverses a mistake,
+               always asks for a reason (see showUnpublish above). -->
+          <button onclick={() => showUnpublish = true}
+            class="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30">
+            Unpublish
+          </button>
         {/if}
       </div>
     {/if}
@@ -336,6 +357,16 @@
     else if (lockOverride === 'edit') $editMut.mutate(reason);
   }}
   onCancel={() => { lockOverride = null; lockOverrideError = ''; }}
+/>
+
+<OverrideReasonModal
+  open={showUnpublish}
+  title="Unpublish this assessment?"
+  message="This reopens it for editing and hides the report from parents again — unless another assessment for this class and term is still published. It cannot recall a notification already sent. Provide a reason; it's written to the audit log."
+  submitLabel="Unpublish"
+  isPending={$unpublishMut.isPending}
+  onSubmit={(reason) => $unpublishMut.mutate(reason)}
+  onCancel={() => showUnpublish = false}
 />
 
 <style>

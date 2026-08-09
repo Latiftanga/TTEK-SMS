@@ -40,6 +40,7 @@ async def compute_rank(
                sc.raw_score,
                a.max_score,
                at.weight,
+               at.aggregation_strategy,
                a.subject_id,
                sub.name AS subject_name,
                at.name  AS type_name,
@@ -54,7 +55,15 @@ async def compute_rank(
         LEFT JOIN assessment a ON a.id = sc.assessment_id
             AND a.academic_term_id = :term_id
             AND a.is_published = true
+        -- category != 'DIAGNOSTIC' lives on this join's own ON clause, not a
+        -- WHERE filter — a WHERE would also drop students with zero scores
+        -- at all (their `at.*` columns are already NULL from the LEFT JOIN),
+        -- breaking the "count every student, even with nothing recorded"
+        -- requirement below. A diagnostic assessment's `at.weight` comes
+        -- through NULL instead, and the existing `not r.weight` check two
+        -- blocks down already excludes it — no new Python logic needed.
         LEFT JOIN assessment_type at ON at.id = a.assessment_type_id
+            AND at.category != 'DIAGNOSTIC'
         LEFT JOIN subject sub ON sub.id = a.subject_id
         LEFT JOIN subject_registration sr
             ON sr.term_enrollment_id = te.id
@@ -95,6 +104,7 @@ async def compute_rank(
         student_score_rows[sid].append({
             "raw_score": r.raw_score, "max_score": r.max_score,
             "type_weight": r.weight,
+            "type_aggregation_strategy": r.aggregation_strategy,
             "subject_name": r.subject_name or "",
             "type_name": r.type_name or "",
         })

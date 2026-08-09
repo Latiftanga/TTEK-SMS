@@ -25,13 +25,42 @@ If you add a feature that changes a GradingScale, you MUST also clear
 cached_grade_label on all Score rows for that school.
 """
 from __future__ import annotations
+import enum
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import String, Boolean, Integer, Date, DateTime, ForeignKey, Text, Numeric, UniqueConstraint
+from sqlalchemy import (
+    String, Boolean, Integer, Date, DateTime, ForeignKey, Text, Numeric,
+    UniqueConstraint,
+)
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKey, SchoolScopedMixin
+
+
+class AssessmentCategory(str, enum.Enum):
+    """Fixed 3-way split — core assessment theory, not a per-school config
+    value (see AssessmentType.category). DIAGNOSTIC identifies a learning
+    gap or guides a decision (e.g. placement) — administered whenever
+    needed, never on a schedule, and never part of any term score.
+    FORMATIVE/SUMMATIVE both participate in term aggregation, differing
+    only in typical configuration (allow_multiple_entries etc.), not in
+    whether category itself gates inclusion."""
+    DIAGNOSTIC = "DIAGNOSTIC"
+    FORMATIVE = "FORMATIVE"
+    SUMMATIVE = "SUMMATIVE"
+
+
+class AggregationStrategy(str, enum.Enum):
+    """How multiple recorded entries for one AssessmentType collapse into a
+    single score — only meaningful when allow_multiple_entries=True; NONE
+    otherwise (the single entry passes through unchanged). See
+    services/aggregation.py for the actual resolvers."""
+    NONE = "NONE"
+    BEST_OF = "BEST_OF"
+    AVERAGE = "AVERAGE"
+    SUM_NORMALIZE = "SUM_NORMALIZE"
 
 
 class GradingScale(Base, UUIDPrimaryKey, TimestampMixin):
@@ -78,12 +107,29 @@ class Grade(Base, UUIDPrimaryKey):
 
 
 class AssessmentType(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+    """
+    "Type" and "category" are the same concept in this model — a school's own
+    configured assessment type (Individual, Mid-Sem, End of Term, ...) now
+    also carries `category`, the fixed diagnostic/formative/summative
+    classification (AssessmentCategory) it belongs to; the two aren't
+    separate things layered on top of each other.
+    """
     __tablename__ = "assessment_type"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     code: Mapped[str] = mapped_column(String(20), nullable=False)
     weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    category: Mapped[AssessmentCategory] = mapped_column(
+        SAEnum(AssessmentCategory, name="assessmentcategory"),
+        nullable=False, default=AssessmentCategory.FORMATIVE,
+    )
+    allow_multiple_entries: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    aggregation_strategy: Mapped[AggregationStrategy] = mapped_column(
+        SAEnum(AggregationStrategy, name="aggregationstrategy"),
+        nullable=False, default=AggregationStrategy.SUM_NORMALIZE,
+    )
 
     assessments: Mapped[list[Assessment]] = relationship(back_populates="assessment_type")
 

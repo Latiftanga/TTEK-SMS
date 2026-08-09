@@ -5,6 +5,7 @@
     open: boolean;
     title?: string;
     message?: string;
+    submitLabel?: string;
     errorMessage?: string;
     isPending?: boolean;
     onSubmit: (reason: string) => void;
@@ -15,6 +16,7 @@
     open,
     title = 'This term is locked',
     message = 'Scores and behaviour records for this term have been frozen. Supply a reason to override — it is written to the audit log.',
+    submitLabel = 'Override & continue',
     errorMessage = '',
     isPending = false,
     onSubmit,
@@ -60,7 +62,7 @@
         </button>
         <button onclick={submit} disabled={isPending || !reason.trim()}
           class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50">
-          {isPending ? 'Submitting…' : 'Override & continue'}
+          {isPending ? 'Submitting…' : submitLabel}
         </button>
       </div>
     </div>
