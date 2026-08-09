@@ -249,20 +249,17 @@ class ReportCardData(BaseModel):
     total_school_days: int
     behaviour_records: list[BehaviourRecordRead]
     qr_token: str
-    format: str
 
 
 class BulkReportRequest(BaseModel):
     class_id: uuid.UUID
     academic_term_id: uuid.UUID
-    format: Literal["BASIC", "SHS"] = "BASIC"
 
 
 class BulkReportJobRead(BaseModel):
     job_id: str
     class_id: uuid.UUID
     academic_term_id: uuid.UUID
-    format: str
     status: str   # "queued" | "done" | "error"
     download_url: str | None = None
 

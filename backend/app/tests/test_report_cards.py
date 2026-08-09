@@ -161,10 +161,97 @@ async def test_report_card_pdf_generated(
     academic_term: AcademicTerm, school_admin: User
 ):
     te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
-    resp = await client.get(f"/report-cards/{te.id}?format=BASIC", headers=auth)
+    resp = await client.get(f"/report-cards/{te.id}", headers=auth)
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert len(resp.content) > 1000   # non-trivial PDF
+
+
+@pytest.mark.asyncio
+async def test_assemble_includes_letterhead_photo_and_grade_legend(
+    db_session: AsyncSession,
+    school: School, student: Student, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User,
+):
+    """school.phone/email/address, the student's photo, and a grade legend
+    (from the shared seeded default scale, since this school has no scale of
+    its own) must all reach the template context. The `school` fixture sets
+    no phone/email/address and `student` has no photo — both must degrade
+    gracefully to None rather than erroring or leaking a literal "None"."""
+    from app.services.report_card import assemble
+
+    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+    context = await assemble(te.id, school.id, school_admin.id, db_session)
+
+    assert context["school_phone"] is None
+    assert context["school_email"] is None
+    assert context["school_address"] is None
+    assert context["photo_url"] is None
+
+    assert context["grade_legend"], "shared seeded default scale must populate the legend"
+    assert context["grade_legend"][0]["letter_grade"] == "A1"  # highest band first
+
+
+@pytest.mark.asyncio
+async def test_assemble_groups_scores_by_subject_with_total_and_grade(
+    db_session: AsyncSession,
+    school: School, student: Student, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User,
+):
+    """The exact scenario a real school described: four assessment categories
+    (Individual/Group Work/Mid-Sem/End of Term, weights 20/20/20/40) under one
+    subject. The report card must show each category row grouped under its
+    subject, plus a combined weighted total and a letter grade resolved for
+    that total — not just four disconnected rows with no synthesis."""
+    from decimal import Decimal
+    from app.models.academic import ClassSubject, SchoolLevel, Subject, SubjectCatalogue, SubjectType
+    from app.models.assessments import Assessment, AssessmentType, Score
+
+    cat = SubjectCatalogue(name="Mathematics", code="MATH_RC", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    subject = Subject(school_id=school.id, catalogue_id=cat.id, code="MATH_RC", name="Mathematics", is_active=True)
+    db_session.add(subject)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subject.id, is_active=True))
+    await db_session.flush()
+
+    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+
+    categories = [
+        ("Individual", Decimal("20.00"), Decimal("18.00")),
+        ("Group Work", Decimal("20.00"), Decimal("16.00")),
+        ("Mid-Sem", Decimal("20.00"), Decimal("15.00")),
+        ("End of Term", Decimal("40.00"), Decimal("30.00")),
+    ]
+    for name, weight_and_max, raw in categories:
+        atype = AssessmentType(school_id=school.id, name=name, code=f"RC_{name[:4].upper()}", weight=weight_and_max)
+        db_session.add(atype)
+        await db_session.flush()
+        a = Assessment(
+            school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+            assessment_type_id=atype.id, academic_term_id=academic_term.id,
+            description=name, recorded_date=date.today(), max_score=weight_and_max, is_published=True,
+        )
+        db_session.add(a)
+        await db_session.flush()
+        db_session.add(Score(
+            school_id=school.id, assessment_id=a.id, student_id=student.id,
+            raw_score=raw, is_approved=True, entered_by_id=school_admin.id,
+        ))
+    await db_session.flush()
+
+    from app.services.report_card import assemble
+    context = await assemble(te.id, school.id, school_admin.id, db_session)
+
+    groups = context["subject_groups"]
+    assert len(groups) == 1
+    group = groups[0]
+    assert group["subject_name"] == "Mathematics"
+    assert len(group["rows"]) == 4
+    # (18/20)*20 + (16/20)*20 + (15/20)*20 + (30/40)*40 = 18+16+15+30 = 79
+    assert group["total"] == Decimal("79.00")
+    assert group["grade"] == "B2"  # shared seeded scale: B2 = 75-79.99
 
 
 # ── Class enrollment list (report card selection) ─────────────────────────────
@@ -203,28 +290,38 @@ async def test_list_class_enrollments_excludes_withdrawn_student(
 
 
 @pytest.mark.asyncio
-async def test_report_card_shs_format(
-    client: AsyncClient, auth: dict,
+async def test_assemble_is_early_years_true_for_kg_class(
     db_session: AsyncSession,
-    school: School, student: Student, school_class: Class,
-    academic_term: AcademicTerm, school_admin: User
+    school: School, student: Student,
+    academic_term: AcademicTerm, school_admin: User,
 ):
-    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
-    resp = await client.get(f"/report-cards/{te.id}?format=SHS", headers=auth)
-    assert resp.status_code == 200
-    assert resp.headers["content-type"] == "application/pdf"
+    """Creche/Nursery/KG get the milestone-style report section — auto-detected
+    from the class-level ladder (services/class_progression.py), not a manual
+    format choice like the old BASIC/SHS/ECM picker."""
+    from app.services.report_card import assemble
+
+    kg_class = Class(school_id=school.id, level="KG", year_group=2, stream="A", is_active=True)
+    db_session.add(kg_class)
+    await db_session.flush()
+    te = await _make_enrollment(db_session, school, student, kg_class, academic_term, school_admin)
+
+    context = await assemble(te.id, school.id, school_admin.id, db_session)
+    assert context["is_early_years"] is True
 
 
 @pytest.mark.asyncio
-async def test_report_card_invalid_format(
-    client: AsyncClient, auth: dict,
+async def test_assemble_is_early_years_false_for_standard_class(
     db_session: AsyncSession,
     school: School, student: Student, school_class: Class,
-    academic_term: AcademicTerm, school_admin: User
+    academic_term: AcademicTerm, school_admin: User,
 ):
+    """school_class is level="SHS" — must get the standard numeric+rank
+    layout, not the milestone section."""
+    from app.services.report_card import assemble
+
     te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
-    resp = await client.get(f"/report-cards/{te.id}?format=INVALID", headers=auth)
-    assert resp.status_code == 422
+    context = await assemble(te.id, school.id, school_admin.id, db_session)
+    assert context["is_early_years"] is False
 
 
 @pytest.mark.asyncio
@@ -280,7 +377,7 @@ async def test_report_card_404_for_non_owning_class_teacher(
 ):
     te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
     teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
-    resp = await client.get(f"/report-cards/{te.id}?format=BASIC", headers=teacher_auth)
+    resp = await client.get(f"/report-cards/{te.id}", headers=teacher_auth)
     assert resp.status_code == 404
 
 
@@ -298,7 +395,7 @@ async def test_report_card_allowed_for_owning_class_teacher(
     ))
     await db_session.flush()
 
-    resp = await client.get(f"/report-cards/{te.id}?format=BASIC", headers=teacher_auth)
+    resp = await client.get(f"/report-cards/{te.id}", headers=teacher_auth)
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
 

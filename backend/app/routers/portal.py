@@ -120,7 +120,6 @@ async def list_my_term_enrollments(
 @router.get("/report-cards/{enrollment_id}")
 async def portal_get_report_card(
     enrollment_id: uuid.UUID,
-    format: str = Query("BASIC", pattern="^(BASIC|SHS|ECM)$"),
     auth=Depends(_require_portal_access),
     db: AsyncSession = Depends(get_db),
 ):
@@ -143,10 +142,10 @@ async def portal_get_report_card(
     if not await portal_svc.is_report_published(student_id, te.academic_term_id, school_id, db):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Report card has not been published yet.")
 
-    context = await rc_svc.assemble(enrollment_id, school_id, format, user_id, db)
+    context = await rc_svc.assemble(enrollment_id, school_id, user_id, db)
     # WeasyPrint is synchronous and CPU-heavy — off the event loop, or every
     # report card generated blocks every other concurrent request.
-    pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
+    pdf_bytes = await asyncio.to_thread(render_report_card, context)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

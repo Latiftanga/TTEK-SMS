@@ -239,9 +239,7 @@ Key constraint: Report cards are NEVER stored — generated fresh from Score + B
 - [x] schemas/documents.py additions — DocumentRecordRead, ImportBatchResult
 - [x] services/behaviour.py — StudentBehaviourRecord CRUD
 - [x] services/report_card.py — assemble data (scores + grades + attendance + behaviour + rank)
-- [x] templates/report_basic.html — GES Basic format; Jinja2 + @page CSS
-- [x] templates/report_shs.html — WASSCE SHS format
-- [x] templates/report_ecm.html — ECM Early Childhood milestone template
+- [x] templates/report_card.html — single unified template (Phase 12 review discarded the earlier Basic/SHS/ECM 3-format split — is_early_years auto-detected from class level switches the milestone-vs-numeric section, no manual format picker)
 - [x] services/pdf.py — WeasyPrint render; returns bytes, never writes to disk
 - [x] services/qr.py — HMAC-SHA256 token generation + verification
 - [x] routers/report_cards.py — GET /report-cards/{enrollment_id}, POST /report-cards/bulk, GET /verify/{token}, GET /report-cards/bulk/{job_id}/download

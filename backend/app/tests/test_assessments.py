@@ -94,6 +94,37 @@ async def test_resolve_grade_prefers_school_own_scale_over_shared(
 
 
 @pytest.mark.asyncio
+async def test_get_default_scale_with_bands_prefers_school_own_scale(
+    db_session: AsyncSession, school, grading_scale: GradingScale,
+):
+    """Same fallback resolve_grade() uses, exposed directly for the report
+    card / transcript grade-legend section — a school's own default scale
+    wins once it exists."""
+    from app.services.grading import get_default_scale_with_bands
+
+    scale = await get_default_scale_with_bands(school.id, db_session)
+    assert scale is not None
+    assert scale.id == grading_scale.id
+    assert [g.letter_grade for g in scale.grades] == ["A1", "B2", "B3", "F9"]  # highest score first
+
+
+@pytest.mark.asyncio
+async def test_get_default_scale_with_bands_falls_back_to_shared(db_session: AsyncSession, school):
+    """A school with no scale of its own gets the shared system default."""
+    from app.services.grading import get_default_scale_with_bands
+
+    scale = await get_default_scale_with_bands(school.id, db_session)
+    assert scale is not None
+    assert scale.school_id is None
+    assert scale.name == "GES Standard Grading Scale"
+
+
+def test_grade_legend_rows_empty_for_no_scale():
+    from app.services.grading import grade_legend_rows
+    assert grade_legend_rows(None) == []
+
+
+@pytest.mark.asyncio
 async def test_grade_band_min_max_validation(client: AsyncClient, auth: dict):
     scale_resp = await client.post("/assessments/grading-scales", json={
         "name": "Bad Scale",

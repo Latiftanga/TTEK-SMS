@@ -30,7 +30,6 @@ async def bulk_generate_report_cards(
     class_id: str,
     academic_term_id: str,
     school_id: str,
-    format: str,
     user_id: str,
 ) -> dict:
     """ARQ job — runs in the worker process."""
@@ -42,7 +41,6 @@ async def bulk_generate_report_cards(
             class_id=uuid.UUID(class_id),
             academic_term_id=uuid.UUID(academic_term_id),
             school_id=uuid.UUID(school_id),
-            format=format,
             user_id=uuid.UUID(user_id),
         )
 
@@ -53,7 +51,6 @@ async def _run(
     class_id: uuid.UUID,
     academic_term_id: uuid.UUID,
     school_id: uuid.UUID,
-    format: str,
     user_id: uuid.UUID,
 ) -> dict:
     term = await db.get(AcademicTerm, academic_term_id)
@@ -79,10 +76,10 @@ async def _run(
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for te in enrollments:
             try:
-                context = await assemble(te.id, school_id, format, user_id, db)
+                context = await assemble(te.id, school_id, user_id, db)
                 # WeasyPrint is synchronous and CPU-heavy — off the event loop,
                 # or this job blocks every other job on the same ARQ worker.
-                pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
+                pdf_bytes = await asyncio.to_thread(render_report_card, context)
                 filename = f"{context['admission_number']}_{context['student_name'].replace(' ', '_')}.pdf"
                 zf.writestr(filename, pdf_bytes)
                 generated += 1

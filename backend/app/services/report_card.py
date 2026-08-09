@@ -19,14 +19,17 @@ from sqlalchemy.orm import selectinload
 
 from app.core.teacher_scope import resolve_report_card_scope
 from app.models.academic import AcademicTerm, AcademicYear, Class, ClassTeacher, Subject
-from app.models.assessments import Assessment, AssessmentType, Score, StudentBehaviourRecord
+from app.models.assessments import Assessment, AssessmentType, GradingScale, Score, StudentBehaviourRecord
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.services.attendance_stats import compute_attendance_stats
+from app.services.class_progression import level_rank
+from app.services.grading import get_default_scale_with_bands, grade_legend_rows, resolve_grade_from_scale
 from app.services.qr import generate_qr_image, generate_token
 from app.services.report_card_rank import compute_rank
 from app.services.report_card_scoring import _compute_weighted_scores
+from app.services.student_display import _photo_url
 
 
 def _class_name(cls: Class, programme_name: str | None) -> str:
@@ -36,6 +39,35 @@ def _class_name(cls: Class, programme_name: str | None) -> str:
     if cls.stream:
         parts.append(cls.stream)
     return " ".join(parts)
+
+
+def _group_by_subject(
+    scores: list[dict], subject_weighted: dict[str, Decimal], scale: GradingScale | None,
+) -> list[dict]:
+    """Fold the flat per-assessment `scores` rows (already ordered by
+    Subject.name, AssessmentType.name — see _load_scores) into one block per
+    subject: its category rows, its weighted total (from
+    report_card_scoring.py::_compute_weighted_scores), and a letter grade
+    resolved for that total. This — not the flat `scores` list — is what the
+    report card template actually renders; `scores`/`subject_weighted` stay
+    in the context unchanged since total_score/rank still depend on them."""
+    groups: list[dict] = []
+    by_subject: dict[str, dict] = {}
+    for row in scores:
+        subj = row["subject_name"]
+        group = by_subject.get(subj)
+        if group is None:
+            total = subject_weighted.get(subj, Decimal("0"))
+            group = {
+                "subject_name": subj,
+                "rows": [],
+                "total": total,
+                "grade": resolve_grade_from_scale(total, scale),
+            }
+            by_subject[subj] = group
+            groups.append(group)
+        group["rows"].append(row)
+    return groups
 
 
 async def _load_scores(
@@ -66,7 +98,7 @@ async def _load_scores(
 
 
 async def assemble(
-    enrollment_id: uuid.UUID, school_id: uuid.UUID, format: str, user_id: uuid.UUID, db: AsyncSession
+    enrollment_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> dict:
     """Build the full context dict for the Jinja2 report card template."""
     te = await db.scalar(
@@ -95,6 +127,11 @@ async def assemble(
     cls = await db.get(Class, sca.class_id) if sca else None
     if not cls:
         raise HTTPException(404, "Student has no class assignment for this academic year.")
+
+    # Creche/Nursery/KG get the milestone-style section instead of numeric
+    # scores/rank — auto-detected from the class-level ladder already used
+    # for promotion validity, not a manual per-request choice.
+    is_early_years = 0 <= level_rank(cls.level or "") < level_rank("Basic")
 
     scope = await resolve_report_card_scope(user_id, term.academic_year_id, db)
     if scope is not None and cls.id not in scope:
@@ -150,6 +187,8 @@ async def assemble(
         logo_url = f"/uploads/{school.logo_path}"
 
     qr_token = generate_token(enrollment_id, school_id)
+    scale = await get_default_scale_with_bands(school_id, db)
+    subject_groups = _group_by_subject(scores, subject_weighted, scale)
 
     return {
         "enrollment_id": str(enrollment_id),
@@ -160,7 +199,15 @@ async def assemble(
         "academic_year_name": term.academic_year.name,
         "class_teacher_name": teacher_name,
         "school_name": school.name,
+        "school_phone": school.phone,
+        "school_email": school.email,
+        "school_address": school.address,
+        "brand_color": school.brand_color,
         "logo_url": logo_url,
+        "photo_url": _photo_url(student.photo_path),
+        "is_early_years": is_early_years,
+        "grade_legend": grade_legend_rows(scale),
+        "subject_groups": subject_groups,
         "scores": scores,
         "subject_weighted": subject_weighted,
         "total_score": total_score,
@@ -180,5 +227,4 @@ async def assemble(
         ],
         "qr_token": qr_token,
         "qr_image": generate_qr_image(qr_token),
-        "format": format,
     }

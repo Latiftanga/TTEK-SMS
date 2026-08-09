@@ -168,6 +168,73 @@ async def delete_grade(
     await clear_cached_grades(scale_id, school_id, db)
 
 
+async def get_default_scale_with_bands(
+    school_id: uuid.UUID, db: AsyncSession
+) -> GradingScale | None:
+    """The school's own default GradingScale, falling back to the shared
+    system default (school_id IS NULL, seeded by scripts/seed_reference_data.py)
+    if the school hasn't created one — a school's own default, once created,
+    always takes priority. Bands eager-loaded, highest score first (the
+    relationship's own order_by="Grade.min_score.desc()").
+
+    Shared by resolve_grade() (letter-grade lookup at approval time) and the
+    report card / transcript grade-legend section (services/report_card.py,
+    services/transcript.py) — one fallback rule, not two copies of it.
+    """
+    scale = await db.scalar(
+        select(GradingScale)
+        .where(
+            GradingScale.school_id == school_id,
+            GradingScale.is_default.is_(True),
+            GradingScale.is_active.is_(True),
+        )
+        .options(selectinload(GradingScale.grades))
+    )
+    if not scale:
+        scale = await db.scalar(
+            select(GradingScale)
+            .where(
+                GradingScale.school_id.is_(None),
+                GradingScale.is_default.is_(True),
+                GradingScale.is_active.is_(True),
+            )
+            .options(selectinload(GradingScale.grades))
+        )
+    return scale
+
+
+def grade_legend_rows(scale: GradingScale | None) -> list[dict]:
+    """Flatten a GradingScale's bands into plain dicts for the report card /
+    transcript "Grade Interpretation" legend — shared by both templates so
+    they can't drift into showing different band data for the same school."""
+    if not scale:
+        return []
+    return [
+        {
+            "letter_grade": band.letter_grade,
+            "gpa_points": band.gpa_points,
+            "min_score": band.min_score,
+            "max_score": band.max_score,
+            "label": band.label,
+        }
+        for band in scale.grades
+    ]
+
+
+def resolve_grade_from_scale(percentage: Decimal, scale: GradingScale | None) -> str | None:
+    """Band-match a percentage against an already-loaded scale — the pure,
+    no-query half of resolve_grade(), split out so a caller that needs to
+    resolve grades for several percentages against the *same* scale (e.g.
+    report_card.py resolving one grade per subject total) doesn't re-fetch
+    the scale once per call."""
+    if not scale:
+        return None
+    for band in scale.grades:
+        if band.min_score <= percentage <= band.max_score:
+            return band.letter_grade
+    return None
+
+
 async def resolve_grade(
     percentage: Decimal, school_id: uuid.UUID, db: AsyncSession
 ) -> str | None:
@@ -177,33 +244,9 @@ async def resolve_grade(
     as percentage ranges (e.g. GES A1 = 80-100), not raw marks. Callers scoring
     against a non-100 max_score (see services/scoring.py::approve_scores) must
     convert before calling this.
-
-    Falls back to the shared system default scale (school_id IS NULL, seeded
-    by scripts/seed_reference_data.py) if the school hasn't created its own —
-    a school's own default scale, once created, always takes priority.
     """
-    scale = await db.scalar(
-        select(GradingScale).where(
-            GradingScale.school_id == school_id,
-            GradingScale.is_default.is_(True),
-            GradingScale.is_active.is_(True),
-        )
-    )
-    if not scale:
-        scale = await db.scalar(
-            select(GradingScale).where(
-                GradingScale.school_id.is_(None),
-                GradingScale.is_default.is_(True),
-                GradingScale.is_active.is_(True),
-            )
-        )
-    if not scale:
-        return None
-    await db.refresh(scale, ["grades"])
-    for band in scale.grades:
-        if band.min_score <= percentage <= band.max_score:
-            return band.letter_grade
-    return None
+    scale = await get_default_scale_with_bands(school_id, db)
+    return resolve_grade_from_scale(percentage, scale)
 
 
 async def clear_cached_grades(

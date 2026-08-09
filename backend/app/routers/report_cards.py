@@ -153,15 +153,14 @@ async def list_my_report_classes(
 @router.get("/report-cards/{enrollment_id}")
 async def get_report_card(
     enrollment_id: uuid.UUID,
-    format: str = Query("BASIC", pattern="^(BASIC|SHS|ECM)$"),
     auth=Depends(require_permission("assessments", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = auth
-    context = await rc_svc.assemble(enrollment_id, school_id, format, user_id, db)
+    context = await rc_svc.assemble(enrollment_id, school_id, user_id, db)
     # WeasyPrint is synchronous and CPU-heavy — off the event loop, or every
     # report card generated blocks every other concurrent request.
-    pdf_bytes = await asyncio.to_thread(render_report_card, context, format)
+    pdf_bytes = await asyncio.to_thread(render_report_card, context)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -191,7 +190,6 @@ async def queue_bulk_report(
             class_id=str(req.class_id),
             academic_term_id=str(req.academic_term_id),
             school_id=str(school_id),
-            format=req.format,
             user_id=str(user_id),
             _job_id=job_id,
         )
@@ -201,7 +199,6 @@ async def queue_bulk_report(
         job_id=job_id,
         class_id=req.class_id,
         academic_term_id=req.academic_term_id,
-        format=req.format,
         status="queued",
     )
 
