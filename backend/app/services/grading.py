@@ -97,7 +97,8 @@ async def update_grading_scale(
                 status.HTTP_409_CONFLICT,
                 f"Grading scale with name '{req.name}' already exists.",
             )
-    if req.is_default is True and not scale.is_default:
+    promoted_to_default = req.is_default is True and not scale.is_default
+    if promoted_to_default:
         await db.execute(
             update(GradingScale)
             .where(GradingScale.school_id == school_id, GradingScale.is_default.is_(True))
@@ -110,6 +111,14 @@ async def update_grading_scale(
     if req.is_default is not None:
         scale.is_default = req.is_default
     await db.flush()
+    if promoted_to_default:
+        # Every previously-approved score was graded against whichever scale
+        # was default at the time (cached_grade_label, resolve_grade() below)
+        # — swapping which scale is default is exactly as grade-affecting as
+        # editing a band (add_grade/delete_grade already clear on that), so
+        # it needs the same invalidation or report cards silently keep
+        # showing letter grades resolved from the OLD default forever.
+        await clear_cached_grades(scale_id, school_id, db)
     await db.refresh(scale, ["grades"])
     return scale
 

@@ -488,6 +488,53 @@ async def test_approve_scores_normalizes_non_100_max_score(
 
 
 @pytest.mark.asyncio
+async def test_switching_default_scale_clears_cached_grades(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school,
+    assessment: Assessment, student: Student, grading_scale: GradingScale,
+):
+    """A previously-approved score's cached_grade_label was resolved from
+    whichever scale was `is_default` at approval time — add_grade/delete_grade
+    already invalidate it when a scale's own bands change, but switching
+    WHICH scale is default is just as grade-affecting and was silently not
+    invalidating anything, so a report card generated after the switch would
+    still show the letter grade resolved from the OLD default scale."""
+    from app.models.assessments import Grade
+
+    submit = await client.post(f"/assessments/{assessment.id}/scores", json={
+        "scores": [{"student_id": str(student.id), "raw_score": "85.00"}],
+    }, headers=auth)
+    score_id = submit.json()[0]["id"]
+    approve = await client.post(f"/assessments/{assessment.id}/scores/approve", json={
+        "score_ids": [score_id],
+    }, headers=auth)
+    assert approve.json()[0]["cached_grade_label"] == "A1"
+
+    # A second scale, deliberately with no band covering 85% at all.
+    honors = GradingScale(school_id=school.id, name="Honors Scale", is_default=False)
+    db_session.add(honors)
+    await db_session.flush()
+    db_session.add(Grade(
+        grading_scale_id=honors.id, min_score=Decimal("95"), max_score=Decimal("100"),
+        letter_grade="H", label="Honors",
+    ))
+    await db_session.flush()
+
+    resp = await client.patch(f"/assessments/grading-scales/{honors.id}", json={
+        "is_default": True,
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["is_default"] is True
+
+    from app.models.assessments import Score
+    score = await db_session.get(Score, score_id)
+    await db_session.refresh(score)
+    assert score.cached_grade_label is None, (
+        "Switching the default scale must clear stale cached grade labels, "
+        "not leave report cards silently showing grades from the old scale"
+    )
+
+
+@pytest.mark.asyncio
 async def test_list_scores(
     client: AsyncClient, auth: dict, assessment: Assessment, student: Student,
 ):
