@@ -31,7 +31,9 @@ from app.models.assessments import Assessment, AssessmentType, Score, StudentBeh
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
 from app.services.attendance_stats import compute_attendance_stats
+from app.services.grading import get_default_scale_with_bands, grade_legend_rows
 from app.services.report_card_scoring import _compute_weighted_scores
+from app.services.student_display import _photo_url
 
 
 def _class_name(cls: Class, programme_name: str | None) -> str:
@@ -68,12 +70,19 @@ async def assemble_transcript(
         .order_by(AcademicYear.start_date, AcademicTerm.term_number)
     )).all()
 
+    scale = await get_default_scale_with_bands(school_id, db)
+
     if not term_rows:
         return {
             "student_name": f"{student.first_name} {student.last_name}",
             "admission_number": student.admission_number,
             "school_name": school.name if school else "",
+            "school_phone": school.phone if school else None,
+            "school_email": school.email if school else None,
+            "school_address": school.address if school else None,
             "logo_url": f"/uploads/{school.logo_path}" if school and school.logo_path else None,
+            "photo_url": _photo_url(student.photo_path),
+            "grade_legend": grade_legend_rows(scale),
             "years": [],
         }
 
@@ -170,6 +179,11 @@ async def assemble_transcript(
         "student_name": f"{student.first_name} {student.last_name}",
         "admission_number": student.admission_number,
         "school_name": school.name if school else "",
+        "school_phone": school.phone if school else None,
+        "school_email": school.email if school else None,
+        "school_address": school.address if school else None,
         "logo_url": f"/uploads/{school.logo_path}" if school and school.logo_path else None,
+        "photo_url": _photo_url(student.photo_path),
+        "grade_legend": grade_legend_rows(scale),
         "years": list(years.values()),
     }

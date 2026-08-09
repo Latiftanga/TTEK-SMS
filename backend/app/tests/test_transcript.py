@@ -184,6 +184,45 @@ async def test_transcript_excludes_unpublished_scores(
 
 
 @pytest.mark.asyncio
+async def test_transcript_includes_letterhead_photo_and_grade_legend(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, student: Student, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User,
+    subject: Subject, assessment_type: AssessmentType,
+):
+    """Same letterhead/photo/grade-legend fields as the single-term report
+    card (services/report_card.py) — degrade gracefully to None/empty for a
+    school with no phone/email/address and a student with no photo."""
+    from app.services.transcript import assemble_transcript
+
+    await _assign_and_enroll(db_session, school, student, school_class, academic_term, school_admin)
+    await _add_score(db_session, school, school_class, subject, assessment_type, academic_term, student, school_admin)
+
+    context = await assemble_transcript(student.id, school.id, school_admin.id, db_session)
+    assert context["school_phone"] is None
+    assert context["school_email"] is None
+    assert context["school_address"] is None
+    assert context["photo_url"] is None
+    assert context["grade_legend"], "shared seeded default scale must populate the legend"
+
+
+@pytest.mark.asyncio
+async def test_transcript_empty_history_includes_grade_legend(
+    db_session: AsyncSession, school: School, student: Student, school_admin: User,
+):
+    """The empty-history early-return branch (zero term enrollments) must
+    also carry the letterhead/legend fields — the two-return-statement shape
+    invites forgetting one of them."""
+    from app.services.transcript import assemble_transcript
+
+    context = await assemble_transcript(student.id, school.id, school_admin.id, db_session)
+    assert context["years"] == []
+    assert context["school_phone"] is None
+    assert context["photo_url"] is None
+    assert context["grade_legend"], "shared seeded default scale must populate the legend"
+
+
+@pytest.mark.asyncio
 async def test_transcript_requires_assessments_view(
     client: AsyncClient, auth: dict, db_session: AsyncSession,
     school: School, student: Student, redis_permissions: None,

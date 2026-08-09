@@ -10,7 +10,7 @@
   .header { border-bottom: 2px solid #1e40af; padding-bottom: 8px; margin-bottom: 10px; overflow: hidden; }
   .header img { float: left; width: 55px; height: 55px; margin-right: 10px; }
   .header h1 { font-size: 14pt; color: #1e40af; margin-top: 4px; }
-  .header p { font-size: 8.5pt; color: #555; }
+  .header p { font-size: 8pt; color: #555; line-height: 1.3; }
   .header-clear { clear: both; }
 
   .title { text-align: center; font-size: 12pt; font-weight: bold; margin: 8px 0 3px; text-transform: uppercase; }
@@ -19,6 +19,13 @@
   .meta td { border: 1px solid #ccc; padding: 4px 7px; width: 33%; }
   .meta .lbl { font-size: 7.5pt; color: #888; display: block; }
   .meta .val { font-size: 9.5pt; font-weight: bold; }
+  .meta .student-cell { overflow: hidden; }
+  .meta .student-photo { float: left; width: 36px; height: 36px; margin-right: 6px; border-radius: 3px; object-fit: cover; }
+
+  .legend { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 8pt; page-break-inside: avoid; }
+  .legend th { background: #374151; color: #fff; padding: 3px 6px; text-align: left; font-size: 7.5pt; }
+  .legend td { padding: 3px 6px; border-bottom: 1px solid #e5e7eb; }
+  .legend-title { font-size: 8.5pt; font-weight: bold; color: #444; margin-top: 8px; }
 
   .year-title { font-size: 11pt; font-weight: bold; color: #1e40af; margin: 14px 0 4px; border-bottom: 1px solid #1e40af; padding-bottom: 2px; }
   .term-block { margin-bottom: 10px; page-break-inside: avoid; }
@@ -45,7 +52,10 @@
 <div class="header">
   {% if logo_url %}<img src="{{ logo_url }}" alt="">{% endif %}
   <h1>{{ school_name }}</h1>
-  <p>Academic Transcript</p>
+  {% if school_address %}<p>{{ school_address }}</p>{% endif %}
+  {% if school_phone or school_email %}
+  <p>{% if school_phone %}Tel: {{ school_phone }}{% endif %}{% if school_phone and school_email %} &middot; {% endif %}{% if school_email %}{{ school_email }}{% endif %}</p>
+  {% endif %}
   <div class="header-clear"></div>
 </div>
 
@@ -53,7 +63,10 @@
 
 <table class="meta">
   <tr>
-    <td><span class="lbl">Student Name</span><span class="val">{{ student_name }}</span></td>
+    <td class="student-cell">
+      {% if photo_url %}<img class="student-photo" src="{{ photo_url }}" alt="">{% endif %}
+      <span class="lbl">Student Name</span><span class="val">{{ student_name }}</span>
+    </td>
     <td><span class="lbl">Admission No.</span><span class="val">{{ admission_number }}</span></td>
     <td><span class="lbl">Terms on Record</span><span class="val">{{ years | map(attribute='terms') | map('length') | sum }}</span></td>
   </tr>
@@ -106,6 +119,23 @@
 {% else %}
 <p style="text-align:center;color:#888;margin-top:20px;">No term enrollment history on record.</p>
 {% endfor %}
+
+{% if grade_legend %}
+<div class="legend-title">Grade Interpretation</div>
+<table class="legend">
+  <thead><tr><th>Grade</th><th>Points</th><th>Score Range</th><th>Interpretation</th></tr></thead>
+  <tbody>
+    {% for g in grade_legend %}
+    <tr>
+      <td>{{ g.letter_grade }}</td>
+      <td>{{ g.gpa_points if g.gpa_points is not none else "—" }}</td>
+      <td>{{ g.min_score }}&ndash;{{ g.max_score }}</td>
+      <td>{{ g.label }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 
 <table class="footer">
   <tr>
