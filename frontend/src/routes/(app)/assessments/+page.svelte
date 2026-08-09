@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import {
     listAssessments, listAssessmentTypes, createAssessment, listMySubjects,
-    formatAssessmentDate, type Assessment,
+    formatAssessmentDate, bulkPublishAssessments, type Assessment,
   } from '$lib/api/assessments';
   import { listYears, listClasses, updateTerm } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
@@ -118,6 +118,21 @@
       qc.invalidateQueries({ queryKey: ['academic-years'] });
       qc.invalidateQueries({ queryKey: ['all-terms'] });
     },
+  });
+
+  // Publishes every approved, not-yet-published assessment for the whole
+  // class+term in one action — not filtered by the Subject/Category pickers
+  // above, same class+term-wide scope as the Lock results toggle.
+  const bulkPublishMut = createMutation({
+    mutationFn: () => bulkPublishAssessments(classId, termId),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['assessments', classId, termId] });
+      const parts = [`${result.published} published`];
+      if (result.skipped_unapproved) parts.push(`${result.skipped_unapproved} skipped (unapproved scores)`);
+      if (result.already_published) parts.push(`${result.already_published} already published`);
+      toast.success(parts.join(', '));
+    },
+    onError: () => toast.error('Could not bulk-publish assessments.'),
   });
 
   // Auto-select class when only one is available (e.g. class teacher with one class)
@@ -256,6 +271,18 @@
         {/if}
       </svg>
       {$resultsLockMut.isPending ? '…' : selectedTerm.results_locked ? 'Results locked' : 'Lock results'}
+    </button>
+  {/if}
+  {#if canManage && classId && termId}
+    <button
+      onclick={() => $bulkPublishMut.mutate()}
+      disabled={$bulkPublishMut.isPending}
+      title="Publish every approved, not-yet-published assessment for this class and term"
+      class="flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs font-semibold text-[var(--fg-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)] disabled:opacity-50">
+      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+      </svg>
+      {$bulkPublishMut.isPending ? 'Publishing…' : 'Publish all approved'}
     </button>
   {/if}
 </div>

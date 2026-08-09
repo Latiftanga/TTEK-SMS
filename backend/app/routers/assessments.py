@@ -22,7 +22,7 @@ from app.core.dependencies import require_auth, require_permission
 from app.schemas.assessments import (
     AssessmentCreate, AssessmentRead, AssessmentRosterStudent, AssessmentUpdate,
     AssessmentTypeCreate, AssessmentTypeRead, AssessmentTypeUpdate,
-    BulkScoreSubmit, GradeCreate, GradeRead,
+    BulkPublishRequest, BulkPublishResult, BulkScoreSubmit, GradeCreate, GradeRead,
     GradingScaleCreate, GradingScaleRead, GradingScaleUpdate,
     MySubjectAssignment, ScoreApproveRequest, ScoreRead,
 )
@@ -241,6 +241,21 @@ async def publish_assessment(
 ):
     _, school_id = ids
     return await publish_svc.publish_assessment(assessment_id, school_id, db)
+
+
+@router.post("/bulk-publish", response_model=BulkPublishResult)
+async def bulk_publish_assessments(
+    req: BulkPublishRequest,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Publish every approved, not-yet-published assessment for a class+term
+    in one action — skips any assessment that still has an unapproved score
+    rather than publishing it. See services/assessment_publish.py."""
+    _, school_id = ids
+    return await publish_svc.bulk_publish_assessments(
+        req.class_id, req.academic_term_id, school_id, db
+    )
 
 
 # ── Scores ────────────────────────────────────────────────────────────────────

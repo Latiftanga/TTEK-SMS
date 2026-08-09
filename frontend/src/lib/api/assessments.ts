@@ -139,6 +139,15 @@ export const deleteAssessment = (id: string): Promise<void> =>
 export const publishAssessment = (id: string): Promise<Assessment> =>
   api.post(`/assessments/${id}/publish`).then(r => r.data);
 
+export interface BulkPublishResult {
+  published: number;
+  skipped_unapproved: number;
+  already_published: number;
+}
+
+export const bulkPublishAssessments = (classId: string, academicTermId: string): Promise<BulkPublishResult> =>
+  api.post('/assessments/bulk-publish', { class_id: classId, academic_term_id: academicTermId }).then(r => r.data);
+
 export interface RosterStudent {
   id: string;
   display_name: string;

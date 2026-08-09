@@ -35,6 +35,7 @@ from app.models import (  # noqa: F401
     housing, school, staff, staff_history, students,
 )
 from app.services.bulk_report_job import bulk_generate_report_cards
+from app.services.report_notify_job import notify_class_report_published
 
 
 # ── Lifecycle hooks ───────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ async def test_job(ctx: dict, message: str) -> str:
 # ── Worker settings ───────────────────────────────────────────────────────────
 
 class WorkerSettings:
-    functions = [test_job, bulk_generate_report_cards]
+    functions = [test_job, bulk_generate_report_cards, notify_class_report_published]
 
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
 

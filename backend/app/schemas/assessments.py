@@ -264,6 +264,17 @@ class BulkReportJobRead(BaseModel):
     download_url: str | None = None
 
 
+class BulkPublishRequest(BaseModel):
+    class_id: uuid.UUID
+    academic_term_id: uuid.UUID
+
+
+class BulkPublishResult(BaseModel):
+    published: int
+    skipped_unapproved: int
+    already_published: int
+
+
 class MySubjectAssignment(BaseModel):
     """One (class, subject) combo the caller can create assessments/enter
     scores for — scoped to their own SubjectTeacher assignments unless they

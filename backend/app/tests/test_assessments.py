@@ -329,7 +329,7 @@ async def test_publish_assessment(
 
 
 @pytest.mark.asyncio
-async def test_publishing_second_assessment_does_not_resend_report_ready_email(
+async def test_publishing_second_assessment_enqueues_notify_job_only_once(
     client: AsyncClient, auth: dict, db_session: AsyncSession,
     school, school_class: Class, subject, assessment_type: AssessmentType,
     academic_term: AcademicTerm, assessment: Assessment, student: Student,
@@ -341,31 +341,11 @@ async def test_publishing_second_assessment_does_not_resend_report_ready_email(
     SMS) to every guardian on every subsequent publish — a class with dozens
     of assessments across a term would spam guardians (and rack up real SMS
     cost) with nothing new to report. Publishing a second assessment for the
-    same class+term must not add a second EmailLog row."""
+    same class+term must not enqueue a second notify_class_report_published
+    job (the actual send/log assertions live in test_report_notify_job.py —
+    this test is scoped to publish_assessment()'s own enqueue-once logic)."""
     import unittest.mock as mock
-    import httpx
-    from app.models.school import EmailConfig, EmailLog, EmailProvider
-    from app.models.students import Guardian, StudentClassAssignment, StudentGuardian
 
-    guardian = Guardian(
-        school_id=school.id, first_name="Ama", last_name="Owusu",
-        phone="0244000002", email="ama.owusu@example.com",
-    )
-    db_session.add(guardian)
-    await db_session.flush()
-    db_session.add(StudentGuardian(
-        school_id=school.id, student_id=student.id, guardian_id=guardian.id,
-        relation_type="Mother", is_primary=True,
-    ))
-    db_session.add(StudentClassAssignment(
-        school_id=school.id, student_id=student.id, class_id=school_class.id,
-        academic_year_id=academic_term.academic_year_id, is_active=True,
-    ))
-    db_session.add(EmailConfig(
-        school_id=school.id, provider=EmailProvider.SENDGRID,
-        username="test-sendgrid-key", from_name="Test School",
-        from_address="noreply@testschool.edu.gh", is_active=True,
-    ))
     second = Assessment(
         school_id=school.id, class_id=school_class.id, subject_id=subject.id,
         assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
@@ -375,27 +355,143 @@ async def test_publishing_second_assessment_does_not_resend_report_ready_email(
     db_session.add(second)
     await db_session.flush()
 
-    class _MockTransport(httpx.AsyncBaseTransport):
-        async def handle_async_request(self, request):
-            return httpx.Response(202, json={})
+    mock_arq = mock.AsyncMock()
 
-    original_init = httpx.AsyncClient.__init__
-    with mock.patch("httpx.AsyncClient.__init__", lambda self, **kw: original_init(
-        self, transport=_MockTransport(), **{k: v for k, v in kw.items() if k != "transport"}
-    )):
+    async def _fake_get_arq():
+        return mock_arq
+
+    with mock.patch("app.services.assessment_publish.get_arq", _fake_get_arq):
         resp1 = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
         resp2 = await client.post(f"/assessments/{second.id}/publish", headers=auth)
 
     assert resp1.status_code == 200
     assert resp2.status_code == 200
 
-    logs = (await db_session.scalars(
-        select(EmailLog).where(
-            EmailLog.school_id == school.id, EmailLog.entity_type == "REPORT_CARD",
-        )
-    )).all()
-    assert len(logs) == 1, "Second publish for the same class+term must not resend the email"
-    assert logs[0].recipient == "ama.owusu@example.com"
+    assert mock_arq.enqueue_job.call_count == 1, (
+        "Second publish for the same class+term must not enqueue a second notification job"
+    )
+    call = mock_arq.enqueue_job.call_args
+    assert call.args[0] == "notify_class_report_published"
+    assert call.kwargs["class_id"] == str(school_class.id)
+    assert call.kwargs["academic_term_id"] == str(academic_term.id)
+    assert call.kwargs["entity_id"] == str(assessment.id)
+
+
+# ── Bulk publish ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_bulk_publish_skips_unapproved_and_already_published(
+    db_session: AsyncSession, school, school_class: Class, subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, student: Student, school_admin,
+):
+    from app.models.assessments import Score
+    from app.services.assessment_publish import bulk_publish_assessments
+
+    approved = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="Approved", recorded_date=date.today(), max_score=Decimal("100.00"),
+    )
+    unapproved = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="Unapproved", recorded_date=date.today() - timedelta(days=1), max_score=Decimal("100.00"),
+    )
+    already_pub = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="Already Published", recorded_date=date.today() - timedelta(days=2),
+        max_score=Decimal("100.00"), is_published=True,
+    )
+    db_session.add_all([approved, unapproved, already_pub])
+    await db_session.flush()
+    db_session.add(Score(
+        school_id=school.id, assessment_id=approved.id, student_id=student.id,
+        raw_score=Decimal("80.00"), is_approved=True, entered_by_id=school_admin.id,
+    ))
+    db_session.add(Score(
+        school_id=school.id, assessment_id=unapproved.id, student_id=student.id,
+        raw_score=Decimal("70.00"), is_approved=False, entered_by_id=school_admin.id,
+    ))
+    await db_session.flush()
+
+    result = await bulk_publish_assessments(school_class.id, academic_term.id, school.id, db_session)
+
+    assert result.published == 1
+    assert result.skipped_unapproved == 1
+    assert result.already_published == 1
+    await db_session.refresh(approved)
+    await db_session.refresh(unapproved)
+    assert approved.is_published is True
+    assert unapproved.is_published is False, "an assessment with any unapproved score must not be published"
+
+
+@pytest.mark.asyncio
+async def test_bulk_publish_enqueues_notification_only_once_for_the_batch(
+    db_session: AsyncSession, school, school_class: Class, subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm,
+):
+    import unittest.mock as mock
+    from app.services.assessment_publish import bulk_publish_assessments
+
+    a1 = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="A1", recorded_date=date.today(), max_score=Decimal("100.00"),
+    )
+    a2 = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="A2", recorded_date=date.today() - timedelta(days=1), max_score=Decimal("100.00"),
+    )
+    db_session.add_all([a1, a2])
+    await db_session.flush()
+
+    mock_arq = mock.AsyncMock()
+
+    async def _fake_get_arq():
+        return mock_arq
+
+    with mock.patch("app.services.assessment_publish.get_arq", _fake_get_arq):
+        result = await bulk_publish_assessments(school_class.id, academic_term.id, school.id, db_session)
+
+    assert result.published == 2
+    assert mock_arq.enqueue_job.call_count == 1, "one batch that newly unlocks the class+term must enqueue exactly one job"
+
+
+@pytest.mark.asyncio
+async def test_bulk_publish_rejects_cross_school_class(db_session: AsyncSession, school, academic_term: AcademicTerm):
+    import uuid
+    from fastapi import HTTPException
+    from app.services.assessment_publish import bulk_publish_assessments
+
+    with pytest.raises(HTTPException) as exc_info:
+        await bulk_publish_assessments(uuid.uuid4(), academic_term.id, school.id, db_session)
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_publish_endpoint_returns_summary(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school, school_class: Class, subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm,
+):
+    a = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="Endpoint test", recorded_date=date.today(), max_score=Decimal("100.00"),
+    )
+    db_session.add(a)
+    await db_session.flush()
+
+    resp = await client.post("/assessments/bulk-publish", json={
+        "class_id": str(school_class.id), "academic_term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["published"] == 1
+    assert data["skipped_unapproved"] == 0
+    assert data["already_published"] == 0
 
 
 # ── Scores ────────────────────────────────────────────────────────────────────
