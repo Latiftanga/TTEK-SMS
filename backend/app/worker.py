@@ -22,6 +22,18 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, engine
+
+# Every mapped model must be imported before any job runs — SQLAlchemy
+# resolves relationship() string references (e.g. StaffMember -> "StaffPosition")
+# lazily, against whatever classes have been imported into the process by
+# the time the first query fires. The worker is a separate process from the
+# API server (`python -m app.worker`, not uvicorn), so it can't rely on
+# main.py's own imports — it needs this exact same explicit sweep
+# tests/conftest.py already does for the same reason.
+from app.models import (  # noqa: F401
+    academic, assessments, attendance, auth, documents, fees,
+    housing, school, staff, staff_history, students,
+)
 from app.services.bulk_report_job import bulk_generate_report_cards
 
 
