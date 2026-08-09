@@ -16,9 +16,40 @@
     { value: 'BREVO',    label: 'Brevo'                },
   ];
 
-  let showForm  = $state(false);
-  let form      = $state<EmailConfigPayload>({ provider: 'SMTP', host: '', port: 587, username: '', password: '', from_name: '', from_address: '', use_tls: true });
-  let formError = $state('');
+  // Gmail/Outlook aren't separate EmailProviders — both are plain SMTP
+  // servers, so a preset just pre-fills the SMTP host/port/TLS fields and
+  // surfaces the one gotcha each requires (an app password, not the normal
+  // account password — Gmail dropped plain-password SMTP auth years ago,
+  // and Microsoft 365 tenants often disable SMTP AUTH entirely by default).
+  const SMTP_PRESETS: Record<string, {
+    label: string; host: string; port: number; use_tls: boolean; help: string; docs_url: string;
+  }> = {
+    gmail: {
+      label: 'Gmail', host: 'smtp.gmail.com', port: 587, use_tls: true,
+      help: "Gmail needs an App Password, not the normal account password — turn on 2-Step Verification first, then generate one. Set Username and From Address to the same Gmail address, or Gmail will silently rewrite the From header.",
+      docs_url: 'https://support.google.com/accounts/answer/185833',
+    },
+    outlook: {
+      label: 'Outlook', host: 'smtp.office365.com', port: 587, use_tls: true,
+      help: "A personal outlook.com/hotmail.com account usually needs an app password if 2-factor is on. A work or school Microsoft 365 account may have SMTP AUTH disabled by its admin — ask IT to enable it if sending fails.",
+      docs_url: 'https://support.microsoft.com/en-us/account-billing/how-to-get-and-use-app-passwords-5896ed9b-4263-e681-128a-a6f2979a7944',
+    },
+  };
+
+  let showForm   = $state(false);
+  let form       = $state<EmailConfigPayload>({ provider: 'SMTP', host: '', port: 587, username: '', password: '', from_name: '', from_address: '', use_tls: true });
+  let formError  = $state('');
+  let smtpPreset = $state<string | null>(null);
+
+  $effect(() => { if (form.provider !== 'SMTP') smtpPreset = null; });
+
+  function applyPreset(key: string) {
+    const preset = SMTP_PRESETS[key];
+    form.host = preset.host;
+    form.port = preset.port;
+    form.use_tls = preset.use_tls;
+    smtpPreset = key;
+  }
 
   const upsertMut = createMutation({
     mutationFn: upsertEmailConfig,
@@ -63,9 +94,20 @@
         </div>
 
         {#if form.provider === 'SMTP'}
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Quick fill</label>
+            <div class="flex flex-wrap gap-2">
+              {#each Object.entries(SMTP_PRESETS) as [key, preset]}
+                <button type="button" onclick={() => applyPreset(key)}
+                  class="rounded-lg border px-3 py-1 text-xs font-medium transition {smtpPreset === key ? 'border-[var(--brand)] text-[var(--brand)] bg-[var(--brand)]/10' : 'border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
+                  {preset.label}
+                </button>
+              {/each}
+            </div>
+          </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">SMTP Host <span class="text-red-500">*</span></label>
-            <input bind:value={form.host} placeholder="e.g. smtp.gmail.com"
+            <input bind:value={form.host} oninput={() => smtpPreset = null} placeholder="e.g. smtp.gmail.com"
               class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
           <div>
@@ -77,6 +119,15 @@
             <input type="checkbox" bind:checked={form.use_tls} id="use_tls" class="h-4 w-4 rounded" />
             <label for="use_tls" class="text-sm text-[var(--fg)]">Use TLS / STARTTLS</label>
           </div>
+          {#if smtpPreset}
+            <div class="sm:col-span-2 rounded-lg bg-[var(--brand)]/5 px-3 py-2">
+              <p class="text-[11px] leading-relaxed text-[var(--fg-subtle)]">
+                {SMTP_PRESETS[smtpPreset].help}
+                <a href={SMTP_PRESETS[smtpPreset].docs_url} target="_blank" rel="noopener noreferrer"
+                  class="text-[var(--brand)] hover:underline">Set up an app password →</a>
+              </p>
+            </div>
+          {/if}
         {/if}
 
         <div>
