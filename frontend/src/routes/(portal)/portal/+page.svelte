@@ -54,7 +54,7 @@
     if (downloading.has(enrollment.id)) return;
     downloading = new Set([...downloading, enrollment.id]);
     try {
-      const blob = await getMyReportCardBlob(enrollment.id, 'BASIC', isGuardian ? selectedChildId ?? undefined : undefined);
+      const blob = await getMyReportCardBlob(enrollment.id, isGuardian ? selectedChildId ?? undefined : undefined);
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 30_000);

@@ -22,8 +22,6 @@ export interface PortalTermEnrollment {
   fee_last_payment_date: string | null;
 }
 
-export type ReportFormat = 'BASIC' | 'SHS' | 'ECM';
-
 export const getMyPortalProfile = (): Promise<PortalProfile> =>
   api.get('/portal/me').then(r => r.data);
 
@@ -36,8 +34,8 @@ export const listMyChildren = (): Promise<PortalProfile[]> =>
 export const listMyTermEnrollments = (studentId?: string): Promise<PortalTermEnrollment[]> =>
   api.get('/portal/term-enrollments', { params: studentId ? { student_id: studentId } : {} }).then(r => r.data);
 
-export const getMyReportCardBlob = (enrollmentId: string, format: ReportFormat = 'BASIC', studentId?: string): Promise<Blob> =>
+export const getMyReportCardBlob = (enrollmentId: string, studentId?: string): Promise<Blob> =>
   api.get(`/portal/report-cards/${enrollmentId}`, {
-    params: { format, ...(studentId ? { student_id: studentId } : {}) },
+    params: studentId ? { student_id: studentId } : {},
     responseType: 'blob',
   }).then(r => r.data);

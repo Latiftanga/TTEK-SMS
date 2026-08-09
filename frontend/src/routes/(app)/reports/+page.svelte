@@ -4,7 +4,7 @@
   import { listYears } from '$lib/api/academic';
   import {
     listClassEnrollments, getReportCardBlob, queueBulkReport, downloadBulkReport, listMyReportClasses,
-    type EnrollmentForReport, type ReportFormat,
+    type EnrollmentForReport,
   } from '$lib/api/reports';
   import { userRole } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
@@ -15,7 +15,6 @@
   // ── Selectors ─────────────────────────────────────────────────────────────────
   let classId  = $state('');
   let termId   = $state('');
-  let format   = $state<ReportFormat>('BASIC');
 
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
@@ -56,7 +55,7 @@
     if (generating.has(enroll.enrollment_id)) return;
     generating = new Set([...generating, enroll.enrollment_id]);
     try {
-      const blob = await getReportCardBlob(enroll.enrollment_id, format);
+      const blob = await getReportCardBlob(enroll.enrollment_id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -79,7 +78,7 @@
   const MAX_POLL_ATTEMPTS = 60; // ~5 minutes — a large class's worth of PDFs can take a while
 
   const bulkMut = createMutation({
-    mutationFn: () => queueBulkReport(classId, termId, format),
+    mutationFn: () => queueBulkReport(classId, termId),
     onSuccess: (job) => {
       bulkJobId  = job.job_id;
       bulkStatus = 'queued';
@@ -151,15 +150,6 @@
     </select>
   </div>
 
-  <div class="min-w-[130px]">
-    <label for="rc-fmt" class="label">Format</label>
-    <select id="rc-fmt" bind:value={format} class="sel">
-      <option value="BASIC">Basic (GES)</option>
-      <option value="SHS">SHS / WASSCE</option>
-      <option value="ECM">Early Childhood</option>
-    </select>
-  </div>
-
   {#if canApprove && classId && termId && students.length > 0}
     <button
       onclick={() => $bulkMut.mutate()}
@@ -211,9 +201,6 @@
       <p class="text-sm font-medium text-[var(--fg)]">
         {students.length} student{students.length === 1 ? '' : 's'}
         <span class="text-[var(--fg-muted)]">· {students[0]?.class_display_name ?? ''}</span>
-      </p>
-      <p class="text-xs text-[var(--fg-subtle)]">
-        {format === 'BASIC' ? 'GES Basic format' : format === 'SHS' ? 'WASSCE SHS format' : 'Early Childhood format'}
       </p>
     </div>
 
