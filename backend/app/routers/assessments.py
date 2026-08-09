@@ -27,6 +27,7 @@ from app.schemas.assessments import (
     MySubjectAssignment, ScoreApproveRequest, ScoreRead,
 )
 from app.services import assessment as assess_svc
+from app.services import assessment_publish as publish_svc
 from app.services import assessment_type as atype_svc
 from app.services import grading as grade_svc
 from app.services import scoring as score_svc
@@ -239,7 +240,7 @@ async def publish_assessment(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    return await assess_svc.publish_assessment(assessment_id, school_id, db)
+    return await publish_svc.publish_assessment(assessment_id, school_id, db)
 
 
 # ── Scores ────────────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, Class
@@ -294,6 +295,76 @@ async def test_publish_assessment(
     resp = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
     assert resp.status_code == 200
     assert resp.json()["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_publishing_second_assessment_does_not_resend_report_ready_email(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school, school_class: Class, subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, assessment: Assessment, student: Student,
+):
+    """services/portal.py::is_report_published() unlocks the whole report the
+    moment ANY assessment for the class+term is published, and stays unlocked
+    regardless of how many more are published after. Before this fix,
+    publish_assessment() re-sent the identical "report is ready" email (and
+    SMS) to every guardian on every subsequent publish — a class with dozens
+    of assessments across a term would spam guardians (and rack up real SMS
+    cost) with nothing new to report. Publishing a second assessment for the
+    same class+term must not add a second EmailLog row."""
+    import unittest.mock as mock
+    import httpx
+    from app.models.school import EmailConfig, EmailLog, EmailProvider
+    from app.models.students import Guardian, StudentClassAssignment, StudentGuardian
+
+    guardian = Guardian(
+        school_id=school.id, first_name="Ama", last_name="Owusu",
+        phone="0244000002", email="ama.owusu@example.com",
+    )
+    db_session.add(guardian)
+    await db_session.flush()
+    db_session.add(StudentGuardian(
+        school_id=school.id, student_id=student.id, guardian_id=guardian.id,
+        relation_type="Mother", is_primary=True,
+    ))
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    db_session.add(EmailConfig(
+        school_id=school.id, provider=EmailProvider.SENDGRID,
+        username="test-sendgrid-key", from_name="Test School",
+        from_address="noreply@testschool.edu.gh", is_active=True,
+    ))
+    second = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=academic_term.id,
+        description="End-of-Term Exam", recorded_date=date.today() - timedelta(days=1),
+        max_score=Decimal("100.00"),
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    class _MockTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return httpx.Response(202, json={})
+
+    original_init = httpx.AsyncClient.__init__
+    with mock.patch("httpx.AsyncClient.__init__", lambda self, **kw: original_init(
+        self, transport=_MockTransport(), **{k: v for k, v in kw.items() if k != "transport"}
+    )):
+        resp1 = await client.post(f"/assessments/{assessment.id}/publish", headers=auth)
+        resp2 = await client.post(f"/assessments/{second.id}/publish", headers=auth)
+
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+
+    logs = (await db_session.scalars(
+        select(EmailLog).where(
+            EmailLog.school_id == school.id, EmailLog.entity_type == "REPORT_CARD",
+        )
+    )).all()
+    assert len(logs) == 1, "Second publish for the same class+term must not resend the email"
+    assert logs[0].recipient == "ama.owusu@example.com"
 
 
 # ── Scores ────────────────────────────────────────────────────────────────────

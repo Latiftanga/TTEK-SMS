@@ -7,10 +7,8 @@ SubjectTeacher class+subject, unless the caller holds
 assessments.approve_scores (senior staff, unrestricted).
 
 Assessment.is_published gates report card access (parent portal checks this).
-Publishing is one-way — there is no un-publish endpoint — and stays
-assessments.approve_scores-gated (routers/assessments.py), unlike
-create/update/delete: it's a guardian-facing, notification-firing
-finalization step, not "creating an assignment".
+Publishing itself — including the guardian notification fan-out — lives in
+services/assessment_publish.py, split out to stay under the 300-line cap.
 
 create_assessment requires subject_id to already be an active ClassSubject on
 class_id (services/subject_roster.py) — an assessment can't be created for a
@@ -38,11 +36,7 @@ from app.core.teacher_scope import (
 )
 from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score
-from app.models.school import School
-from app.models.students import StudentClassAssignment
 from app.schemas.assessments import AssessmentCreate, AssessmentRead, AssessmentUpdate
-from app.services import email_notifications as email_svc
-from app.services import sms_notifications as sms_svc
 from app.services.subject_roster import class_subject_exists
 
 
@@ -250,51 +244,3 @@ async def delete_assessment(
         )
     await db.delete(a)
     await db.flush()
-
-
-async def publish_assessment(
-    assessment_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
-) -> AssessmentRead:
-    a = await db.scalar(
-        select(Assessment).where(
-            Assessment.id == assessment_id, Assessment.school_id == school_id
-        )
-    )
-    if not a:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found.")
-    a.is_published = True
-    await db.flush()
-
-    # Notify guardians of all class members for this academic year
-    school = await db.get(School, school_id)
-    term = await db.get(AcademicTerm, a.academic_term_id)
-    if school and term:
-        assignments = await db.scalars(
-            select(StudentClassAssignment).where(
-                StudentClassAssignment.class_id == a.class_id,
-                StudentClassAssignment.academic_year_id == term.academic_year_id,
-                StudentClassAssignment.school_id == school_id,
-                StudentClassAssignment.is_active.is_(True),
-            )
-        )
-        for sca in assignments:
-            await sms_svc.notify_report_published(
-                student_id=sca.student_id,
-                school_id=school_id,
-                school_short=school.short_name or school.name,
-                school_code=school.school_code,
-                term_name=term.name,
-                entity_id=a.id,
-                db=db,
-            )
-            await email_svc.notify_report_published_email(
-                student_id=sca.student_id,
-                school_id=school_id,
-                school_short=school.short_name or school.name,
-                school_code=school.school_code,
-                term_name=term.name,
-                entity_id=a.id,
-                db=db,
-            )
-
-    return _assessment_read(a)
