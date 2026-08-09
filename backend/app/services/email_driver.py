@@ -185,6 +185,15 @@ class BrevoDriver(EmailDriver):
             return EmailResult(success=False, provider=self.provider, error=str(exc))
 
 
+PROVIDERS_REQUIRING_USERNAME: frozenset[EmailProvider] = frozenset({
+    EmailProvider.SENDGRID, EmailProvider.MAILGUN, EmailProvider.BREVO,
+})
+"""SendGrid/Mailgun/Brevo repurpose `username` as the API key — with it blank
+the driver still builds cleanly but every send 401s. Mirrors
+sms_driver.py::PROVIDERS_REQUIRING_SECRET, checked at activation time in
+services/email_config.py."""
+
+
 def build_driver(
     provider: EmailProvider,
     host: str | None,

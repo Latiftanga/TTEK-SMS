@@ -7,8 +7,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.school import EmailConfig
+from app.models.school import EmailConfig, EmailProvider
 from app.schemas.school import EmailConfigCreate, EmailConfigRead
+from app.services.email_driver import PROVIDERS_REQUIRING_USERNAME
 
 
 async def list_email_configs(school_id: uuid.UUID, db: AsyncSession) -> list[EmailConfigRead]:
@@ -75,6 +76,22 @@ async def activate_email_config(
     )
     if not target:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Email config not found.")
+
+    # SendGrid/Mailgun/Brevo can't function without an API key (stored in
+    # `username`) — activating one saved without it must fail loudly here,
+    # not just accumulate silent FAILED rows in /email/logs. Mirrors
+    # services/school_config.py::activate_sms_provider's api_secret check.
+    if target.provider in PROVIDERS_REQUIRING_USERNAME and not target.username:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{target.provider.value} requires an API key (username) to be set "
+            "before it can be activated.",
+        )
+    if target.provider == EmailProvider.MAILGUN and not target.host:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "MAILGUN requires a sending domain (host) to be set before it can be activated.",
+        )
 
     all_configs = await db.scalars(
         select(EmailConfig).where(EmailConfig.school_id == school_id)

@@ -165,6 +165,51 @@ async def test_activate_deactivates_others(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
+async def test_activate_rejects_missing_required_username(client: AsyncClient, auth: dict):
+    """SendGrid/Mailgun/Brevo repurpose `username` as the API key — a config
+    saved without one can't send anything. Activating it must fail loudly
+    here, not just accumulate silent FAILED rows in /email/logs. Mirrors
+    test_sms.py::test_activate_rejects_missing_required_secret."""
+    created = (await client.post("/email/configs", json={
+        "provider": "SENDGRID", "username": "",
+        "from_name": "School", "from_address": "a@testschool.edu.gh",
+    }, headers=auth)).json()
+    resp = await client.post("/email/configs/activate",
+        json={"config_id": created["id"]}, headers=auth,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_activate_rejects_mailgun_missing_host(client: AsyncClient, auth: dict):
+    """Mailgun's `host` field doubles as the sending domain — required at
+    send time even though the schema only enforces `host` for SMTP at
+    create time."""
+    created = (await client.post("/email/configs", json={
+        "provider": "MAILGUN", "username": "k",
+        "from_name": "School", "from_address": "a@testschool.edu.gh",
+    }, headers=auth)).json()
+    resp = await client.post("/email/configs/activate",
+        json={"config_id": created["id"]}, headers=auth,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_activate_allows_smtp_without_username(client: AsyncClient, auth: dict):
+    """SMTP genuinely doesn't require auth on some relays — must still
+    activate cleanly since PROVIDERS_REQUIRING_USERNAME doesn't include it."""
+    created = (await client.post("/email/configs", json={
+        "provider": "SMTP", "username": "", "host": "smtp.testschool.edu.gh",
+        "from_name": "School", "from_address": "a@testschool.edu.gh",
+    }, headers=auth)).json()
+    resp = await client.post("/email/configs/activate",
+        json={"config_id": created["id"]}, headers=auth,
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_activate_unconfigured_id_returns_404(client: AsyncClient, auth: dict):
     resp = await client.post("/email/configs/activate",
         json={"config_id": "00000000-0000-0000-0000-000000000000"}, headers=auth,
