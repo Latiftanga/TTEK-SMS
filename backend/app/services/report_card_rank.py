@@ -44,6 +44,7 @@ async def compute_rank(
                a.subject_id,
                sub.name AS subject_name,
                at.name  AS type_name,
+               at.code  AS type_code,
                sr.registration_type
         FROM student_class_assignment sca
         JOIN term_enrollment te
@@ -107,6 +108,7 @@ async def compute_rank(
             "type_aggregation_strategy": r.aggregation_strategy,
             "subject_name": r.subject_name or "",
             "type_name": r.type_name or "",
+            "type_code": r.type_code or "",
         })
 
     totals = {

@@ -30,7 +30,7 @@ from app.services.class_progression import level_rank
 from app.services.grading import get_default_scale_with_bands, grade_legend_rows, resolve_grade_from_scale
 from app.services.qr import generate_qr_image, generate_token
 from app.services.report_card_rank import compute_rank
-from app.services.report_card_scoring import _compute_weighted_scores
+from app.services.report_card_scoring import _compute_type_breakdown, _compute_weighted_scores
 from app.services.student_display import _photo_url
 
 
@@ -44,15 +44,18 @@ def _class_name(cls: Class, programme_name: str | None) -> str:
 
 
 def _group_by_subject(
-    scores: list[dict], subject_weighted: dict[str, Decimal], scale: GradingScale | None,
+    scores: list[dict], subject_weighted: dict[str, Decimal],
+    type_breakdown: dict[str, dict[str, Decimal]], scale: GradingScale | None,
 ) -> list[dict]:
     """Fold the flat per-assessment `scores` rows (already ordered by
-    Subject.name, AssessmentType.name — see _load_scores) into one block per
-    subject: its category rows, its weighted total (from
-    report_card_scoring.py::_compute_weighted_scores), and a letter grade
-    resolved for that total. This — not the flat `scores` list — is what the
-    report card template actually renders; `scores`/`subject_weighted` stay
-    in the context unchanged since total_score/rank still depend on them."""
+    Subject.name — see _load_scores) into one block per subject: its
+    category rows (`rows` — still needed by the early-years milestone
+    section), its per-type-code resolved values (`type_values` — what the
+    numeric section's unified table actually renders per column), its
+    weighted total (report_card_scoring.py::_compute_weighted_scores), and a
+    letter grade resolved for that total. This — not the flat `scores` list
+    — is what the report card template renders; `scores`/`subject_weighted`
+    stay in the context unchanged since total_score/rank still depend on them."""
     groups: list[dict] = []
     by_subject: dict[str, dict] = {}
     for row in scores:
@@ -65,11 +68,26 @@ def _group_by_subject(
                 "rows": [],
                 "total": total,
                 "grade": resolve_grade_from_scale(total, scale),
+                "type_values": type_breakdown.get(subj, {}),
             }
             by_subject[subj] = group
             groups.append(group)
         group["rows"].append(row)
     return groups
+
+
+def _type_columns(scores: list[dict]) -> list[dict]:
+    """Distinct assessment-type codes referenced anywhere in this report,
+    ordered heaviest-weight-first (then code) — the fixed set of columns the
+    numeric section's unified subject table renders. Not every subject
+    necessarily has an entry for every column (a subject that never used a
+    given type renders "—" there — see the template)."""
+    seen: dict[str, dict] = {}
+    for row in scores:
+        code = row["type_code"]
+        if code not in seen:
+            seen[code] = {"code": code, "name": row["type_name"], "weight": row["type_weight"]}
+    return sorted(seen.values(), key=lambda c: (-c["weight"], c["code"]))
 
 
 async def _load_scores(
@@ -82,9 +100,9 @@ async def _load_scores(
     rows = (await db.execute(
         select(
             Score.raw_score,
-            Score.cached_grade_label,
             Assessment.max_score,
             AssessmentType.name.label("type_name"),
+            AssessmentType.code.label("type_code"),
             AssessmentType.weight.label("type_weight"),
             AssessmentType.aggregation_strategy.label("type_aggregation_strategy"),
             Subject.name.label("subject_name"),
@@ -196,7 +214,9 @@ async def assemble(
 
     qr_token = generate_token(enrollment_id, school_id)
     scale = await get_default_scale_with_bands(school_id, db)
-    subject_groups = _group_by_subject(scores, subject_weighted, scale)
+    type_breakdown = _compute_type_breakdown(scores)
+    type_columns = _type_columns(scores)
+    subject_groups = _group_by_subject(scores, subject_weighted, type_breakdown, scale)
 
     return {
         "enrollment_id": str(enrollment_id),
@@ -215,6 +235,7 @@ async def assemble(
         "photo_url": _photo_url(student.photo_path),
         "is_early_years": is_early_years,
         "grade_legend": grade_legend_rows(scale),
+        "type_columns": type_columns,
         "subject_groups": subject_groups,
         "scores": scores,
         "subject_weighted": subject_weighted,

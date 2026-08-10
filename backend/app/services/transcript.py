@@ -113,6 +113,7 @@ async def assemble_transcript(
             Score.cached_grade_label,
             Assessment.max_score,
             AssessmentType.name.label("type_name"),
+            AssessmentType.code.label("type_code"),
             AssessmentType.weight.label("type_weight"),
             AssessmentType.aggregation_strategy.label("type_aggregation_strategy"),
             Subject.name.label("subject_name"),

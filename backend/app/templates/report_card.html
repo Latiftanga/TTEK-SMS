@@ -26,11 +26,22 @@
   .subject-block { break-inside: avoid; page-break-inside: avoid; margin-bottom: 6px; }
   .subject-name { font-size: 10pt; font-weight: bold; color: {{ brand_color }}; margin: 6px 0 2px; }
 
-  table.scores { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  table.scores { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 8px; }
   table.scores th { background: {{ brand_color }}; color: #fff; padding: 4px 6px; text-align: left; font-size: 8.5pt; }
-  table.scores td { padding: 3px 6px; border-bottom: 1px solid #e5e7eb; }
+  table.scores td { padding: 4px 6px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; }
+  table.scores tbody tr { break-inside: avoid; page-break-inside: avoid; }
   table.scores tr:nth-child(even) td { background: #f8fafc; }
   tr.subject-total td { border-top: 2px solid {{ brand_color }}; border-bottom: none; background: #eef2f7 !important; font-weight: bold; }
+
+  /* Unified per-subject table (numeric section) — one row per subject,
+     one column per assessment-type code (report_card.py::_type_columns). */
+  .subject-cell { font-weight: bold; white-space: nowrap; }
+  .type-cell { text-align: center; color: #444; }
+  .grade-cell { font-weight: bold; text-align: center; }
+  .bar-col { width: 70pt; }
+  .bar-track { height: 6pt; background: #e5e7eb; border-radius: 6pt; overflow: hidden; }
+  .bar-fill { height: 100%; background: {{ brand_color }}; border-radius: 6pt; }
+  .codes-legend { font-size: 7.5pt; color: #888; margin: 0 0 8px; }
 
   .milestone-achieved { color: #16a34a; font-weight: bold; }
   .milestone-emerging { color: #d97706; }
@@ -147,39 +158,57 @@
 <p class="attendance-line">Attendance: {{ days_present }} of {{ total_school_days }} days.</p>
 
 {% else %}
-  {% for group in subject_groups %}
-  <div class="subject-block">
-    <div class="subject-name">{{ group.subject_name }}</div>
-    <table class="scores">
-      <thead>
-        <tr>
-          <th>Category</th>
-          <th style="text-align:right">Score</th><th style="text-align:right">Max</th>
-          <th>%</th><th>Grade</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in group.rows %}
-        {% set pct = ((s.raw_score / s.max_score) * 100) | round(1) if s.max_score else 0 %}
-        <tr>
-          <td>{{ s.type_name }}</td>
-          <td style="text-align:right">{{ s.raw_score }}</td>
-          <td style="text-align:right">{{ s.max_score }}</td>
-          <td>{{ pct }}%</td>
-          <td>{{ s.cached_grade_label or "—" }}</td>
-        </tr>
+  <!-- One row per subject, matching real GES terminal report layout (Subject
+       / per-category-code columns / Total / Grade in a single table) —
+       replaces the old repeated sub-table-per-subject, which forced a fresh
+       <thead> and block margin for every subject and was the actual driver
+       of most students needing the compact/dense density tier. Columns are
+       the codes (e.g. CT, EOT) referenced anywhere in this report — not
+       every subject necessarily has every code, rendered "—" where absent —
+       decoded below the table since a school's own codes, unlike GES's
+       universal SBA/EXAM, aren't something a parent has necessarily seen.
+       Each cell is the type's weighted contribution toward the subject
+       Total, out of that type's own weight shown in the header — e.g. a
+       CT (30) cell of 27.0 plus an EOT (70) cell of 53.2 visibly sum to a
+       Total of 80.20, unlike a bare "%" per category, which doesn't relate
+       to the Total at a glance (report_card_scoring.py::
+       _compute_type_breakdown — the same resolve_type_score() math that
+       feeds the subject total, so a multi-entry type like three Class Tests
+       collapses to the one number that actually contributed, not a raw
+       per-entry list). Grade stays on the total only (GES/WASSCE grades the
+       term aggregate, not an individual entry). -->
+  <table class="scores">
+    <thead>
+      <tr>
+        <th>Subject</th>
+        {% for col in type_columns %}<th style="text-align:center">{{ col.code }} ({{ col.weight }})</th>{% endfor %}
+        <th style="text-align:right">Total</th>
+        <th>Grade</th>
+        <th class="bar-col">Performance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in subject_groups %}
+      <tr>
+        <td class="subject-cell">{{ group.subject_name }}</td>
+        {% for col in type_columns %}
+        {% set v = group.type_values.get(col.code) %}
+        <td class="type-cell">{{ v if v is not none else "—" }}</td>
         {% endfor %}
-        <tr class="subject-total">
-          <td>Subject Total</td>
-          <td colspan="3" style="text-align:right">{{ group.total }} / 100</td>
-          <td>{{ group.grade or "—" }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p style="text-align:center;color:#888;">No approved scores yet.</p>
-  {% endfor %}
+        <td style="text-align:right">{{ group.total }} / 100</td>
+        <td class="grade-cell">{{ group.grade or "—" }}</td>
+        <td class="bar-col">
+          <div class="bar-track"><div class="bar-fill" style="width: {{ [group.total, 100] | min }}%"></div></div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ type_columns | length + 4 }}" style="text-align:center;color:#888;">No approved scores yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if type_columns %}
+  <p class="codes-legend">{% for col in type_columns %}{{ col.code }} = {{ col.name }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</p>
+  {% endif %}
 
 <table class="summary">
   <tr>

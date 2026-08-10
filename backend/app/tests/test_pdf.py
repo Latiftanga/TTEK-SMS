@@ -27,10 +27,15 @@ def _subject_group(name: str, n_rows: int) -> dict:
         }
         for i in range(n_rows)
     ]
-    return {"subject_name": name, "rows": rows, "total": Decimal("75.00"), "grade": "B2"}
+    type_values = {f"C{i}": Decimal("75.00") for i in range(n_rows)}
+    return {"subject_name": name, "rows": rows, "total": Decimal("75.00"), "grade": "B2", "type_values": type_values}
 
 
 def _context(subject_groups: list[dict]) -> dict:
+    codes: dict[str, dict] = {}
+    for group in subject_groups:
+        for code in group["type_values"]:
+            codes.setdefault(code, {"code": code, "name": code})
     return {
         "enrollment_id": "test-enrollment",
         "student_name": "Test Student",
@@ -51,6 +56,7 @@ def _context(subject_groups: list[dict]) -> dict:
             {"letter_grade": "A1", "gpa_points": None, "min_score": Decimal("80"), "max_score": Decimal("100"), "label": "Excellent"},
             {"letter_grade": "F9", "gpa_points": None, "min_score": Decimal("0"), "max_score": Decimal("44.99"), "label": "Fail"},
         ],
+        "type_columns": list(codes.values()),
         "subject_groups": subject_groups,
         "scores": [],
         "subject_weighted": {},
