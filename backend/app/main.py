@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.limiter import RateLimitMiddleware
 from app.core.redis import close_redis, init_redis
-from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, auth, dashboard, documents, email, fees, grading, housing, permissions, portal, programme_summary, report_cards, schools, scoring, sms, staff, staff_admin, staff_category, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync
+from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, auth, dashboard, documents, email, fees, grading, housing, permissions, portal, programme_summary, report_cards, schools, scoring, sms, staff, staff_admin, staff_category, staff_records, students, students_detail, students_diagnostics, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync
 
 # ── Sentry ───────────────────────────────────────────────────────────────────
 if settings.sentry_dsn and settings.sentry_dsn.startswith("https://"):
@@ -102,6 +102,7 @@ app.include_router(students.router)
 app.include_router(students_enrollment.router)
 app.include_router(students_lifecycle.router)
 app.include_router(students_transcript.router)
+app.include_router(students_diagnostics.router)
 app.include_router(students_detail.router)  # /{student_id} — must be last of the students_* routers
 app.include_router(housing.router)
 app.include_router(fees.router)
