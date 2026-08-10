@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
+from app.core.config import settings
 from app.models.academic import AcademicTerm, Class, ClassTeacher
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
@@ -190,6 +191,29 @@ async def test_assemble_includes_letterhead_photo_and_grade_legend(
 
     assert context["grade_legend"], "shared seeded default scale must populate the legend"
     assert context["grade_legend"][0]["letter_grade"] == "A1"  # highest band first
+
+
+@pytest.mark.asyncio
+async def test_assemble_logo_url_is_absolute(
+    db_session: AsyncSession,
+    school: School, student: Student, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User,
+):
+    """WeasyPrint resolves an <img> src against services/pdf.py's base_url
+    (the templates directory on disk), not the app's own HTTP routes — a
+    root-relative "/uploads/..." path (the pre-fix bug) silently fails to
+    load rather than erroring, so nothing short of an explicit assertion
+    catches it. logo_url must be a real absolute URL, matching the same
+    services/school.py::_logo_url() the Setup page's own API responses use."""
+    from app.services.report_card import assemble
+
+    school.logo_path = "logos/test-logo.webp"
+    await db_session.commit()
+
+    te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+    context = await assemble(te.id, school.id, school_admin.id, db_session)
+
+    assert context["logo_url"] == f"{settings.app_base_url.rstrip('/')}/uploads/logos/test-logo.webp"
 
 
 @pytest.mark.asyncio

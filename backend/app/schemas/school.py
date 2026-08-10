@@ -4,13 +4,29 @@ import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, computed_field, field_validator
 
+from app.core.config import settings
 from app.models.school import EmailProvider, EmailStatus, SchoolOwnership, SchoolType, SmsProvider
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
 _DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
+
+
+def _logo_url(logo_path: str | None) -> str | None:
+    """Convert a stored logo path to an absolute URL, ready for <img src> —
+    on the frontend (a different origin from the API in dev, and often in
+    production too) a root-relative "/uploads/..." path silently 404s rather
+    than erroring, the same failure mode already fixed once for the report
+    card's WeasyPrint rendering. Only one implementation of this conversion
+    exists — SchoolRead.logo_url (below) and SchoolBranding both call it, so
+    every surface (Setup page, sidebar, report card, transcript) agrees."""
+    if not logo_path:
+        return None
+    if settings.storage_backend == "CLOUDFLARE_R2":
+        return f"{settings.r2_public_url.rstrip('/')}/{logo_path}"
+    return f"{settings.app_base_url.rstrip('/')}/uploads/{logo_path}"
 
 
 class SchoolCreate(BaseModel):
@@ -146,6 +162,17 @@ class SchoolRead(BaseModel):
     brand_color: str
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def logo_url(self) -> str | None:
+        """Absolute URL, ready for <img src> — logo_path alone (the raw
+        storage-relative path) is what's persisted, not what a browser can
+        load directly. Derived once here so every caller of SchoolRead
+        (GET/PATCH /schools/me, the logo upload endpoint) gets it for free,
+        instead of each frontend call site reconstructing its own (broken)
+        version, which is exactly what happened before this field existed."""
+        return _logo_url(self.logo_path)
 
 
 class SchoolBranding(BaseModel):

@@ -22,6 +22,7 @@ export interface SchoolRead {
   address: string | null;
   motto: string | null;
   logo_path: string | null;
+  logo_url: string | null;
   established_year: number | null;
   is_active: boolean;
   has_boarding: boolean;

@@ -30,6 +30,7 @@ from app.models.academic import AcademicTerm, AcademicYear, Class, SHSProgramme,
 from app.models.assessments import Assessment, AssessmentCategory, AssessmentType, Score, StudentBehaviourRecord
 from app.models.school import School
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
+from app.schemas.school import _logo_url
 from app.services.attendance_stats import compute_attendance_stats
 from app.services.grading import get_default_scale_with_bands, grade_legend_rows
 from app.services.report_card_scoring import _compute_weighted_scores
@@ -80,7 +81,7 @@ async def assemble_transcript(
             "school_phone": school.phone if school else None,
             "school_email": school.email if school else None,
             "school_address": school.address if school else None,
-            "logo_url": f"/uploads/{school.logo_path}" if school and school.logo_path else None,
+            "logo_url": _logo_url(school.logo_path) if school else None,
             "photo_url": _photo_url(student.photo_path),
             "grade_legend": grade_legend_rows(scale),
             "years": [],
@@ -185,7 +186,7 @@ async def assemble_transcript(
         "school_phone": school.phone if school else None,
         "school_email": school.email if school else None,
         "school_address": school.address if school else None,
-        "logo_url": f"/uploads/{school.logo_path}" if school and school.logo_path else None,
+        "logo_url": _logo_url(school.logo_path) if school else None,
         "photo_url": _photo_url(student.photo_path),
         "grade_legend": grade_legend_rows(scale),
         "years": list(years.values()),

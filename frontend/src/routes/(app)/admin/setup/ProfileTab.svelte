@@ -50,7 +50,7 @@
         short_name:   updated.short_name,
         school_type:  updated.school_type,
         motto:        updated.motto,
-        logo_url:     updated.logo_path,
+        logo_url:     updated.logo_url,
         brand_color:  updated.brand_color,
         school_code:  updated.school_code,
       });
@@ -61,7 +61,7 @@
         schoolCode:  updated.school_code,
         schoolType:  updated.school_type,
         brandColor:  updated.brand_color,
-        logoUrl:     logoSrc(updated.logo_path),
+        logoUrl:     updated.logo_url,
         motto:       updated.motto,
       });
       profileDirty = false; profileOk = true;
@@ -90,7 +90,7 @@
         short_name:   updated.short_name,
         school_type:  updated.school_type,
         motto:        updated.motto,
-        logo_url:     updated.logo_path,
+        logo_url:     updated.logo_url,
         brand_color:  updated.brand_color,
         school_code:  updated.school_code,
       });
@@ -101,7 +101,7 @@
         schoolCode: updated.school_code,
         schoolType: updated.school_type,
         brandColor: updated.brand_color,
-        logoUrl:    logoSrc(updated.logo_path),
+        logoUrl:    updated.logo_url,
         motto:      updated.motto,
       });
     } catch {
@@ -109,11 +109,6 @@
     } finally {
       logoUploading = false;
     }
-  }
-
-  function logoSrc(path: string | null | undefined): string | null {
-    if (!path) return null;
-    return path.startsWith('http') ? path : `/uploads/${path}`;
   }
 </script>
 
@@ -195,8 +190,8 @@
     <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
       <h2 class="mb-4 text-sm font-semibold text-[var(--fg)]">School Logo</h2>
       <div class="mb-4 flex justify-center">
-        {#if $schoolQ.data?.logo_path}
-          <img src={logoSrc($schoolQ.data.logo_path)} alt="School logo"
+        {#if $schoolQ.data?.logo_url}
+          <img src={$schoolQ.data.logo_url} alt="School logo"
             class="h-28 w-28 rounded-xl object-contain ring-1 ring-[var(--border)]" />
         {:else}
           <div class="flex h-28 w-28 items-center justify-center rounded-xl text-3xl font-bold text-white"

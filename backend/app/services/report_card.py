@@ -25,6 +25,7 @@ from app.models.assessments import (
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment, TermEnrollment
+from app.schemas.school import _logo_url
 from app.services.attendance_stats import compute_attendance_stats
 from app.services.class_progression import level_rank
 from app.services.grading import get_default_scale_with_bands, grade_legend_rows, resolve_grade_from_scale
@@ -208,9 +209,7 @@ async def assemble(
     max_possible = Decimal("100") * len(subject_weighted) if subject_weighted else Decimal("0")
     student = te.student
 
-    logo_url: str | None = None
-    if school.logo_path:
-        logo_url = f"/uploads/{school.logo_path}"
+    logo_url = _logo_url(school.logo_path)
 
     qr_token = generate_token(enrollment_id, school_id)
     scale = await get_default_scale_with_bands(school_id, db)

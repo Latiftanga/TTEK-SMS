@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
+from app.core.config import settings
 from app.models.academic import AcademicTerm, AcademicYear, Class, SchoolLevel, Subject, SubjectCatalogue, SubjectType
 from app.models.assessments import Assessment, AssessmentType, Score
 from app.models.auth import LoginType, StaffPosition, User
@@ -192,8 +193,15 @@ async def test_transcript_includes_letterhead_photo_and_grade_legend(
 ):
     """Same letterhead/photo/grade-legend fields as the single-term report
     card (services/report_card.py) — degrade gracefully to None/empty for a
-    school with no phone/email/address and a student with no photo."""
+    school with no phone/email/address and a student with no photo. logo_url
+    must be an absolute URL (services/school.py::_logo_url()) — WeasyPrint
+    resolves an <img> src against the templates directory on disk, not the
+    app's HTTP routes, so a root-relative "/uploads/..." path (the pre-fix
+    bug) silently fails to load rather than erroring."""
     from app.services.transcript import assemble_transcript
+
+    school.logo_path = "logos/test-logo.webp"
+    await db_session.commit()
 
     await _assign_and_enroll(db_session, school, student, school_class, academic_term, school_admin)
     await _add_score(db_session, school, school_class, subject, assessment_type, academic_term, student, school_admin)
@@ -203,6 +211,7 @@ async def test_transcript_includes_letterhead_photo_and_grade_legend(
     assert context["school_email"] is None
     assert context["school_address"] is None
     assert context["photo_url"] is None
+    assert context["logo_url"] == f"{settings.app_base_url.rstrip('/')}/uploads/logos/test-logo.webp"
     assert context["grade_legend"], "shared seeded default scale must populate the legend"
 
 
@@ -212,13 +221,18 @@ async def test_transcript_empty_history_includes_grade_legend(
 ):
     """The empty-history early-return branch (zero term enrollments) must
     also carry the letterhead/legend fields — the two-return-statement shape
-    invites forgetting one of them."""
+    invites forgetting one of them (it did, for logo_url — see the sibling
+    non-empty test's docstring)."""
     from app.services.transcript import assemble_transcript
+
+    school.logo_path = "logos/test-logo.webp"
+    await db_session.commit()
 
     context = await assemble_transcript(student.id, school.id, school_admin.id, db_session)
     assert context["years"] == []
     assert context["school_phone"] is None
     assert context["photo_url"] is None
+    assert context["logo_url"] == f"{settings.app_base_url.rstrip('/')}/uploads/logos/test-logo.webp"
     assert context["grade_legend"], "shared seeded default scale must populate the legend"
 
 

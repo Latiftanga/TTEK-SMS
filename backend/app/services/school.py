@@ -40,18 +40,8 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.school import GhanaDistrict, GhanaRegion, School
-from app.schemas.school import SchoolBranding, SchoolCreate, SchoolRead, SchoolUpdate
-
-
-def _logo_url(logo_path: str | None) -> str | None:
-    """Convert a stored logo path to an absolute URL the frontend can use."""
-    if not logo_path:
-        return None
-    if settings.storage_backend == "CLOUDFLARE_R2":
-        return f"{settings.r2_public_url.rstrip('/')}/{logo_path}"
-    return f"{settings.app_base_url.rstrip('/')}/uploads/{logo_path}"
+from app.schemas.school import SchoolBranding, SchoolCreate, SchoolRead, SchoolUpdate, _logo_url
 
 
 # ── School CRUD ───────────────────────────────────────────────────────────────
