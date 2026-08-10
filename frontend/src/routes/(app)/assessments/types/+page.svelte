@@ -1,12 +1,13 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import {
-    listAssessmentTypes, createAssessmentType, updateAssessmentType, listTypePresets,
+    listAssessmentTypes, createAssessmentType, updateAssessmentType, deleteAssessmentType, listTypePresets,
     type AssessmentType,
   } from '$lib/api/assessments';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import AssessmentTypeForm, { type AssessmentTypeFormState } from './AssessmentTypeForm.svelte';
 
   const qc = useQueryClient();
@@ -25,10 +26,22 @@
   });
   const wacGesPreset = $derived($presetsQ.data?.waec_ges_shs ?? []);
 
+  // Diagnostic types never enter a term total (excluded at the query level
+  // in report_card.py::_load_scores()/report_card_rank.py/transcript.py) —
+  // their weight is inert, so counting it here would either force real
+  // graded types to under-allocate to make phantom room for it, or show a
+  // permanently-confusing "≠100%" even when the real graded weights already
+  // sum correctly. An inactive type's weight is equally inert — it can't be
+  // used on a new assessment (create_assessment rejects it) — so it's
+  // excluded the same way. The list itself still includes inactive types
+  // (list_assessment_types) so this page can find and reactivate one.
   const totalWeight = $derived(
-    ($typesQ.data ?? []).reduce((sum, t) => sum + Number(t.weight), 0)
+    ($typesQ.data ?? [])
+      .filter(t => t.category !== 'DIAGNOSTIC' && t.is_active)
+      .reduce((sum, t) => sum + Number(t.weight), 0)
   );
   const weightOk = $derived(Math.abs(totalWeight - 100) < 0.01);
+  const hasDiagnostic = $derived(($typesQ.data ?? []).some(t => t.category === 'DIAGNOSTIC' && t.is_active));
 
   const emptyForm = (): AssessmentTypeFormState => ({
     name: '', code: '', weight: '',
@@ -113,18 +126,58 @@
     if (isNaN(w) || w <= 0 || w > 100) { editError = 'Weight must be between 0.01 and 100.'; return; }
     $updateMut.mutate(id);
   }
+
+  // ── Deactivate / reactivate ──────────────────────────────────────────────────
+  // Reactivating needs no confirmation (purely additive, un-hides the type);
+  // deactivating does, mirroring SubjectsTab.svelte's established pattern.
+  let confirmDeactivate = $state<{ id: string; name: string } | null>(null);
+
+  const toggleActiveMut = createMutation({
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) => updateAssessmentType(id, { is_active }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['assessment-types'] });
+      confirmDeactivate = null;
+      toast.success(vars.is_active ? 'Assessment type reactivated.' : 'Assessment type deactivated.');
+    },
+    onError: () => { confirmDeactivate = null; toast.error('Could not update status.'); },
+  });
+
+  // ── Delete ────────────────────────────────────────────────────────────────────
+  // Hard delete only ever succeeds server-side when zero assessments
+  // reference the type — a 409 (real data exists) surfaces its own message
+  // pointing at Deactivate instead, rather than a generic failure toast.
+  let confirmDelete = $state<{ id: string; name: string } | null>(null);
+
+  const deleteMut = createMutation({
+    mutationFn: (id: string) => deleteAssessmentType(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assessment-types'] });
+      confirmDelete = null;
+      toast.success('Assessment type deleted.');
+    },
+    onError: (e: unknown) => {
+      confirmDelete = null;
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? 'Could not delete.');
+    },
+  });
 </script>
 
 <PageHeader title="Assessment Types" description="Define categories like class tests, exams, and projects. Weights must sum to 100." />
 
 <div class="mb-4 flex items-center justify-end gap-2">
   {#if ($typesQ.data ?? []).length > 0}
-    <span class="rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1 ring-inset
-      {weightOk
-        ? 'bg-green-50 text-green-700 ring-green-600/20 dark:bg-green-950/30 dark:text-green-400'
-        : 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'}">
-      Total: {totalWeight.toFixed(2)}%{weightOk ? ' ✓' : ' ≠ 100'}
-    </span>
+    <div class="flex flex-col items-end gap-0.5">
+      <span class="rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1 ring-inset
+        {weightOk
+          ? 'bg-green-50 text-green-700 ring-green-600/20 dark:bg-green-950/30 dark:text-green-400'
+          : 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-400'}">
+        Formative + Summative: {totalWeight.toFixed(2)}%{weightOk ? ' ✓' : ' ≠ 100'}
+      </span>
+      {#if hasDiagnostic}
+        <span class="text-[10px] text-[var(--fg-subtle)]">Diagnostic isn't graded, so it doesn't count toward this total.</span>
+      {/if}
+    </div>
   {/if}
   <button onclick={() => { showForm = !showForm; formError = ''; editingId = null; }}
     class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
@@ -185,13 +238,38 @@
               {/if}
             </td>
             <td class="px-4 py-3 text-right">
-              <button onclick={() => editingId === t.id ? (editingId = null) : startEdit(t)}
-                class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]"
-                title="Edit">
-                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
-                </svg>
-              </button>
+              <div class="flex items-center justify-end gap-1">
+                <button onclick={() => editingId === t.id ? (editingId = null) : startEdit(t)}
+                  class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]"
+                  title="Edit">
+                  <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
+                  </svg>
+                </button>
+                <button
+                  onclick={() => t.is_active ? (confirmDeactivate = { id: t.id, name: t.name }) : $toggleActiveMut.mutate({ id: t.id, is_active: true })}
+                  disabled={$toggleActiveMut.isPending}
+                  class="rounded-lg p-1 transition disabled:opacity-40 {t.is_active ? 'text-[var(--fg-subtle)] hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/30' : 'text-green-500 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-950/30'}"
+                  title={t.is_active ? 'Deactivate' : 'Activate'}>
+                  {#if t.is_active}
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                    </svg>
+                  {:else}
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  {/if}
+                </button>
+                <button onclick={() => confirmDelete = { id: t.id, name: t.name }}
+                  disabled={$deleteMut.isPending}
+                  class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 disabled:opacity-40 dark:hover:bg-red-950/30"
+                  title="Delete">
+                  <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
+              </div>
             </td>
           </tr>
           {#if editingId === t.id}
@@ -215,3 +293,25 @@
     </table>
   </div>
 {/if}
+
+<ConfirmModal
+  open={!!confirmDeactivate}
+  title="Deactivate {confirmDeactivate?.name ?? 'assessment type'}?"
+  message="This type will be hidden from new assessments. You can reactivate it at any time."
+  confirmLabel="Deactivate"
+  variant="warning"
+  isPending={$toggleActiveMut.isPending}
+  onConfirm={() => $toggleActiveMut.mutate({ id: confirmDeactivate!.id, is_active: false })}
+  onCancel={() => confirmDeactivate = null}
+/>
+
+<ConfirmModal
+  open={!!confirmDelete}
+  title="Delete {confirmDelete?.name ?? 'assessment type'}?"
+  message="This permanently removes the type. Only possible when no assessments have been recorded against it — if any exist, deactivate it instead."
+  confirmLabel="Delete"
+  variant="danger"
+  isPending={$deleteMut.isPending}
+  onConfirm={() => $deleteMut.mutate(confirmDelete!.id)}
+  onCancel={() => confirmDelete = null}
+/>

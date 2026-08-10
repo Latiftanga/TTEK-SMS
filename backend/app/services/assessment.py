@@ -69,6 +69,11 @@ async def create_assessment(
     )
     if not atype:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment type not found.")
+    if not atype.is_active:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{atype.name} is deactivated and can't be used for new assessments.",
+        )
     term = await db.scalar(
         select(AcademicTerm).where(
             AcademicTerm.id == req.academic_term_id, AcademicTerm.school_id == school_id,

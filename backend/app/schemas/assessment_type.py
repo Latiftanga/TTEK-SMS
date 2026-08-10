@@ -35,6 +35,7 @@ class AssessmentTypeUpdate(BaseModel):
     category: AssessmentCategory | None = None
     allow_multiple_entries: bool | None = None
     aggregation_strategy: AggregationStrategy | None = None
+    is_active: bool | None = None
 
     @field_validator("weight")
     @classmethod

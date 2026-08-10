@@ -300,6 +300,71 @@ async def test_update_assessment_type_rejects_narrowing_when_multi_entry_data_ex
 
 
 @pytest.mark.asyncio
+async def test_deactivate_and_reactivate_assessment_type(client: AsyncClient, auth: dict):
+    """Deactivating must not make the type vanish from GET /types — the same
+    'one-way trip' bug already fixed for Subject (list_subjects())."""
+    create = await client.post("/assessments/types", json={
+        "name": "Retiring Type", "code": "RETIRE", "weight": "5.00",
+    }, headers=auth)
+    type_id = create.json()["id"]
+
+    off = await client.patch(f"/assessments/types/{type_id}", json={"is_active": False}, headers=auth)
+    assert off.status_code == 200
+    assert off.json()["is_active"] is False
+
+    listed = await client.get("/assessments/types", headers=auth)
+    t = next(t for t in listed.json() if t["id"] == type_id)
+    assert t["is_active"] is False
+
+    on = await client.patch(f"/assessments/types/{type_id}", json={"is_active": True}, headers=auth)
+    assert on.status_code == 200
+    assert on.json()["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_delete_unused_assessment_type(client: AsyncClient, auth: dict):
+    create = await client.post("/assessments/types", json={
+        "name": "Throwaway Type", "code": "THROWAWAY", "weight": "5.00",
+    }, headers=auth)
+    type_id = create.json()["id"]
+
+    resp = await client.delete(f"/assessments/types/{type_id}", headers=auth)
+    assert resp.status_code == 204
+
+    listed = await client.get("/assessments/types", headers=auth)
+    assert all(t["id"] != type_id for t in listed.json())
+
+
+@pytest.mark.asyncio
+async def test_delete_in_use_assessment_type_rejected(
+    db_session: AsyncSession, client: AsyncClient, auth: dict,
+    school_class: Class, subject, academic_term: AcademicTerm,
+):
+    """A hard DELETE against a type with real assessments must not raise a
+    raw Postgres IntegrityError (Assessment.assessment_type_id has no
+    ondelete clause) — it should 409 cleanly, naming the count, and leave
+    the type untouched."""
+    create = await client.post("/assessments/types", json={
+        "name": "In Use Type", "code": "INUSE", "weight": "5.00",
+    }, headers=auth)
+    type_id = create.json()["id"]
+
+    db_session.add(Assessment(
+        school_id=school_class.school_id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=type_id, academic_term_id=academic_term.id,
+        recorded_date=date.today(), max_score=Decimal("20.00"),
+    ))
+    await db_session.commit()
+
+    resp = await client.delete(f"/assessments/types/{type_id}", headers=auth)
+    assert resp.status_code == 409
+    assert "1 assessment" in resp.json()["detail"]
+
+    listed = await client.get("/assessments/types", headers=auth)
+    assert any(t["id"] == type_id for t in listed.json())
+
+
+@pytest.mark.asyncio
 async def test_type_presets_endpoint_returns_waec_ges_shs(client: AsyncClient, auth: dict):
     resp = await client.get("/assessments/type-presets", headers=auth)
     assert resp.status_code == 200
@@ -383,6 +448,28 @@ async def test_create_assessment(
     assert resp.json()["description"] == "Term 1 Test"
     assert resp.json()["recorded_date"] == date.today().isoformat()
     assert resp.json()["is_published"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_rejects_deactivated_type(
+    db_session: AsyncSession, client: AsyncClient, auth: dict,
+    school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
+):
+    """Deactivating a type only hides it from the frontend's creation picker
+    client-side — the backend must independently reject it too, closing the
+    gap a raw API call could otherwise use to bypass that filtering."""
+    assessment_type.is_active = False
+    await db_session.commit()
+
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": "100.00",
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "deactivated" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio

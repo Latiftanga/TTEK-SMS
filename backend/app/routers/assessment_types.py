@@ -44,6 +44,16 @@ async def update_assessment_type(
     return await atype_svc.update_assessment_type(type_id, req, school_id, db)
 
 
+@router.delete("/types/{type_id}", status_code=204)
+async def delete_assessment_type(
+    type_id: uuid.UUID,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await atype_svc.delete_assessment_type(type_id, school_id, db)
+
+
 @router.get("/type-presets", response_model=dict[str, list[AssessmentTypeCreate]])
 async def get_type_presets(
     ids=Depends(require_permission("assessments", "approve_scores")),

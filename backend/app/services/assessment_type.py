@@ -106,6 +106,8 @@ async def update_assessment_type(
         t.allow_multiple_entries = req.allow_multiple_entries
     if req.aggregation_strategy is not None:
         t.aggregation_strategy = req.aggregation_strategy
+    if req.is_active is not None:
+        t.is_active = req.is_active
     # The schema only cross-checks allow_multiple_entries/aggregation_strategy
     # when both arrive in the same request — a partial update touching just
     # one is checked here against the resulting full row instead, so a type
@@ -121,9 +123,41 @@ async def update_assessment_type(
 async def list_assessment_types(
     school_id: uuid.UUID, db: AsyncSession
 ) -> list[AssessmentTypeRead]:
+    # Includes inactive types so the admin UI's status filter can find and
+    # reactivate a deactivated one — a hardcoded active-only filter here
+    # would make Deactivate a one-way trip with no way back through the UI
+    # (same fix already applied to list_subjects()). The frontend picker
+    # used at assessment-creation time filters to active-only client-side.
     rows = await db.scalars(
         select(AssessmentType)
-        .where(AssessmentType.school_id == school_id, AssessmentType.is_active.is_(True))
+        .where(AssessmentType.school_id == school_id)
         .order_by(AssessmentType.name)
     )
     return [_type_read(t) for t in rows]
+
+
+async def delete_assessment_type(
+    type_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> None:
+    t = await db.scalar(
+        select(AssessmentType).where(
+            AssessmentType.id == type_id, AssessmentType.school_id == school_id
+        )
+    )
+    if not t:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment type not found.")
+    # Assessment.assessment_type_id has no ondelete clause (Postgres defaults
+    # to RESTRICT), so a hard delete against an in-use type would otherwise
+    # surface as a raw IntegrityError. Check first and give a clean 409
+    # pointing at deactivation, the safe alternative for a type with real data.
+    count = await db.scalar(
+        select(func.count()).select_from(Assessment).where(Assessment.assessment_type_id == type_id)
+    )
+    if count:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{t.name} has {count} assessment(s) recorded against it and can't be deleted "
+            "— deactivate it instead to hide it from new assessments.",
+        )
+    await db.delete(t)
+    await db.flush()

@@ -106,10 +106,17 @@
 
   const subjectName = (id: string) => subjectsForClass.find(p => p.subject_id === id)?.subject_name ?? '—';
 
+  // This picker doubles as the assessment-creation type field (assessment_type_id
+  // below) — a deactivated type shouldn't be offered for new assessments
+  // (matches the backend's own atype.is_active guard in create_assessment).
+  // typeName still resolves against the full list so an existing assessment
+  // recorded under a now-deactivated type still shows a real label, not "—".
+  const activeTypes = $derived(($typesQ.data ?? []).filter(t => t.is_active));
+
   // Auto-select category when the school only has one defined — same
   // courtesy as the class/subject auto-selects above.
   $effect(() => {
-    if (($typesQ.data ?? []).length === 1 && !categoryId) setFilter('category', $typesQ.data![0].id);
+    if (activeTypes.length === 1 && !categoryId) setFilter('category', activeTypes[0].id);
   });
 
   const resultsLockMut = createMutation({
@@ -230,7 +237,7 @@
     <label for="f-category" class="label">Category</label>
     <select id="f-category" value={categoryId} onchange={e => setFilter('category', e.currentTarget.value)} class="sel" disabled={!subjectId}>
       <option value="">{subjectId ? 'Select category…' : 'Select a subject first'}</option>
-      {#each $typesQ.data ?? [] as t}<option value={t.id}>{t.name}</option>{/each}
+      {#each activeTypes as t}<option value={t.id}>{t.name}</option>{/each}
     </select>
   </div>
   {#if canManage}

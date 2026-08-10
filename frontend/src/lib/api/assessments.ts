@@ -124,8 +124,16 @@ export const updateAssessmentType = (typeId: string, data: {
   name?: string; code?: string; weight?: number;
   category?: AssessmentCategory;
   allow_multiple_entries?: boolean; aggregation_strategy?: AggregationStrategy;
+  is_active?: boolean;
 }): Promise<AssessmentType> =>
   api.patch(`/assessments/types/${typeId}`, data).then(r => r.data);
+
+// Hard-deletes the type — only succeeds when zero assessments reference it
+// (backend returns 409 naming the count otherwise). Deactivate via
+// updateAssessmentType({ is_active: false }) is the safe default for a type
+// with real data.
+export const deleteAssessmentType = (typeId: string): Promise<void> =>
+  api.delete(`/assessments/types/${typeId}`).then(() => undefined);
 
 // Static, school-agnostic pre-fill config for the type-creation form — see
 // backend/app/services/assessment_type_presets.py. Picking one just fills
