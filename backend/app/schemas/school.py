@@ -14,19 +14,39 @@ _SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
 _DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 
 
-def _logo_url(logo_path: str | None) -> str | None:
+def _logo_url(logo_path: str | None, updated_at: datetime | None = None) -> str | None:
     """Convert a stored logo path to an absolute URL, ready for <img src> —
     on the frontend (a different origin from the API in dev, and often in
     production too) a root-relative "/uploads/..." path silently 404s rather
     than erroring, the same failure mode already fixed once for the report
     card's WeasyPrint rendering. Only one implementation of this conversion
-    exists — SchoolRead.logo_url (below) and SchoolBranding both call it, so
-    every surface (Setup page, sidebar, report card, transcript) agrees."""
+    exists — SchoolRead.logo_url and SchoolBranding both call it, so every
+    surface (Setup page, sidebar, branded login, report card, transcript)
+    agrees.
+
+    updated_at, when given, is appended as a ?v= cache-busting query param:
+    services/storage.py::save_logo() always writes to the same path
+    ("logos/{school_id}.webp"), so re-uploading a replacement logo never
+    changes logo_path at all — without a changing query string, this
+    function returns the exact same URL string before and after a real
+    change, giving neither Svelte nor the browser's own HTTP cache any
+    reason to re-fetch the (now different) image. updated_at already changes
+    on every save (TimestampMixin's onupdate), so it's a free, always-
+    correct signal — every caller that has it should pass it."""
     if not logo_path:
         return None
     if settings.storage_backend == "CLOUDFLARE_R2":
-        return f"{settings.r2_public_url.rstrip('/')}/{logo_path}"
-    return f"{settings.app_base_url.rstrip('/')}/uploads/{logo_path}"
+        base = f"{settings.r2_public_url.rstrip('/')}/{logo_path}"
+    else:
+        base = f"{settings.app_base_url.rstrip('/')}/uploads/{logo_path}"
+    if updated_at is not None:
+        # Microsecond precision, not whole seconds — two uploads seconds (or
+        # even a fraction of one) apart must still produce different cache
+        # keys, which int(timestamp()) would collide on for any pair inside
+        # the same wall-clock second (a very real case: a user replacing a
+        # logo, deciding it's wrong, and immediately uploading another).
+        base = f"{base}?v={updated_at.timestamp()}"
+    return base
 
 
 class SchoolCreate(BaseModel):
@@ -160,19 +180,21 @@ class SchoolRead(BaseModel):
     subdomain: str | None
     custom_domain: str | None
     brand_color: str
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
     @computed_field
     @property
     def logo_url(self) -> str | None:
-        """Absolute URL, ready for <img src> — logo_path alone (the raw
-        storage-relative path) is what's persisted, not what a browser can
-        load directly. Derived once here so every caller of SchoolRead
-        (GET/PATCH /schools/me, the logo upload endpoint) gets it for free,
-        instead of each frontend call site reconstructing its own (broken)
-        version, which is exactly what happened before this field existed."""
-        return _logo_url(self.logo_path)
+        """Absolute, cache-busted URL, ready for <img src> — logo_path alone
+        (the raw storage-relative path) is what's persisted, not what a
+        browser can load directly. Derived once here so every caller of
+        SchoolRead (GET/PATCH /schools/me, the logo upload endpoint) gets it
+        for free, instead of each frontend call site reconstructing its own
+        (broken) version, which is exactly what happened before this field
+        existed. See _logo_url()'s own docstring for why updated_at matters."""
+        return _logo_url(self.logo_path, self.updated_at)
 
 
 class SchoolBranding(BaseModel):

@@ -104,8 +104,9 @@
         logoUrl:    updated.logo_url,
         motto:      updated.motto,
       });
-    } catch {
-      logoError = 'Upload failed. Max 2 MB, JPEG/PNG/WebP only.';
+    } catch (err: unknown) {
+      logoError = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Upload failed. Try again in a moment.';
     } finally {
       logoUploading = false;
     }

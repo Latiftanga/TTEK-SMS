@@ -39,6 +39,7 @@ import uuid
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.school import GhanaDistrict, GhanaRegion, School
 from app.schemas.school import SchoolBranding, SchoolCreate, SchoolRead, SchoolUpdate, _logo_url
@@ -171,6 +172,12 @@ async def update_school(
         setattr(school, field, value)
 
     await db.flush()
+    # updated_at is server-generated (onupdate=func.now()) — without an
+    # explicit refresh, SchoolRead.model_validate() reading it straight
+    # after flush() can trigger a lazy reload outside an async context,
+    # raising MissingGreenlet. refresh() issues a real, awaited SELECT so
+    # every attribute (not just updated_at) is guaranteed loaded first.
+    await db.refresh(school)
     return SchoolRead.model_validate(school)
 
 
@@ -225,7 +232,20 @@ async def upload_school_logo(
         )
 
     school.logo_path = await save_logo(file, school_id)
+    # save_logo() always writes to the same "logos/{school_id}.webp" path —
+    # re-uploading a replacement logo assigns logo_path to the exact string
+    # it already held. SQLAlchemy's dirty-checker treats a same-value
+    # reassignment as no change at all and silently skips the UPDATE
+    # entirely (confirmed: no SQL is emitted without this), which also means
+    # onupdate=func.now() never fires — updated_at stays stale, the ?v=
+    # cache-buster on logo_url never advances, and a browser never re-fetches
+    # the new (different) image bytes on disk. flag_modified() forces the
+    # UPDATE regardless of the Python-level string being unchanged.
+    flag_modified(school, "logo_path")
     await db.flush()
+    # See update_school()'s matching comment — updated_at is server-generated
+    # and needs an explicit, awaited refresh before synchronous validation.
+    await db.refresh(school)
     return SchoolRead.model_validate(school)
 
 
@@ -244,7 +264,7 @@ async def get_school_branding_by_id(school_id: uuid.UUID, db: AsyncSession) -> S
         short_name=school.short_name,
         school_type=school.school_type,
         motto=school.motto,
-        logo_url=_logo_url(school.logo_path),
+        logo_url=_logo_url(school.logo_path, school.updated_at),
         brand_color=school.brand_color,
         school_code=school.school_code,
     )
@@ -278,7 +298,7 @@ async def get_school_by_custom_domain(domain: str, db: AsyncSession) -> "SchoolB
         short_name=school.short_name,
         school_type=school.school_type,
         motto=school.motto,
-        logo_url=_logo_url(school.logo_path),
+        logo_url=_logo_url(school.logo_path, school.updated_at),
         brand_color=school.brand_color,
         school_code=school.school_code,
         subdomain=school.subdomain,
@@ -311,7 +331,7 @@ async def get_school_branding(subdomain: str, db: AsyncSession) -> SchoolBrandin
         short_name=school.short_name,
         school_type=school.school_type,
         motto=school.motto,
-        logo_url=_logo_url(school.logo_path),
+        logo_url=_logo_url(school.logo_path, school.updated_at),
         brand_color=school.brand_color,
         school_code=school.school_code,
     )

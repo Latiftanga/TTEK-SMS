@@ -46,8 +46,14 @@
         const user = await getMe();
         auth.setUser(user);
 
-        // Fetch branding if store is empty OR schoolType is missing (stale localStorage entry).
-        if ((!stored || !stored.schoolType) && !user.is_superadmin) {
+        // Fetch branding if store is empty, schoolType is missing, or logoUrl
+        // looks like the old root-relative "/uploads/..." shape a prior bug
+        // persisted (rather than the absolute URL the API returns today) —
+        // without this, a browser that cached the broken value before the
+        // fix shipped would keep showing it forever, since nothing else
+        // here ever re-fetches once schoolType alone looks present.
+        const logoUrlStale = !!stored?.logoUrl && !stored.logoUrl.startsWith('http');
+        if ((!stored || !stored.schoolType || logoUrlStale) && !user.is_superadmin) {
           try {
             const branding = await getMySchoolBranding();
             applyBranding(branding);

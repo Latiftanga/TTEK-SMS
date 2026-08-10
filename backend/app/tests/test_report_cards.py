@@ -209,11 +209,16 @@ async def test_assemble_logo_url_is_absolute(
 
     school.logo_path = "logos/test-logo.webp"
     await db_session.commit()
+    # updated_at is server-generated — a bare commit() doesn't refresh it
+    # back into this object, and the logo_url computed field reading it
+    # unrefreshed later raises MissingGreenlet (see test_schools.py's
+    # matching comment for the full explanation).
+    await db_session.refresh(school)
 
     te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
     context = await assemble(te.id, school.id, school_admin.id, db_session)
 
-    assert context["logo_url"] == f"{settings.app_base_url.rstrip('/')}/uploads/logos/test-logo.webp"
+    assert context["logo_url"].startswith(f"{settings.app_base_url.rstrip('/')}/uploads/logos/test-logo.webp?v=")
 
 
 @pytest.mark.asyncio
