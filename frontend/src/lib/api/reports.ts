@@ -33,24 +33,6 @@ export const downloadBulkReport = (job_id: string): Promise<Blob> =>
 export const getTranscriptBlob = (student_id: string): Promise<Blob> =>
   api.get(`/students/${student_id}/transcript`, { responseType: 'blob' }).then(r => r.data);
 
-// A student's diagnostic-assessment history — category=DIAGNOSTIC scores are
-// already fully excluded from the report card/transcript/class rank, so this
-// is the only place they're visible at all. No letter grade — diagnostics
-// were never meant to be graded like coursework, this is a raw record of
-// what was found. Full lifetime history, no term filter.
-export interface DiagnosticRecord {
-  id: string;
-  assessment_name: string;
-  subject_name: string;
-  recorded_date: string;
-  raw_score: number;
-  max_score: number;
-  notes: string | null;
-}
-
-export const listDiagnosticRecords = (student_id: string): Promise<DiagnosticRecord[]> =>
-  api.get(`/students/${student_id}/diagnostics`).then(r => r.data);
-
 // Classes the caller can view/generate report cards for — scoped to their
 // own ClassTeacher assignment(s) unless they hold assessments.approve_scores.
 export const listMyReportClasses = (term_id: string): Promise<SchoolClass[]> =>

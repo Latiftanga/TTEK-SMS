@@ -12,7 +12,6 @@
   import MedicalTab    from './MedicalTab.svelte';
   import FeesTab       from './FeesTab.svelte';
   import BehaviourTab  from './BehaviourTab.svelte';
-  import DiagnosticsTab from './DiagnosticsTab.svelte';
   import PhotoAvatar   from './PhotoAvatar.svelte';
   import TabBar        from '$lib/components/TabBar.svelte';
 
@@ -25,15 +24,14 @@
     staleTime: 2 * 60_000,
   });
 
-  type Tab = 'profile' | 'guardians' | 'enrollment' | 'medical' | 'fees' | 'behaviour' | 'diagnostics';
+  type Tab = 'profile' | 'guardians' | 'enrollment' | 'medical' | 'fees' | 'behaviour';
   const TABS = [
-    { id: 'profile',     label: 'Profile'     },
-    { id: 'guardians',   label: 'Guardians'   },
-    { id: 'enrollment',  label: 'Enrollment'  },
-    { id: 'fees',        label: 'Fees'        },
-    { id: 'medical',     label: 'Medical'     },
-    { id: 'behaviour',   label: 'Behaviour'   },
-    { id: 'diagnostics', label: 'Diagnostics' },
+    { id: 'profile',    label: 'Profile'    },
+    { id: 'guardians',  label: 'Guardians'  },
+    { id: 'enrollment', label: 'Enrollment' },
+    { id: 'fees',       label: 'Fees'       },
+    { id: 'medical',    label: 'Medical'    },
+    { id: 'behaviour',  label: 'Behaviour'  },
   ];
   const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
   function setTab(id: string) { goto(`?tab=${id}`, { replaceState: true, noScroll: true }); }
@@ -210,7 +208,5 @@
     <MedicalTab studentId={studentId} medical={s.medical_record} canEdit={s.can_edit} />
   {:else if activeTab === 'behaviour'}
     <BehaviourTab studentId={studentId} canEdit={s.can_edit} />
-  {:else if activeTab === 'diagnostics'}
-    <DiagnosticsTab studentId={studentId} />
   {/if}
 {/if}
