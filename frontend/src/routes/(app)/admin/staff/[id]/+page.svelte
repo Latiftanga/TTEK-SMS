@@ -9,6 +9,7 @@
   import { apiError } from '$lib/utils';
   import Badge                from '$lib/components/Badge.svelte';
   import TabBar               from '$lib/components/TabBar.svelte';
+  import StaffPhotoAvatar     from './StaffPhotoAvatar.svelte';
   import ProfileTab           from './ProfileTab.svelte';
   import QualificationsTab    from './QualificationsTab.svelte';
   import PromotionsTab        from './PromotionsTab.svelte';
@@ -91,7 +92,6 @@
     onError: (e) => { confirmReset = false; toast.error(apiError(e, 'Could not reset password.')); },
   });
 
-  const GENDER_BG: Record<string, string> = { MALE: '#3B82F6', FEMALE: '#EC4899' };
   const EMP_LABEL: Record<string, string> = {
     PERMANENT: 'Permanent', CONTRACT: 'Contract',
     NATIONAL_SERVICE: 'National Service', INTERN: 'Intern',
@@ -135,11 +135,13 @@
 
     <div class="flex flex-wrap items-start gap-5 p-6">
       <!-- Avatar -->
-      <div class="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl
-                  text-2xl font-bold text-white shadow-md"
-           style="background-color: {GENDER_BG[s.gender ?? ''] ?? 'var(--brand)'}">
-        {s.first_name[0]}{s.last_name[0]}
-      </div>
+      <StaffPhotoAvatar
+        staffId={staffId}
+        firstName={s.first_name}
+        lastName={s.last_name}
+        photoUrl={s.photo_url}
+        size="lg"
+      />
 
       <!-- Identity -->
       <div class="min-w-0 flex-1">
@@ -231,7 +233,7 @@
       {:else if activeTab === 'promotions'}
         <PromotionsTab staff={s} staffId={staffId} readOnly={isOwnProfile} />
       {:else if activeTab === 'leave'}
-        <LeaveTab staffId={staffId} />
+        <LeaveTab staffId={staffId} {isOwnProfile} />
       {:else if activeTab === 'permissions'}
         <PermissionsTab {staffId} />
       {/if}
@@ -248,6 +250,7 @@
         <dl class="space-y-3">
           {#each ([
             ['Category',      s.category_name ?? '—'],
+            ['Staff type',    s.staff_type ? (s.staff_type === 'TEACHING' ? 'Teaching' : 'Non-teaching') : '—'],
             ['Type',          s.employment_type ? EMP_LABEL[s.employment_type] : '—'],
             ['Joined',        fmtDate(s.joined_date)],
             ['Date of birth', fmtDate(s.date_of_birth)],

@@ -13,6 +13,7 @@ deterministic filename per owner:
 
     logos/{school_id}.webp
     photos/{student_id}.webp
+    staff-photos/{staff_id}.webp
 
 Re-uploading replaces the file in place — no orphan files accumulate.
 
@@ -118,3 +119,24 @@ async def save_student_photo(file: UploadFile, student_id: uuid.UUID) -> str:
 def delete_student_photo(student_id: uuid.UUID) -> None:
     """Remove a student's stored photo file, if any. Never raises if absent."""
     (_upload_root() / "photos" / f"{student_id}.webp").unlink(missing_ok=True)
+
+
+async def save_staff_photo(file: UploadFile, staff_id: uuid.UUID) -> str:
+    """Validate, resize, convert to WebP, and save a staff profile photo.
+
+    Own subdirectory (not photos/, which is student-only) — same pipeline,
+    kept separate so the two id spaces can never collide on disk.
+    Returns the path relative to the upload root, e.g. ``staff-photos/uuid.webp``.
+    The caller stores this in staff_member.photo_path.
+    """
+    img = await _read_and_validate_image(file, MAX_PHOTO_BYTES, MAX_PHOTO_PX, "Photo")
+    staff_photos_dir = _upload_root() / "staff-photos"
+    staff_photos_dir.mkdir(exist_ok=True)
+    dest = staff_photos_dir / f"{staff_id}.webp"
+    img.save(dest, format="WEBP", quality=90)
+    return f"staff-photos/{staff_id}.webp"
+
+
+def delete_staff_photo(staff_id: uuid.UUID) -> None:
+    """Remove a staff member's stored photo file, if any. Never raises if absent."""
+    (_upload_root() / "staff-photos" / f"{staff_id}.webp").unlink(missing_ok=True)

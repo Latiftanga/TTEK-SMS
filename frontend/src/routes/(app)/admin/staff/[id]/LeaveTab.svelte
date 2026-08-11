@@ -1,12 +1,13 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { listLeave, submitLeave } from '$lib/api/staff';
+  import { listLeave, submitLeave, reviewLeave } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
+  import { toast } from '$lib/stores/toast';
   import Badge from '$lib/components/Badge.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
 
-  interface Props { staffId: string; }
-  const { staffId }: Props = $props();
+  interface Props { staffId: string; isOwnProfile?: boolean; }
+  const { staffId, isOwnProfile = false }: Props = $props();
 
   const qc = useQueryClient();
 
@@ -54,8 +55,27 @@
     onError: (e) => { formError = apiError(e, 'Failed to submit leave request.'); },
   });
 
+  const reviewMut = createMutation({
+    mutationFn: (p: { id: string; status: 'APPROVED' | 'REJECTED' }) => reviewLeave(p.id, { status: p.status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-leave', staffId] });
+      toast.success('Leave request updated.');
+    },
+    onError: (e) => toast.error(apiError(e, 'Could not update leave request.')),
+  });
+  let reviewingId = $state<string | null>(null);
+  function review(id: string, status: 'APPROVED' | 'REJECTED') {
+    reviewingId = id;
+    $reviewMut.mutate({ id, status });
+  }
+
   function fmtDate(d: string) {
     return new Date(d).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function fmtDateTime(d: string) {
+    return new Date(d).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })
+      + ' at ' + new Date(d).toLocaleTimeString('en-GH', { hour: 'numeric', minute: '2-digit' });
   }
 </script>
 
@@ -149,11 +169,36 @@
               </td>
               <td class="px-4 py-3 text-[var(--fg-muted)]">{l.days_count}</td>
               <td class="px-4 py-3">
-                <Badge
-                  label={STATUS_LABEL[l.status] ?? l.status}
-                  color={STATUS_COLOR[l.status] ?? 'gray'}
-                  variant="solid"
-                />
+                {#if l.status === 'PENDING' && !isOwnProfile}
+                  <div class="flex items-center gap-1.5">
+                    <button onclick={() => review(l.id, 'APPROVED')}
+                      disabled={$reviewMut.isPending && reviewingId === l.id}
+                      class="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium
+                             text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50
+                             dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
+                      Approve
+                    </button>
+                    <button onclick={() => review(l.id, 'REJECTED')}
+                      disabled={$reviewMut.isPending && reviewingId === l.id}
+                      class="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium
+                             text-red-600 transition hover:bg-red-50 disabled:opacity-50
+                             dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40">
+                      Reject
+                    </button>
+                  </div>
+                {:else}
+                  <Badge
+                    label={STATUS_LABEL[l.status] ?? l.status}
+                    color={STATUS_COLOR[l.status] ?? 'gray'}
+                    variant="solid"
+                  />
+                  {#if l.status !== 'PENDING' && l.reviewed_at}
+                    <p class="mt-1 text-xs text-[var(--fg-muted)]">
+                      {fmtDateTime(l.reviewed_at)}
+                      {#if l.notes}<br />“{l.notes}”{/if}
+                    </p>
+                  {/if}
+                {/if}
               </td>
             </tr>
           {/each}

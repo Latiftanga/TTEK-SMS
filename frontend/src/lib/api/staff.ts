@@ -43,6 +43,7 @@ export interface StaffSummary {
   position_names: string[];
   is_active: boolean;
   joined_date: string | null;
+  photo_url: string | null;
 }
 
 export interface Qualification {
@@ -183,6 +184,19 @@ export async function updateStaff(
 ): Promise<StaffDetail> {
   const { data } = await client.patch<StaffDetail>(`/staff/${id}`, req);
   return data;
+}
+
+export async function uploadStaffPhoto(id: string, file: File): Promise<StaffDetail> {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await client.post<StaffDetail>(`/staff/${id}/photo`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function deleteStaffPhoto(id: string): Promise<void> {
+  await client.delete(`/staff/${id}/photo`);
 }
 
 export async function addQualification(

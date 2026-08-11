@@ -123,6 +123,7 @@ class StaffMemberSummary(BaseModel):
     position_names: list[str]
     is_active: bool
     joined_date: date | None
+    photo_url: str | None = None
 
 
 class StaffMemberDetail(StaffMemberSummary):
@@ -255,10 +256,8 @@ class LeaveReview(BaseModel):
             raise ValueError("status must be APPROVED or REJECTED")
         return v
 
-
 # Resolve forward references for StaffMemberDetail
 StaffMemberDetail.model_rebuild()
-
 
 class TempPasswordResult(BaseModel):
     temporary_password: str

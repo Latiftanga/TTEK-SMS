@@ -7,6 +7,7 @@
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
 
   interface Props { staff: StaffDetail; staffId: string; boardingEnabled: boolean; isOwnProfile?: boolean; }
   const { staff, staffId, boardingEnabled, isOwnProfile = false }: Props = $props();
@@ -183,12 +184,14 @@
   <!-- Flat list -->
   {#if $respsQ.isPending && !staff.position_ids.length}
     <div class="space-y-2">
-      {#each [1, 2] as _}<div class="h-12 animate-pulse rounded-xl bg-[var(--hover)]"></div>{/each}
+      {#each [1, 2] as _}<div class="skeleton h-12"></div>{/each}
     </div>
   {:else if rows.length === 0}
-    <div class="rounded-xl border border-dashed border-[var(--border)] px-4 py-8 text-center">
-      <p class="text-sm text-[var(--fg-muted)]">No responsibilities assigned yet.</p>
-    </div>
+    <EmptyState
+      iconPath="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+      title="No responsibilities assigned yet."
+      description="Use the form above to assign a position, class, or house."
+    />
   {:else}
     <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
       {#each rows as row, i (row.key)}

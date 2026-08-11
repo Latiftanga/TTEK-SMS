@@ -7,6 +7,7 @@ Fixtures (school, school_admin, auth) come from conftest.py.
 import io
 import pytest
 from httpx import AsyncClient
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 import pytest_asyncio
 
@@ -16,6 +17,12 @@ from app.models.auth import LoginType, StaffPermission, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.staff import StaffCategory, StaffMember, StaffRank, StaffType
 from sqlalchemy import select
+
+
+def _tiny_png() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), color="blue").save(buf, format="PNG")
+    return buf.getvalue()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -113,6 +120,32 @@ def _staff_payload(**overrides) -> dict:
         "last_name": "Mensah",
     }
     return {**base, **overrides}
+
+
+async def _login_as_teacher_no_edit(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+) -> tuple[dict, str]:
+    """Create a real staff login holding TEACHER — which grants no staff.*
+    permission at all (reference_data.py) — to prove self-service photo
+    upload works without staff.edit, while acting on someone else's photo
+    still requires it. Returns (auth headers, own staff_id)."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == "TEACHER"))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post("/staff", json=_staff_payload(staff_number="TCH-NOEDIT"), headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
+
+    email = "teacher-noedit@presec-test.edu.gh"
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
 
 
 # ── Staff CRUD ────────────────────────────────────────────────────────────────
@@ -717,3 +750,67 @@ async def test_resolve_permissions_ignores_mismatched_school_override(
     from app.core.permissions import resolve_permissions
     perms = await resolve_permissions(staff.id, db_session)
     assert perms.get("fees.manage", False) is False
+
+
+# ── Staff photo ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_upload_and_delete_staff_photo(client: AsyncClient, auth: dict):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    assert (await client.get(f"/staff/{staff_id}", headers=auth)).json()["photo_url"] is None
+
+    resp = await client.post(
+        f"/staff/{staff_id}/photo",
+        files={"file": ("photo.png", _tiny_png(), "image/png")},
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    photo_url = resp.json()["photo_url"]
+    assert photo_url is not None
+    assert photo_url.endswith(".webp")
+
+    detail = (await client.get(f"/staff/{staff_id}", headers=auth)).json()
+    assert detail["photo_url"] == photo_url
+
+    del_resp = await client.delete(f"/staff/{staff_id}/photo", headers=auth)
+    assert del_resp.status_code == 204
+
+    detail = (await client.get(f"/staff/{staff_id}", headers=auth)).json()
+    assert detail["photo_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_upload_staff_photo_rejects_non_image(client: AsyncClient, auth: dict):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    resp = await client.post(
+        f"/staff/{staff_id}/photo",
+        files={"file": ("doc.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=auth,
+    )
+    assert resp.status_code == 415
+
+
+@pytest.mark.asyncio
+async def test_upload_staff_photo_self_service_without_staff_edit(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions,
+):
+    """A staff member holding no staff.* permission at all (plain TEACHER)
+    can still manage their OWN photo — assert_self_or_permission's self
+    branch — but not someone else's."""
+    teacher_auth, own_staff_id = await _login_as_teacher_no_edit(client, auth, db_session, school)
+    other_staff_id = (await client.post("/staff", json=_staff_payload(staff_number="OTHER-PHOTO"), headers=auth)).json()["id"]
+
+    own_resp = await client.post(
+        f"/staff/{own_staff_id}/photo",
+        files={"file": ("photo.png", _tiny_png(), "image/png")},
+        headers=teacher_auth,
+    )
+    assert own_resp.status_code == 200
+    assert own_resp.json()["photo_url"] is not None
+
+    other_resp = await client.post(
+        f"/staff/{other_staff_id}/photo",
+        files={"file": ("photo.png", _tiny_png(), "image/png")},
+        headers=teacher_auth,
+    )
+    assert other_resp.status_code == 403

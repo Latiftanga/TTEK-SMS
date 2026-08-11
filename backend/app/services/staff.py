@@ -1,7 +1,6 @@
 """Staff member CRUD: create, list, get, update, emergency contacts, qualifications.
-
-Promotions and leave management live in services/staff_leave.py.
-Last-administrator protection lives in services/staff_admin_guard.py.
+Promotions/leave: services/staff_leave.py. Photo upload/delete: services/staff_photo.py.
+Last-administrator protection: services/staff_admin_guard.py.
 """
 from __future__ import annotations
 import uuid
@@ -23,6 +22,17 @@ from app.schemas.staff import (
     StaffMemberUpdate,
 )
 from app.services.staff_admin_guard import guard_last_admin, guard_last_admin_deactivation
+
+
+def _photo_url(photo_path: str | None) -> str | None:
+    """Stored path -> absolute URL. Mirrors student_display.py::_photo_url as
+    its own small copy rather than a cross-domain import."""
+    if not photo_path:
+        return None
+    from app.core.config import settings
+    if settings.storage_backend == "CLOUDFLARE_R2":
+        return f"{settings.r2_public_url.rstrip('/')}/{photo_path}"
+    return f"{settings.app_base_url.rstrip('/')}/uploads/{photo_path}"
 
 
 async def _assert_positions_owned(
@@ -79,6 +89,7 @@ def _to_summary(member: StaffMember) -> StaffMemberSummary:
         position_names=[p.name for p in member.positions],
         is_active=member.is_active,
         joined_date=member.joined_date,
+        photo_url=_photo_url(member.photo_path),
     )
 
 
