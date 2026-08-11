@@ -3,7 +3,6 @@
   import { reactiveQuery } from '$lib/query.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { get } from 'svelte/store';
   import {
     getAssessment, getAssessmentRoster, listScores, submitScores, approveScores,
     publishAssessment, unpublishAssessment, updateAssessment, deleteAssessment,
@@ -11,13 +10,12 @@
   } from '$lib/api/assessments';
   import { listSubjects, listAllTerms } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
-  import { auth } from '$lib/stores/auth';
-  import { queueWrite } from '$lib/offline/outbox';
-  import { refreshOutboxCount } from '$lib/offline/sync';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import { detailOf, isLocked } from '$lib/apiError';
+  import { queueScoresOffline } from './offlineQueue';
   import ScoreTable from './ScoreTable.svelte';
-  import AssessmentActionsBar from './AssessmentActionsBar.svelte';
+  import AssessmentHeaderCard from './AssessmentHeaderCard.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
   const qc = useQueryClient();
@@ -75,28 +73,9 @@
   const scoreMap = $derived(new Map(($scoresQ.data ?? []).map((s: Score) => [s.student_id, s])));
   const unapprovedCount = $derived(($scoresQ.data ?? []).filter(s => !s.is_approved).length);
 
-  // ── Offline queue helper ──────────────────────────────────────────────────────
-  async function queueScoresOffline(asmtId: string, entries: { student_id: string; raw_score: number }[]): Promise<void> {
-    const schoolId = get(auth).schoolId ?? '';
-    const osa = auth.offlineSessionStartedAt ?? new Date().toISOString();
-    for (const e of entries) {
-      await queueWrite({ entity: 'Score', method: 'POST', endpoint: `/assessments/${asmtId}/scores`,
-        payload: { assessment_id: asmtId, student_id: e.student_id, raw_score: e.raw_score },
-        offline_session_started_at: osa, school_id: schoolId });
-    }
-    await refreshOutboxCount();
-  }
-
   // ── Term-lock override ────────────────────────────────────────────────────────
   let lockOverride      = $state<'submit' | 'approve' | 'edit' | null>(null);
   let lockOverrideError = $state('');
-
-  function detailOf(e: unknown): string | undefined {
-    return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-  }
-  function isLocked(e: unknown): boolean {
-    return (e as { response?: { status?: number } })?.response?.status === 423;
-  }
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const submitMut = createMutation({
@@ -247,85 +226,30 @@
 {:else if $assessmentQ.data}
   {@const a = $assessmentQ.data}
 
-  <!-- Header card -->
-  <div class="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-    {#if editing}
-      <!-- Edit form -->
-      <div class="space-y-3">
-        <div class="grid gap-3 sm:grid-cols-3">
-          <div class="sm:col-span-1"><label class="lx">Description</label><input bind:value={editForm.description} class="inp mt-1" /></div>
-          <div><label class="lx">Max score</label><input type="number" min="1" step="0.5" bind:value={editForm.maxScore} class="inp mt-1" /></div>
-          <div><label class="lx">Date given to students</label><input type="date" bind:value={editForm.dueDate} class="inp mt-1" /></div>
-        </div>
-        {#if editErr}<p class="text-xs text-red-500">{editErr}</p>{/if}
-        <div class="flex gap-2">
-          <button onclick={() => $editMut.mutate(undefined)} disabled={$editMut.isPending}
-            class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90 transition" style="background:var(--brand)">
-            {$editMut.isPending ? 'Saving…' : 'Save changes'}
-          </button>
-          <button onclick={() => { editing = false; editErr = ''; }}
-            class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-            Cancel
-          </button>
-        </div>
-      </div>
-
-    {:else}
-      <!-- View mode -->
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <!-- Info -->
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h1 class="text-lg font-bold text-[var(--fg)]">{assessmentLabel(a, typeName(a.assessment_type_id))}</h1>
-            {#if a.is_published}
-              <span class="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-950/30 dark:text-green-400">Published</span>
-            {:else}
-              <span class="rounded-full bg-[var(--hover)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--fg-muted)]">Draft</span>
-            {/if}
-            {#if termLocked}
-              <span class="rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-950/30 dark:text-red-400">
-                Term locked
-              </span>
-            {/if}
-          </div>
-          <p class="mt-1 text-sm text-[var(--fg-muted)]">
-            {subjectName(a.subject_id)} · Max {a.max_score}
-            {#if a.due_date}<span class="text-[var(--fg-subtle)]"> · Given {a.due_date}</span>{/if}
-            {#if a.description}<span class="text-[var(--fg-subtle)]"> · {a.description}</span>{/if}
-          </p>
-        </div>
-
-        <!-- Actions (unpublished only). Edit/Delete are the owning subject
-             teacher's own job (get_assessment is already scope-checked
-             server-side, so canEnterScores here is safe — a 'teacher' role
-             only ever sees data for a class+subject they teach). Approve/
-             Publish stay canManage-only inside the bar. -->
-        {#if !a.is_published && canEnterScores}
-          <AssessmentActionsBar
-            {unapprovedCount}
-            hasScores={($scoresQ.data ?? []).length > 0}
-            approvePending={$approveMut.isPending}
-            onApprove={() => $approveMut.mutate(undefined)}
-            bind:confirmPublish
-            publishPending={$publishMut.isPending}
-            onPublish={() => $publishMut.mutate()}
-            onEdit={startEdit}
-            bind:confirmDelete
-            deletePending={$deleteMut.isPending}
-            onDelete={() => $deleteMut.mutate()}
-            canApprovePublish={canManage}
-          />
-        {:else if a.is_published && canManage}
-          <!-- Same senior-staff tier as publish itself — reverses a mistake,
-               always asks for a reason (see showUnpublish above). -->
-          <button onclick={() => showUnpublish = true}
-            class="rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30">
-            Unpublish
-          </button>
-        {/if}
-      </div>
-    {/if}
-  </div>
+  <AssessmentHeaderCard
+    {a}
+    label={assessmentLabel(a, typeName(a.assessment_type_id))}
+    subjectDisplay={subjectName(a.subject_id)}
+    {termLocked} {canEnterScores} {canManage}
+    {editing}
+    bind:editForm
+    {editErr}
+    editPending={$editMut.isPending}
+    onSaveEdit={() => $editMut.mutate(undefined)}
+    onCancelEdit={() => { editing = false; editErr = ''; }}
+    onStartEdit={startEdit}
+    {unapprovedCount}
+    hasScores={($scoresQ.data ?? []).length > 0}
+    approvePending={$approveMut.isPending}
+    onApprove={() => $approveMut.mutate(undefined)}
+    bind:confirmPublish
+    publishPending={$publishMut.isPending}
+    onPublish={() => $publishMut.mutate()}
+    bind:confirmDelete
+    deletePending={$deleteMut.isPending}
+    onDelete={() => $deleteMut.mutate()}
+    onRequestUnpublish={() => showUnpublish = true}
+  />
 
   <!-- Score table -->
   {#if $studentsQ.isPending || $scoresQ.isPending}
@@ -369,8 +293,3 @@
   onCancel={() => showUnpublish = false}
 />
 
-<style>
-  @reference "tailwindcss";
-  .lx  { @apply block text-xs font-medium text-[var(--fg-muted)]; }
-  .inp { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition; }
-</style>

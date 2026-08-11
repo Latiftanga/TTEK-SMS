@@ -84,11 +84,24 @@ async def submit_scores(
         assessment.academic_term_id, req.override_reason, user_id, db
     )
 
+    student_ids = [entry.student_id for entry in req.scores]
+    if len(student_ids) != len(set(student_ids)):
+        # Score has a UNIQUE(assessment_id, student_id) constraint — a
+        # duplicate student in one payload would otherwise reach the DB as
+        # two inserts for the same pair, surfacing as a raw IntegrityError
+        # (500) on the second one instead of a clean, actionable message.
+        dupes = {sid for sid in student_ids if student_ids.count(sid) > 1}
+        dupe_students = await db.scalars(select(Student).where(Student.id.in_(dupes)))
+        names = ", ".join(f"{s.first_name} {s.last_name}" for s in dupe_students)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Duplicate student(s) in the same submission: {names}.",
+        )
+
     # Every submitted student must be registered for this subject this term —
     # see services/subject_roster.py for what "registered" means (falls back
     # to eligible when no registration data exists, so schools that never use
     # subject registration are unaffected).
-    student_ids = [entry.student_id for entry in req.scores]
     eligible_ids = await filter_eligible_for_subject(
         student_ids, assessment.academic_term_id, assessment.subject_id, school_id, db,
     )

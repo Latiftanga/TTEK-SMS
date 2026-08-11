@@ -115,6 +115,10 @@ class AssessmentType(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     separate things layered on top of each other.
     """
     __tablename__ = "assessment_type"
+    __table_args__ = (
+        UniqueConstraint("school_id", "code", name="uq_assessment_type_school_code"),
+        UniqueConstraint("school_id", "name", name="uq_assessment_type_school_name"),
+    )
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     code: Mapped[str] = mapped_column(String(20), nullable=False)

@@ -41,6 +41,7 @@ class GradingScaleUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     is_default: bool | None = None
+    is_active: bool | None = None
 
 
 class GradingScaleRead(BaseModel):

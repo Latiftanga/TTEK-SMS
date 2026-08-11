@@ -62,6 +62,16 @@ async def update_grading_scale(
     )
 
 
+@router.delete("/grading-scales/{scale_id}", status_code=204)
+async def delete_grading_scale(
+    scale_id: uuid.UUID,
+    ids=Depends(require_permission("assessments", "approve_scores")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await grade_svc.delete_grading_scale(scale_id, school_id, db)
+
+
 @router.post("/grading-scales/{scale_id}/grades", response_model=GradeRead, status_code=201)
 async def add_grade(
     scale_id: uuid.UUID,

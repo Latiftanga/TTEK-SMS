@@ -1,22 +1,19 @@
 <script lang="ts">
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { addGrade, deleteGrade, updateGradingScale, type GradingScale } from '$lib/api/assessments';
+  import { deleteGradingScale, updateGradingScale, type GradingScale } from '$lib/api/assessments';
   import { toast } from '$lib/stores/toast';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import GradeBandsPanel from './GradeBandsPanel.svelte';
 
   interface Props { scale: GradingScale; }
   const { scale }: Props = $props();
 
   const qc = useQueryClient();
-  let expanded    = $state(false);
-  let showAddForm = $state(false);
-  let editing     = $state(false);
+  let expanded = $state(false);
+  let editing  = $state(false);
 
   let editForm = $state({ name: scale.name, description: scale.description ?? '' });
   let editError = $state('');
-
-  const sortedGrades = $derived(
-    [...scale.grades].sort((a, b) => Number(b.min_score) - Number(a.min_score))
-  );
 
   // A shared system-default scale (school_id=NULL, seeded — see
   // services/grading.py::resolve_grade) is read-only here: every edit/delete
@@ -40,49 +37,33 @@
     },
   });
 
-  const addMut = createMutation({
-    mutationFn: () => addGrade(scale.id, {
-      min_score: parseFloat(bandForm.min_score),
-      max_score: parseFloat(bandForm.max_score),
-      letter_grade: bandForm.letter_grade.trim(),
-      label: bandForm.label.trim(),
-      gpa_points: bandForm.gpa_points ? parseFloat(bandForm.gpa_points) : null,
-      remarks: bandForm.remarks.trim() || null,
-    }),
+  // ── Deactivate / reactivate / delete ─────────────────────────────────────────
+  let confirmDeactivate = $state(false);
+  let confirmDeleteScale = $state(false);
+
+  const toggleActiveMut = createMutation({
+    mutationFn: (is_active: boolean) => updateGradingScale(scale.id, { is_active }),
+    onSuccess: (_d, is_active) => {
+      qc.invalidateQueries({ queryKey: ['grading-scales'] });
+      confirmDeactivate = false;
+      toast.success(is_active ? 'Grading scale reactivated.' : 'Grading scale deactivated.');
+    },
+    onError: () => { confirmDeactivate = false; toast.error('Could not update status.'); },
+  });
+
+  const deleteScaleMut = createMutation({
+    mutationFn: () => deleteGradingScale(scale.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['grading-scales'] });
-      showAddForm = false; bandError = '';
-      bandForm = { min_score: '', max_score: '', letter_grade: '', label: '', gpa_points: '', remarks: '' };
-      toast.success('Grade band added.');
+      confirmDeleteScale = false;
+      toast.success('Grading scale deleted.');
     },
     onError: (e: unknown) => {
-      bandError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not add grade.';
+      confirmDeleteScale = false;
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? 'Could not delete.');
     },
   });
-
-  const deleteMut = createMutation({
-    mutationFn: (gradeId: string) => deleteGrade(scale.id, gradeId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['grading-scales'] });
-      toast.success('Grade band removed.');
-    },
-    onError: () => toast.error('Could not remove grade band.'),
-  });
-
-  // ── Grade band form state ─────────────────────────────────────────────────────
-
-  let bandForm = $state({ min_score: '', max_score: '', letter_grade: '', label: '', gpa_points: '', remarks: '' });
-  let bandError = $state('');
-
-  function handleAddBand() {
-    bandError = '';
-    const min = parseFloat(bandForm.min_score), max = parseFloat(bandForm.max_score);
-    if (isNaN(min) || isNaN(max)) { bandError = 'Enter valid min/max scores.'; return; }
-    if (min > max)                 { bandError = 'Min must be ≤ max.'; return; }
-    if (!bandForm.letter_grade.trim()) { bandError = 'Letter grade is required.'; return; }
-    if (!bandForm.label.trim())        { bandError = 'Label is required.'; return; }
-    $addMut.mutate();
-  }
 
   function startEdit() {
     editForm = { name: scale.name, description: scale.description ?? '' };
@@ -131,6 +112,9 @@
           {$updateMut.isPending ? '…' : 'Set default'}
         </button>
       {/if}
+      {#if !isShared && !scale.is_active}
+        <span class="rounded-full bg-[var(--hover)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--fg-muted)]">Inactive</span>
+      {/if}
       <span class="text-xs text-[var(--fg-subtle)]">{scale.grades.length} bands</span>
       <!-- Edit button -->
       {#if !isShared}
@@ -139,6 +123,29 @@
           title="Edit scale">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
+          </svg>
+        </button>
+        <button
+          onclick={() => scale.is_active ? (confirmDeactivate = true) : $toggleActiveMut.mutate(true)}
+          disabled={$toggleActiveMut.isPending}
+          class="rounded-lg p-1 transition disabled:opacity-40 {scale.is_active ? 'text-[var(--fg-subtle)] hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-950/30' : 'text-green-500 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-950/30'}"
+          title={scale.is_active ? 'Deactivate' : 'Activate'}>
+          {#if scale.is_active}
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+            </svg>
+          {:else}
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          {/if}
+        </button>
+        <button onclick={() => confirmDeleteScale = true}
+          disabled={$deleteScaleMut.isPending}
+          class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 disabled:opacity-40 dark:hover:bg-red-950/30"
+          title="Delete">
+          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
         </button>
       {/if}
@@ -174,74 +181,34 @@
   <!-- Grade bands (expanded) -->
   {#if expanded}
     <div class="border-t border-[var(--border)] px-4 pb-4 pt-3 space-y-3">
-
-      {#if sortedGrades.length > 0}
-        <div class="overflow-hidden rounded-xl border border-[var(--border)]">
-          <table class="w-full text-xs">
-            <thead><tr class="border-b border-[var(--border)] text-left text-[9px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
-              <th class="px-3 py-2">Range</th>
-              <th class="px-3 py-2">Grade</th>
-              <th class="px-3 py-2">Label</th>
-              <th class="hidden px-3 py-2 sm:table-cell">GPA</th>
-              {#if !isShared}<th class="px-3 py-2"></th>{/if}
-            </tr></thead>
-            <tbody>
-              {#each sortedGrades as g (g.id)}
-                <tr class="border-b border-[var(--border)] last:border-0">
-                  <td class="px-3 py-2 font-mono text-[var(--fg-muted)]">{g.min_score}–{g.max_score}</td>
-                  <td class="px-3 py-2 font-bold text-[var(--fg)]">{g.letter_grade}</td>
-                  <td class="px-3 py-2 text-[var(--fg-muted)]">{g.label}</td>
-                  <td class="hidden px-3 py-2 font-mono text-[var(--fg-subtle)] sm:table-cell">{g.gpa_points ?? '—'}</td>
-                  {#if !isShared}
-                    <td class="px-3 py-2 text-right">
-                      <button onclick={() => $deleteMut.mutate(g.id)} disabled={$deleteMut.isPending}
-                        class="rounded p-0.5 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30">
-                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                      </button>
-                    </td>
-                  {/if}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <p class="text-xs text-[var(--fg-muted)]">No grade bands defined yet.</p>
-      {/if}
-
-      <!-- Add band form -->
-      {#if !isShared && showAddForm}
-        <div class="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3 space-y-2.5">
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div><label class="label-xs">Min</label><input type="number" step="0.5" bind:value={bandForm.min_score} placeholder="50" class="inp" /></div>
-            <div><label class="label-xs">Max</label><input type="number" step="0.5" bind:value={bandForm.max_score} placeholder="69" class="inp" /></div>
-            <div><label class="label-xs">Letter</label><input bind:value={bandForm.letter_grade} placeholder="B" class="inp" /></div>
-            <div><label class="label-xs">Label</label><input bind:value={bandForm.label} placeholder="Good" class="inp" /></div>
-            <div><label class="label-xs">GPA</label><input type="number" step="0.01" bind:value={bandForm.gpa_points} placeholder="—" class="inp" /></div>
-            <div class="col-span-2 sm:col-span-3"><label class="label-xs">Remarks</label><input bind:value={bandForm.remarks} placeholder="Optional" class="inp" /></div>
-          </div>
-          {#if bandError}<p class="text-xs text-red-500">{bandError}</p>{/if}
-          <div class="flex gap-2">
-            <button onclick={handleAddBand} disabled={$addMut.isPending}
-              class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
-              {$addMut.isPending ? 'Adding…' : 'Add band'}
-            </button>
-            <button onclick={() => { showAddForm = false; bandError = ''; }}
-              class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">Cancel</button>
-          </div>
-        </div>
-      {:else if !isShared}
-        <button onclick={() => showAddForm = true}
-          class="text-xs font-semibold transition hover:underline" style="color: var(--brand)">
-          + Add grade band
-        </button>
-      {/if}
-
+      <GradeBandsPanel scaleId={scale.id} grades={scale.grades} {isShared} />
     </div>
   {/if}
 </div>
+
+<ConfirmModal
+  open={confirmDeactivate}
+  title="Deactivate {scale.name}?"
+  message={scale.is_default
+    ? "This scale is the active default — deactivating it falls back to the shared default scale, and clears cached grades on every previously-approved score so they're recalculated against it. You can reactivate this scale at any time."
+    : "This scale will be hidden from new use. You can reactivate it at any time."}
+  confirmLabel="Deactivate"
+  variant="warning"
+  isPending={$toggleActiveMut.isPending}
+  onConfirm={() => $toggleActiveMut.mutate(false)}
+  onCancel={() => confirmDeactivate = false}
+/>
+
+<ConfirmModal
+  open={confirmDeleteScale}
+  title="Delete {scale.name}?"
+  message="This permanently removes the scale and its grade bands. Only possible when it isn't the active default — if it is, deactivate or replace it as default first."
+  confirmLabel="Delete"
+  variant="danger"
+  isPending={$deleteScaleMut.isPending}
+  onConfirm={() => $deleteScaleMut.mutate()}
+  onCancel={() => confirmDeleteScale = false}
+/>
 
 <style>
   @reference "tailwindcss";

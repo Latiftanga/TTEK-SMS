@@ -12,7 +12,7 @@ import uuid
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,13 +53,19 @@ async def create_grading_scale(
 
 
 async def list_grading_scales(school_id: uuid.UUID, db: AsyncSession) -> list[GradingScale]:
-    """A school's own scales, then the shared system default(s) — see
-    resolve_grade() for the matching fallback used when scoring."""
+    """A school's own scales (active or not — so a deactivated one can still
+    be found and reactivated through the UI, same fix already applied to
+    list_subjects()/list_assessment_types()), then the shared system
+    default(s) — active only, since no per-school endpoint can ever manage
+    that row anyway. See resolve_grade() for the matching fallback used when
+    scoring."""
     rows = await db.scalars(
         select(GradingScale)
         .where(
-            or_(GradingScale.school_id == school_id, GradingScale.school_id.is_(None)),
-            GradingScale.is_active.is_(True),
+            or_(
+                GradingScale.school_id == school_id,
+                and_(GradingScale.school_id.is_(None), GradingScale.is_active.is_(True)),
+            )
         )
         .options(selectinload(GradingScale.grades))
         .order_by(GradingScale.school_id.is_(None), GradingScale.is_default.desc(), GradingScale.name)
@@ -97,8 +103,16 @@ async def update_grading_scale(
                 status.HTTP_409_CONFLICT,
                 f"Grading scale with name '{req.name}' already exists.",
             )
-    promoted_to_default = req.is_default is True and not scale.is_default
-    if promoted_to_default:
+
+    # Snapshot which scale actually governs resolution before mutating —
+    # compared against the same snapshot taken after, below, so both
+    # "explicitly switch default" AND "deactivate the scale that happened to
+    # be the effective default" (silently falling back to the next one in
+    # get_default_scale_with_bands' priority order) are caught by one check,
+    # instead of two separate ad hoc flags.
+    effective_before = await get_default_scale_with_bands(school_id, db)
+
+    if req.is_default is True and not scale.is_default:
         await db.execute(
             update(GradingScale)
             .where(GradingScale.school_id == school_id, GradingScale.is_default.is_(True))
@@ -110,17 +124,45 @@ async def update_grading_scale(
         scale.description = req.description
     if req.is_default is not None:
         scale.is_default = req.is_default
+    if req.is_active is not None:
+        scale.is_active = req.is_active
     await db.flush()
-    if promoted_to_default:
+
+    effective_after = await get_default_scale_with_bands(school_id, db)
+    effective_before_id = effective_before.id if effective_before else None
+    effective_after_id = effective_after.id if effective_after else None
+    if effective_before_id != effective_after_id:
         # Every previously-approved score was graded against whichever scale
-        # was default at the time (cached_grade_label, resolve_grade() below)
-        # — swapping which scale is default is exactly as grade-affecting as
-        # editing a band (add_grade/delete_grade already clear on that), so
-        # it needs the same invalidation or report cards silently keep
-        # showing letter grades resolved from the OLD default forever.
-        await clear_cached_grades(scale_id, school_id, db)
+        # effectively governed resolution at the time — a change here is
+        # exactly as grade-affecting as editing a band (add_grade/
+        # delete_grade already clear on that), or report cards silently keep
+        # showing letter grades resolved from the OLD effective scale forever.
+        await _wipe_cached_grades(school_id, db)
+
     await db.refresh(scale, ["grades"])
     return scale
+
+
+async def delete_grading_scale(
+    scale_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> None:
+    """Hard-deletes a school-owned scale (never the shared platform default —
+    get_grading_scale's school_id filter already makes that unreachable).
+    Blocked while it's the active default: deleting it out from under
+    resolve_grade() would just silently fall back to the next scale in
+    get_default_scale_with_bands' priority order with no chance to clear
+    cached grades first, unlike every other grade-affecting change here —
+    set a different scale as default (or deactivate it, which does clear
+    cleanly) before deleting."""
+    scale = await get_grading_scale(scale_id, school_id, db)
+    if scale.is_default:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{scale.name} is the active default and can't be deleted — "
+            "set a different scale as default first.",
+        )
+    await db.delete(scale)
+    await db.flush()
 
 
 async def add_grade(
@@ -252,7 +294,28 @@ async def resolve_grade(
 async def clear_cached_grades(
     scale_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> None:
-    """Nullify cached_grade_label on all approved scores for this school."""
+    """Nullify cached_grade_label on all approved scores for this school —
+    but only when `scale_id` is actually the scale currently governing
+    resolution (get_default_scale_with_bands' own priority: the school's own
+    default, else the shared platform default). resolve_grade() only ever
+    reads from that one scale, never a non-default one — add_grade/
+    delete_grade previously wiped every score's grade label school-wide
+    whenever *any* scale was edited, including a brand new, unused draft
+    scale that had never resolved a single score. A school with more than
+    one GradingScale (a normal, supported setup — is_default exists
+    specifically to pick one among several) would see every report card
+    silently lose its letter grades the moment someone tinkered with an
+    unrelated scale."""
+    effective = await get_default_scale_with_bands(school_id, db)
+    if effective is None or effective.id != scale_id:
+        return
+    await _wipe_cached_grades(school_id, db)
+
+
+async def _wipe_cached_grades(school_id: uuid.UUID, db: AsyncSession) -> None:
+    """The actual, unconditional nullify — callers (clear_cached_grades,
+    update_grading_scale's effective-scale-changed check) decide when it's
+    warranted."""
     await db.execute(
         update(Score)
         .where(Score.school_id == school_id, Score.is_approved.is_(True))

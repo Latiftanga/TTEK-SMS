@@ -151,6 +151,78 @@ async def test_delete_grade_band(client: AsyncClient, auth: dict):
     assert resp.status_code == 204
 
 
+@pytest.mark.asyncio
+async def test_deactivate_and_reactivate_grading_scale(client: AsyncClient, auth: dict):
+    """Deactivating must not make the scale vanish from GET /grading-scales —
+    the same 'one-way trip' bug already fixed for Subject/AssessmentType."""
+    create = await client.post("/assessments/grading-scales", json={"name": "Retiring Scale"}, headers=auth)
+    scale_id = create.json()["id"]
+
+    off = await client.patch(f"/assessments/grading-scales/{scale_id}", json={"is_active": False}, headers=auth)
+    assert off.status_code == 200
+    assert off.json()["is_active"] is False
+
+    listed = await client.get("/assessments/grading-scales", headers=auth)
+    scale = next(s for s in listed.json() if s["id"] == scale_id)
+    assert scale["is_active"] is False
+
+    on = await client.patch(f"/assessments/grading-scales/{scale_id}", json={"is_active": True}, headers=auth)
+    assert on.status_code == 200
+    assert on.json()["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_deactivating_the_effective_default_scale_clears_cached_grades(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school,
+    assessment: Assessment, student: Student, grading_scale: GradingScale,
+):
+    """Deactivating a school's own default scale silently falls back to the
+    shared platform default (get_default_scale_with_bands' own priority) —
+    exactly as grade-affecting as explicitly switching default, since every
+    previously-approved score was graded against the scale that's now gone."""
+    submit = await client.post(f"/assessments/{assessment.id}/scores", json={
+        "scores": [{"student_id": str(student.id), "raw_score": "85.00"}],
+    }, headers=auth)
+    score_id = submit.json()[0]["id"]
+    approve = await client.post(f"/assessments/{assessment.id}/scores/approve", json={
+        "score_ids": [score_id],
+    }, headers=auth)
+    assert approve.json()[0]["cached_grade_label"] == "A1"
+
+    resp = await client.patch(f"/assessments/grading-scales/{grading_scale.id}", json={
+        "is_active": False,
+    }, headers=auth)
+    assert resp.status_code == 200
+
+    from app.models.assessments import Score
+    score = await db_session.get(Score, score_id)
+    await db_session.refresh(score)
+    assert score.cached_grade_label is None
+
+
+@pytest.mark.asyncio
+async def test_delete_unused_grading_scale(client: AsyncClient, auth: dict):
+    create = await client.post("/assessments/grading-scales", json={"name": "Throwaway Scale"}, headers=auth)
+    scale_id = create.json()["id"]
+
+    resp = await client.delete(f"/assessments/grading-scales/{scale_id}", headers=auth)
+    assert resp.status_code == 204
+
+    listed = await client.get("/assessments/grading-scales", headers=auth)
+    assert all(s["id"] != scale_id for s in listed.json())
+
+
+@pytest.mark.asyncio
+async def test_delete_default_grading_scale_rejected(
+    client: AsyncClient, auth: dict, grading_scale: GradingScale,
+):
+    resp = await client.delete(f"/assessments/grading-scales/{grading_scale.id}", headers=auth)
+    assert resp.status_code == 409
+
+    listed = await client.get("/assessments/grading-scales", headers=auth)
+    assert any(s["id"] == str(grading_scale.id) for s in listed.json())
+
+
 # ── Assessment types ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -953,6 +1025,24 @@ async def test_score_out_of_range_rejected(
 
 
 @pytest.mark.asyncio
+async def test_submit_scores_rejects_duplicate_student_in_one_payload(
+    client: AsyncClient, auth: dict, assessment: Assessment, student: Student,
+):
+    """Score has a UNIQUE(assessment_id, student_id) constraint — a duplicate
+    student in the same submission must be rejected cleanly (422) rather than
+    reaching the DB as two inserts for the same pair and raising a raw
+    IntegrityError (500) on the second one."""
+    resp = await client.post(f"/assessments/{assessment.id}/scores", json={
+        "scores": [
+            {"student_id": str(student.id), "raw_score": "70.00"},
+            {"student_id": str(student.id), "raw_score": "80.00"},
+        ],
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert student.first_name in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_resubmit_score_updates_and_unapproves(
     client: AsyncClient, auth: dict, assessment: Assessment, student: Student,
 ):
@@ -1073,6 +1163,55 @@ async def test_switching_default_scale_clears_cached_grades(
         "Switching the default scale must clear stale cached grade labels, "
         "not leave report cards silently showing grades from the old scale"
     )
+
+
+@pytest.mark.asyncio
+async def test_editing_a_non_default_scale_does_not_clear_other_scores_grades(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school,
+    assessment: Assessment, student: Student, grading_scale: GradingScale,
+):
+    """resolve_grade() only ever reads from the school's *effective* default
+    scale (get_default_scale_with_bands) — add_grade/delete_grade previously
+    wiped every approved score's cached_grade_label school-wide regardless of
+    which scale was actually edited, so tinkering with a brand new, unused
+    draft scale silently blanked every report card's letter grades even
+    though that scale had never resolved a single score."""
+    submit = await client.post(f"/assessments/{assessment.id}/scores", json={
+        "scores": [{"student_id": str(student.id), "raw_score": "85.00"}],
+    }, headers=auth)
+    score_id = submit.json()[0]["id"]
+    approve = await client.post(f"/assessments/{assessment.id}/scores/approve", json={
+        "score_ids": [score_id],
+    }, headers=auth)
+    assert approve.json()[0]["cached_grade_label"] == "A1"
+
+    # A second, deliberately non-default scale — never used to resolve anything.
+    draft = await client.post("/assessments/grading-scales", json={
+        "name": "Draft Scale",
+    }, headers=auth)
+    draft_id = draft.json()["id"]
+    assert draft.json()["is_default"] is False
+
+    add = await client.post(f"/assessments/grading-scales/{draft_id}/grades", json={
+        "min_score": "0.00", "max_score": "100.00", "letter_grade": "X", "label": "Test",
+    }, headers=auth)
+    assert add.status_code == 201
+
+    from app.models.assessments import Score
+    score = await db_session.get(Score, score_id)
+    await db_session.refresh(score)
+    assert score.cached_grade_label == "A1", (
+        "Editing a scale that isn't the effective default must not touch "
+        "grades resolved from a completely different scale"
+    )
+
+    # Deleting a band from that same non-default scale must be equally inert.
+    delete = await client.delete(
+        f"/assessments/grading-scales/{draft_id}/grades/{add.json()['id']}", headers=auth,
+    )
+    assert delete.status_code == 204
+    await db_session.refresh(score)
+    assert score.cached_grade_label == "A1"
 
 
 @pytest.mark.asyncio

@@ -98,9 +98,16 @@ export const createGradingScale = (data: {
   api.post('/assessments/grading-scales', data).then(r => r.data);
 
 export const updateGradingScale = (scaleId: string, data: {
-  name?: string; description?: string; is_default?: boolean;
+  name?: string; description?: string; is_default?: boolean; is_active?: boolean;
 }): Promise<GradingScale> =>
   api.patch(`/assessments/grading-scales/${scaleId}`, data).then(r => r.data);
+
+// Hard-deletes the scale — only succeeds when it isn't the active default
+// (backend returns 409 naming the scale otherwise). Deactivate via
+// updateGradingScale({ is_active: false }) works for a scale that IS default
+// too, since that safely falls back to the next scale in priority order.
+export const deleteGradingScale = (scaleId: string): Promise<void> =>
+  api.delete(`/assessments/grading-scales/${scaleId}`).then(() => undefined);
 
 export const addGrade = (scaleId: string, data: Omit<Grade, 'id'>): Promise<Grade> =>
   api.post(`/assessments/grading-scales/${scaleId}/grades`, data).then(r => r.data);

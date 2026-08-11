@@ -1,21 +1,20 @@
 <script lang="ts">
-  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { createQuery } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import {
-    listAssessments, listAssessmentTypes, createAssessment, listMySubjects,
-    formatAssessmentDate, bulkPublishAssessments, type Assessment,
+    listAssessments, listAssessmentTypes, listMySubjects, type Assessment,
   } from '$lib/api/assessments';
-  import { listYears, listClasses, updateTerm } from '$lib/api/academic';
+  import { listYears, listClasses } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
-  import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import AssessmentCardList from './AssessmentCardList.svelte';
+  import CreateAssessmentForm from './CreateAssessmentForm.svelte';
+  import TermActionsRow from './TermActionsRow.svelte';
   setPageTitle('Assessments');
 
-  const qc = useQueryClient();
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
 
   // ── Filters ───────────────────────────────────────────────────────────────────
@@ -119,29 +118,6 @@
     if (activeTypes.length === 1 && !categoryId) setFilter('category', activeTypes[0].id);
   });
 
-  const resultsLockMut = createMutation({
-    mutationFn: ({ id, on }: { id: string; on: boolean }) => updateTerm(id, { results_locked: on }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['academic-years'] });
-      qc.invalidateQueries({ queryKey: ['all-terms'] });
-    },
-  });
-
-  // Publishes every approved, not-yet-published assessment for the whole
-  // class+term in one action — not filtered by the Subject/Category pickers
-  // above, same class+term-wide scope as the Lock results toggle.
-  const bulkPublishMut = createMutation({
-    mutationFn: () => bulkPublishAssessments(classId, termId),
-    onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['assessments', classId, termId] });
-      const parts = [`${result.published} published`];
-      if (result.skipped_unapproved) parts.push(`${result.skipped_unapproved} skipped (unapproved scores)`);
-      if (result.already_published) parts.push(`${result.already_published} already published`);
-      toast.success(parts.join(', '));
-    },
-    onError: () => toast.error('Could not bulk-publish assessments.'),
-  });
-
   // Auto-select class when only one is available (e.g. class teacher with one class)
   $effect(() => {
     if (myClasses.length === 1 && !classId) setFilter('class', myClasses[0].id);
@@ -173,32 +149,10 @@
   // "Assessments list" gating below), so re-asking for them would just be
   // the same choice made twice.
   let showCreate = $state(false);
-  let cf = $state({ description: '', maxScore: '100', dueDate: '' });
-  let cfError = $state('');
 
-  const createMut = createMutation({
-    mutationFn: () => createAssessment({
-      class_id: classId, subject_id: subjectId,
-      assessment_type_id: categoryId, academic_term_id: termId,
-      description: cf.description.trim() || undefined, max_score: parseFloat(cf.maxScore),
-      due_date: cf.dueDate || undefined,
-    }),
-    onSuccess: (a: Assessment) => {
-      qc.invalidateQueries({ queryKey: ['assessments', classId, termId] });
-      showCreate = false;
-      cf = { description: '', maxScore: '100', dueDate: '' };
-      goto(`/assessments/${a.id}`);
-    },
-    onError: (e: unknown) => {
-      cfError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not create.';
-    },
-  });
-
-  function handleCreate() {
-    cfError = '';
-    const score = parseFloat(cf.maxScore);
-    if (isNaN(score) || score <= 0) { cfError = 'Enter a valid max score.'; return; }
-    $createMut.mutate();
+  function handleCreated(a: Assessment) {
+    showCreate = false;
+    goto(`/assessments/${a.id}`);
   }
 
   // Opens the create form — shared by the empty-state's "New assessment"
@@ -206,8 +160,6 @@
   // Subject/Category are already the page's own filters by the time this
   // can ever be called.
   function openCreateForm() {
-    cf = { description: '', maxScore: '100', dueDate: '' };
-    cfError = '';
     showCreate = true;
   }
 </script>
@@ -256,43 +208,7 @@
   {/if}
 </div>
 
-<!-- Actions — own row, separate from the filter grid so buttons don't fight
-     the selects for space on a phone. -->
-<div class="mb-5 flex flex-wrap items-center gap-2">
-  {#if canManage && termId && selectedTerm}
-    <button
-      onclick={() => $resultsLockMut.mutate({ id: termId, on: !selectedTerm.results_locked })}
-      disabled={$resultsLockMut.isPending}
-      title={selectedTerm.results_locked
-        ? 'Unlock — scores and behaviour records for this term can be edited again'
-        : 'Lock — freeze scores and behaviour records for this term (overridable with a reason)'}
-      class="flex min-h-[44px] items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:opacity-50
-        {selectedTerm.results_locked
-          ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400'
-          : 'border-[var(--border)] bg-[var(--card)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--brand)]'}">
-      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-        {#if selectedTerm.results_locked}
-          <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
-        {:else}
-          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
-        {/if}
-      </svg>
-      {$resultsLockMut.isPending ? '…' : selectedTerm.results_locked ? 'Results locked' : 'Lock results'}
-    </button>
-  {/if}
-  {#if canManage && classId && termId}
-    <button
-      onclick={() => $bulkPublishMut.mutate()}
-      disabled={$bulkPublishMut.isPending}
-      title="Publish every approved, not-yet-published assessment for this class and term"
-      class="flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs font-semibold text-[var(--fg-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)] disabled:opacity-50">
-      <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
-      </svg>
-      {$bulkPublishMut.isPending ? 'Publishing…' : 'Publish all approved'}
-    </button>
-  {/if}
-</div>
+<TermActionsRow {canManage} {classId} {termId} {selectedTerm} />
 
 <!-- Assessments list — Class, Subject, and Category are all required (in
      that order) before anything renders, on every breakpoint. That's what
@@ -348,29 +264,12 @@
      trailing row) sit at the bottom of the page, so the form should appear
      right where the tap happened instead of jumping to the top. -->
 {#if showCreate}
-  <div class="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-    <p class="mb-1 text-sm font-semibold text-[var(--fg)]">New assessment</p>
-    <!-- Subject/Category aren't asked here — they're already the page's own
-         filters (the form can't even open without both set), so re-asking
-         would just be the same choice made twice. -->
-    <p class="mb-3 text-xs text-[var(--fg-subtle)]">
-      {subjectName(subjectId)} · <span class="font-medium text-[var(--fg-muted)]">{typeName(categoryId)}</span> — recorded as today, {formatAssessmentDate(new Date().toISOString())}
-    </p>
-    <div class="grid gap-3 sm:grid-cols-2">
-      <div><label for="cf-due" class="label">Date given to students</label><input id="cf-due" type="date" bind:value={cf.dueDate} class="input" /></div>
-      <div><label for="cf-max" class="label">Max score <span class="text-red-500">*</span></label><input id="cf-max" type="number" min="1" step="0.5" bind:value={cf.maxScore} class="input" /></div>
-      <div class="sm:col-span-2"><label for="cf-desc" class="label">Description (optional)</label><input id="cf-desc" bind:value={cf.description} placeholder="e.g. Covers chapters 3–4" class="input" /></div>
-    </div>
-    {#if cfError}<p class="mt-2 text-xs text-red-500">{cfError}</p>{/if}
-    <div class="mt-3 flex gap-2">
-      <button onclick={handleCreate} disabled={$createMut.isPending}
-        class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
-        {$createMut.isPending ? 'Creating…' : 'Create & open'}
-      </button>
-      <button onclick={() => { showCreate = false; cfError = ''; }}
-        class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
-    </div>
-  </div>
+  <CreateAssessmentForm
+    {classId} {subjectId} {termId} {categoryId}
+    subjectLabel={subjectName(subjectId)} categoryLabel={typeName(categoryId)}
+    onCreated={handleCreated}
+    onCancel={() => showCreate = false}
+  />
 {/if}
 
 <style>
@@ -379,5 +278,4 @@
   /* min-h-[44px] — WCAG 2.1 AAA / Apple HIG touch-target minimum, since most
      users hit this page on a phone. */
   .sel   { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
-  .input { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>
