@@ -303,34 +303,14 @@ export interface StaffExportParams {
   gender?: string;
 }
 
-export async function exportStaffExcel(params?: StaffExportParams): Promise<void> {
-  const response = await client.get('/staff/export/excel', { params, responseType: 'blob' });
-  const url = URL.createObjectURL(new Blob([response.data]));
-  const a = Object.assign(document.createElement('a'), { href: url, download: 'staff_register.xlsx' });
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export interface StaffCustomExportParams extends StaffExportParams {
   fields: string;
-  fmt: 'csv' | 'excel';
+  fmt: 'csv' | 'excel' | 'pdf';
 }
 
-export async function customExportStaff(params: StaffCustomExportParams): Promise<void> {
-  const response = await client.get('/staff/export/custom', { params, responseType: 'blob' });
-  const ext = params.fmt === 'excel' ? 'xlsx' : 'csv';
-  const url = URL.createObjectURL(new Blob([response.data]));
-  const a = Object.assign(document.createElement('a'), { href: url, download: `staff.${ext}` });
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export async function exportStaffPdf(params?: StaffExportParams): Promise<void> {
-  const response = await client.get('/staff/export/pdf', { params, responseType: 'blob' });
-  const url = URL.createObjectURL(new Blob([response.data]));
-  const a = Object.assign(document.createElement('a'), { href: url, download: 'staff_register.pdf' });
-  a.click();
-  URL.revokeObjectURL(url);
+export async function customExportStaff(params: StaffCustomExportParams): Promise<Blob> {
+  const { data } = await client.get('/staff/export/custom', { params, responseType: 'blob' });
+  return data;
 }
 
 export async function listLeave(staffId: string): Promise<Leave[]> {

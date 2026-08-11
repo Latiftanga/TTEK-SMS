@@ -4,7 +4,8 @@ Run inside Docker: docker compose exec api pytest app/tests/test_student_export.
 """
 import csv
 import io
-from datetime import date
+import uuid
+from datetime import date, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class, ClassTeacher
 from app.models.auth import LoginType, StaffPosition, User
+from app.models.documents import GraduationRecord, GraduationType
 from app.models.school import School
 from app.models.students import StudentClassAssignment
 
@@ -91,7 +93,7 @@ async def test_export_csv_shows_current_class_for_promoted_student(
     the export must show the current (most recent) class, not the old one."""
     await _promote_student(client, auth, db_session, school, school_class, academic_year)
 
-    resp = await client.get("/students/export", headers=auth)
+    resp = await client.get("/students/export/custom?fields=admission_number,current_class&fmt=csv", headers=auth)
     assert resp.status_code == 200
     rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
     header, data_row = rows[0], rows[1]
@@ -135,7 +137,7 @@ async def test_export_csv_scoped_to_class_teacher_own_class(
 
     teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
 
-    unassigned = await client.get("/students/export", headers=teacher_auth)
+    unassigned = await client.get("/students/export/custom?fields=admission_number&fmt=csv", headers=teacher_auth)
     assert unassigned.status_code == 200
     rows = list(csv.reader(io.StringIO(unassigned.content.decode("utf-8-sig"))))
     assert len(rows) == 1  # header only — no students in scope yet
@@ -146,7 +148,7 @@ async def test_export_csv_scoped_to_class_teacher_own_class(
     ))
     await db_session.flush()
 
-    resp = await client.get("/students/export", headers=teacher_auth)
+    resp = await client.get("/students/export/custom?fields=admission_number&fmt=csv", headers=teacher_auth)
     assert resp.status_code == 200
     rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
     header, data_row = rows[0], rows[1]
@@ -168,3 +170,95 @@ async def test_custom_export_scoped_to_class_teacher_own_class(
     assert resp.status_code == 200
     rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
     assert len(rows) == 1  # header only — CLASS_TEACHER has no ClassTeacher rows yet, sees nobody
+
+
+# ── graduated filter parity with the on-screen list (services/student_query.py) ──
+# list_students() supports graduated=true/false (12y); the export paths never
+# declared or applied it at all, so filtering the on-screen list by
+# "Graduated" and exporting silently ignored the filter — the export
+# returned every inactive student, not just genuinely graduated ones.
+
+@pytest.mark.asyncio
+async def test_export_csv_respects_graduated_filter(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, school_admin: User, academic_year: AcademicYear,
+):
+    grad_id = (await client.post("/students", json=_student("GRAD001"), headers=auth)).json()["id"]
+    other_id = (await client.post("/students", json=_student("OTH001", first_name="Ama", last_name="Boateng"), headers=auth)).json()["id"]
+    db_session.add(GraduationRecord(
+        school_id=school.id, student_id=uuid.UUID(grad_id), academic_year_id=academic_year.id,
+        graduation_type=GraduationType.GRADUATED,
+        processed_at=datetime(2026, 7, 1), processed_by_id=school_admin.id,
+    ))
+    await db_session.flush()
+    await client.patch(f"/students/{grad_id}", json={"is_active": False}, headers=auth)
+    await client.patch(f"/students/{other_id}", json={"is_active": False}, headers=auth)
+
+    resp = await client.get(
+        "/students/export/custom?fields=admission_number&fmt=csv&graduated=true&active_only=false", headers=auth,
+    )
+    assert resp.status_code == 200
+    rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+    header, data_rows = rows[0], rows[1:]
+    admission_numbers = [r[header.index("Admission No.")] for r in data_rows]
+    assert admission_numbers == ["GRAD001"], "export must match exactly what graduated=true matches on screen"
+
+
+@pytest.mark.asyncio
+async def test_custom_export_respects_graduated_filter(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, school_admin: User, academic_year: AcademicYear,
+):
+    grad_id = (await client.post("/students", json=_student("GRAD002"), headers=auth)).json()["id"]
+    other_id = (await client.post("/students", json=_student("OTH002", first_name="Ama", last_name="Boateng"), headers=auth)).json()["id"]
+    db_session.add(GraduationRecord(
+        school_id=school.id, student_id=uuid.UUID(grad_id), academic_year_id=academic_year.id,
+        graduation_type=GraduationType.GRADUATED,
+        processed_at=datetime(2026, 7, 1), processed_by_id=school_admin.id,
+    ))
+    await db_session.flush()
+    await client.patch(f"/students/{grad_id}", json={"is_active": False}, headers=auth)
+    await client.patch(f"/students/{other_id}", json={"is_active": False}, headers=auth)
+
+    resp = await client.get(
+        "/students/export/custom?fields=admission_number&graduated=true&active_only=false", headers=auth,
+    )
+    assert resp.status_code == 200
+    rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+    header, data_rows = rows[0], rows[1:]
+    admission_numbers = [r[header.index("Admission No.")] for r in data_rows]
+    assert admission_numbers == ["GRAD002"], "export must match exactly what graduated=true matches on screen"
+
+
+# ── Format parity with staff export (services/export_utils.py, services/pdf.py) ──
+
+@pytest.mark.asyncio
+async def test_export_pdf_basic(client: AsyncClient, auth: dict):
+    await client.post("/students", json=_student("ADM001"), headers=auth)
+    resp = await client.get(
+        "/students/export/custom?fields=admission_number,full_name&fmt=pdf", headers=auth,
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_export_excel_basic(client: AsyncClient, auth: dict):
+    from openpyxl import load_workbook
+    await client.post("/students", json=_student("ADM001"), headers=auth)
+    resp = await client.get(
+        "/students/export/custom?fields=admission_number,full_name&fmt=excel", headers=auth,
+    )
+    assert resp.status_code == 200
+    wb = load_workbook(io.BytesIO(resp.content))
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    header = rows[0]
+    assert rows[1][header.index("Admission No.")] == "ADM001"
+
+
+@pytest.mark.asyncio
+async def test_export_rejects_unknown_format(client: AsyncClient, auth: dict):
+    resp = await client.get("/students/export/custom?fields=admission_number&fmt=doc", headers=auth)
+    assert resp.status_code == 422

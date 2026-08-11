@@ -1,21 +1,21 @@
-"""Custom-field staff export — CSV or Excel.
+"""Custom-field staff export — CSV, Excel, or PDF.
 
 Caller selects which columns to include from STAFF_FIELDS.
 All standard filter params (search, gender, category_id, active_only) are respected.
 """
 from __future__ import annotations
-import csv
-import io
 import uuid
+from datetime import datetime, timezone
 from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.school import School, SchoolOwnership
+from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.staff_history import StaffPromotion
+from app.services.export_utils import rows_to_bytes
 from app.services.staff_query import staff_search_condition
 
 
@@ -96,38 +96,12 @@ async def export_staff_custom(
         for m in members
     ]
 
-    return _to_bytes(headers, data_rows, fmt)
-
-
-def _to_bytes(headers: list[str], rows: list[list[str]], fmt: str) -> bytes:
-    if fmt == "excel":
-        try:
-            import openpyxl
-            from openpyxl.styles import Alignment, Font, PatternFill
-        except ImportError as exc:
-            raise RuntimeError("openpyxl is not installed.") from exc
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Staff"
-        hfill = PatternFill("solid", fgColor="D9E1F2")
-        for col, h in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=h)
-            cell.font = Font(bold=True)
-            cell.fill = hfill
-            cell.alignment = Alignment(horizontal="center")
-        for ri, row in enumerate(rows, 2):
-            for ci, val in enumerate(row, 1):
-                ws.cell(row=ri, column=ci, value=val)
-        for col in ws.columns:
-            ws.column_dimensions[col[0].column_letter].width = min(
-                max(len(str(c.value or "")) for c in col) + 4, 50
-            )
-        buf = io.BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
-
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(headers)
-    writer.writerows(rows)
-    return buf.getvalue().encode("utf-8-sig")
+    if fmt == "pdf":
+        from app.services.pdf import render_export_table
+        school = await db.get(School, school_id)
+        return render_export_table(
+            school, "Staff Register", headers, data_rows,
+            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            total=len(data_rows),
+        )
+    return rows_to_bytes(headers, data_rows, fmt, sheet_title="Staff")

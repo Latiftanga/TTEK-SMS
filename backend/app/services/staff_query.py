@@ -1,13 +1,13 @@
 """Shared staff text-search clause.
 
-Used by list_staff (services/staff.py, the on-screen list) and both export
-paths (staff_export.py, staff_custom_export.py) so a search term always
-matches the exact same fields everywhere — name, staff number, category
-name, and position name. Before this was shared, the export paths only
-matched name/staff number: searching by a position or category name (e.g.
-"Bursar") showed matching staff on screen but the export of "what's
-filtered" silently dropped them, since none of their literal names
-contained the search term.
+Used by list_staff (services/staff.py, the on-screen list) and the custom
+export path (staff_custom_export.py) so a search term always matches the
+exact same fields everywhere — name, staff number, category name, and
+position name. Before this was shared, the export path only matched name/
+staff number: searching by a position or category name (e.g. "Bursar")
+showed matching staff on screen but the export of "what's filtered"
+silently dropped them, since none of their literal names contained the
+search term.
 """
 from __future__ import annotations
 

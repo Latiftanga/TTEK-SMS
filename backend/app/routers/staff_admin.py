@@ -1,9 +1,9 @@
-"""Staff register exports and personal permission overrides. Split out of
+"""Staff register export and personal permission overrides. Split out of
 routers/staff.py to stay under the 300-line cap.
 
 ACCESS CONTROL
 --------------
-GET  /staff/export/*                  staff.view
+GET  /staff/export/custom             staff.view
 GET/POST/DELETE /staff/{id}/permissions  school.manage_users
 """
 from __future__ import annotations
@@ -19,31 +19,18 @@ from app.services import staff_permissions as perms_svc
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
-
-@router.get("/export/excel")
-async def export_staff_excel(
-    category_id: uuid.UUID | None = Query(None),
-    active_only: bool = Query(True),
-    search: str | None = Query(None),
-    gender: str | None = Query(None),
-    ids=Depends(require_permission("staff", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Export the staff register as an Excel workbook (.xlsx)."""
-    from app.services.staff_export import export_excel
-    _, school_id = ids
-    xlsx = await export_excel(school_id, db, category_id=category_id, active_only=active_only, search=search, gender=gender)
-    return StreamingResponse(
-        iter([xlsx]),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="staff_register.xlsx"'},
-    )
+_MEDIA_TYPES = {
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+    "csv": "text/csv",
+}
+_EXTENSIONS = {"excel": "xlsx", "pdf": "pdf", "csv": "csv"}
 
 
 @router.get("/export/custom")
 async def export_staff_custom(
     fields: str = Query(""),
-    fmt: str = Query("csv", pattern="^(csv|excel)$"),
+    fmt: str = Query("csv", pattern="^(csv|excel|pdf)$"),
     active_only: bool = Query(True),
     category_id: uuid.UUID | None = Query(None),
     search: str | None = Query(None),
@@ -51,7 +38,11 @@ async def export_staff_custom(
     ids=Depends(require_permission("staff", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Export staff with caller-selected fields as CSV or Excel."""
+    """Export staff with caller-selected fields as CSV, Excel, or PDF —
+    the single staff export path (a fixed-column Excel/PDF quick-export used
+    to exist alongside this; it duplicated exactly what a default field
+    selection here already produces, so it was removed in favour of this
+    one endpoint)."""
     from app.services.staff_custom_export import export_staff_custom as _export
     _, school_id = ids
     field_list = [f.strip() for f in fields.split(",") if f.strip()]
@@ -61,36 +52,10 @@ async def export_staff_custom(
         active_only=active_only, category_id=category_id,
         search=search, gender=gender,
     )
-    if fmt == "excel":
-        return StreamingResponse(
-            iter([data]),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="staff.xlsx"'},
-        )
     return StreamingResponse(
         iter([data]),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="staff.csv"'},
-    )
-
-
-@router.get("/export/pdf")
-async def export_staff_pdf(
-    category_id: uuid.UUID | None = Query(None),
-    active_only: bool = Query(True),
-    search: str | None = Query(None),
-    gender: str | None = Query(None),
-    ids=Depends(require_permission("staff", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Export the staff register as a PDF (A4 landscape)."""
-    from app.services.staff_export import export_pdf
-    _, school_id = ids
-    pdf = await export_pdf(school_id, db, category_id=category_id, active_only=active_only, search=search, gender=gender)
-    return StreamingResponse(
-        iter([pdf]),
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="staff_register.pdf"'},
+        media_type=_MEDIA_TYPES[fmt],
+        headers={"Content-Disposition": f'attachment; filename="staff.{_EXTENSIONS[fmt]}"'},
     )
 
 

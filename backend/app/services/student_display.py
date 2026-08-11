@@ -1,7 +1,7 @@
 """
 Shared read-only display helpers — pure formatting (no DB access, except
-_get_class_map) reused by student.py, student_list.py, student_export.py,
-student_custom_export.py, and services/portal.py.
+_get_class_map) reused by student.py, student_list.py, student_custom_export.py,
+and services/portal.py.
 
 Split out of student.py (was over the 300-line cap).
 """

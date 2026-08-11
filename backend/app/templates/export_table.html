@@ -19,36 +19,20 @@
 <body>
   <div class="school-header">
     <h1>{{ school.name }}</h1>
-    <h2>Staff Register</h2>
+    <h2>{{ title }}</h2>
   </div>
   <div class="meta">Generated: {{ generated_at }} &nbsp;|&nbsp; Total: {{ total }}</div>
 
   <table>
     <thead>
       <tr>
-        <th>#</th>
-        <th>Full Name</th>
-        <th>Staff No.</th>
-        <th>Category</th>
-        {% if show_rank %}<th>Current Rank</th>{% endif %}
-        <th>SSNIT No.</th>
-        <th>Ghana Card</th>
-        <th>Employment</th>
-        <th>Date Joined</th>
+        {% for h in headers %}<th>{{ h }}</th>{% endfor %}
       </tr>
     </thead>
     <tbody>
-      {% for r in rows %}
+      {% for row in rows %}
       <tr>
-        <td>{{ r.no }}</td>
-        <td>{{ r.name }}</td>
-        <td>{{ r.staff_number }}</td>
-        <td>{{ r.category }}</td>
-        {% if show_rank %}<td>{{ r.current_rank }}</td>{% endif %}
-        <td>{{ r.ssnit }}</td>
-        <td>{{ r.ghana_card }}</td>
-        <td>{{ r.employment_type }}</td>
-        <td>{{ r.joined_date }}</td>
+        {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
       </tr>
       {% endfor %}
     </tbody>

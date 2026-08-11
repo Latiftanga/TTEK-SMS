@@ -1,5 +1,6 @@
 """
-Staff register export tests (Excel, PDF, custom CSV/Excel export).
+Staff register export tests — one unified endpoint (/staff/export/custom)
+covering CSV, Excel, and PDF, all with caller-selected fields.
 Run inside Docker: docker compose exec api pytest app/tests/test_staff_export.py -v
 """
 import csv
@@ -23,7 +24,7 @@ def _staff(num: str = "TST001", **kw) -> dict:
 @pytest.mark.asyncio
 async def test_export_excel_basic(client: AsyncClient, auth: dict):
     await client.post("/staff", json=_staff(), headers=auth)
-    resp = await client.get("/staff/export/excel", headers=auth)
+    resp = await client.get("/staff/export/custom?fields=staff_number,full_name&fmt=excel", headers=auth)
     assert resp.status_code == 200
     wb = load_workbook(io.BytesIO(resp.content))
     ws = wb.active
@@ -35,7 +36,7 @@ async def test_export_excel_basic(client: AsyncClient, auth: dict):
 @pytest.mark.asyncio
 async def test_export_pdf_basic(client: AsyncClient, auth: dict):
     await client.post("/staff", json=_staff(), headers=auth)
-    resp = await client.get("/staff/export/pdf", headers=auth)
+    resp = await client.get("/staff/export/custom?fields=staff_number,full_name&fmt=pdf", headers=auth)
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert resp.content.startswith(b"%PDF")
@@ -51,11 +52,17 @@ async def test_custom_export_csv_basic(client: AsyncClient, auth: dict):
     assert data_row[header.index("Staff No.")] == "TST001"
 
 
+@pytest.mark.asyncio
+async def test_export_rejects_unknown_format(client: AsyncClient, auth: dict):
+    resp = await client.get("/staff/export/custom?fields=staff_number&fmt=doc", headers=auth)
+    assert resp.status_code == 422
+
+
 # ── Search parity with the on-screen list (services/staff_query.py) ─────────
 # list_staff() matches a search term against name/staff-number AND
-# category/position name; the export paths used to only check name/staff
+# category/position name; the export path used to only check name/staff
 # number, so filtering the on-screen list by a position or category name
-# would show matches on screen but silently drop them from every export.
+# would show matches on screen but silently drop them from the export.
 
 @pytest.mark.asyncio
 async def test_export_excel_search_matches_position_name(client: AsyncClient, auth: dict, db_session: AsyncSession):
@@ -68,7 +75,7 @@ async def test_export_excel_search_matches_position_name(client: AsyncClient, au
     list_resp = await client.get("/staff?search=Bursar", headers=auth)
     assert [s["staff_number"] for s in list_resp.json()] == ["BUR001"]
 
-    resp = await client.get("/staff/export/excel?search=Bursar", headers=auth)
+    resp = await client.get("/staff/export/custom?fields=staff_number&fmt=excel&search=Bursar", headers=auth)
     wb = load_workbook(io.BytesIO(resp.content))
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))

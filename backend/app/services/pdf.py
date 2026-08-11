@@ -66,3 +66,15 @@ def render_transcript(context: dict) -> bytes:
     tmpl = _env.get_template("transcript.html")
     html_str = tmpl.render(**context)
     return HTML(string=html_str, base_url=str(TEMPLATE_DIR)).write_pdf()
+
+
+def render_export_table(
+    school, title: str, headers: list[str], rows: list[list[str]], generated_at: str, total: int,
+) -> bytes:
+    """Render an arbitrary headers/rows table (a custom export's resolved
+    field selection) to PDF bytes — shared by the staff and student custom
+    export paths so PDF output doesn't need its own entity-specific
+    template the way the old fixed staff-only export did."""
+    tmpl = _env.get_template("export_table.html")
+    html_str = tmpl.render(school=school, title=title, headers=headers, rows=rows, generated_at=generated_at, total=total)
+    return HTML(string=html_str, base_url=str(TEMPLATE_DIR)).write_pdf()

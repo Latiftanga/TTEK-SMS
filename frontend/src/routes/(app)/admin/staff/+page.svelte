@@ -56,7 +56,6 @@
 
   const categoriesQ = createQuery({ queryKey: ['staff-categories'], queryFn: listCategories, staleTime: 5 * 60_000 });
 
-  let exportMenuOpen   = $state(false);
   let customExportOpen = $state(false);
 
   const exportFilterParams = $derived({
@@ -65,13 +64,6 @@
     gender:      genderFilter || undefined,
     category_id: jobFilter || undefined,
   });
-
-  async function doExport(type: 'excel' | 'pdf') {
-    exportMenuOpen = false;
-    const { exportStaffExcel, exportStaffPdf } = await import('$lib/api/staff');
-    if (type === 'excel') await exportStaffExcel(exportFilterParams);
-    else await exportStaffPdf(exportFilterParams);
-  }
 
   function initials(s: StaffSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }
 
@@ -96,35 +88,12 @@
       </p>
     </div>
     <div class="flex gap-2">
-      <div class="relative">
-        <button onclick={() => exportMenuOpen = !exportMenuOpen} class="btn-ghost">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-          </svg>
-          Export
-          <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
-          </svg>
-        </button>
-        {#if exportMenuOpen}
-          <button class="fixed inset-0 z-[5] cursor-default" onclick={() => exportMenuOpen = false} tabindex="-1" aria-hidden="true"></button>
-          <div class="absolute right-0 top-full z-[6] mt-1 min-w-36 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-lg">
-            <button onclick={() => doExport('excel')}
-              class="w-full px-4 py-2.5 text-left text-sm text-[var(--fg)] transition hover:bg-[var(--hover)]">
-              Excel (.xlsx)
-            </button>
-            <button onclick={() => doExport('pdf')}
-              class="w-full px-4 py-2.5 text-left text-sm text-[var(--fg)] transition hover:bg-[var(--hover)]">
-              PDF
-            </button>
-            <div class="my-1 border-t border-[var(--border)]"></div>
-            <button onclick={() => { exportMenuOpen = false; customExportOpen = true; }}
-              class="w-full px-4 py-2.5 text-left text-sm text-[var(--fg)] transition hover:bg-[var(--hover)]">
-              Custom export…
-            </button>
-          </div>
-        {/if}
-      </div>
+      <button onclick={() => customExportOpen = true} class="btn-ghost">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+        </svg>
+        Export
+      </button>
       <button onclick={() => importOpen = true} class="btn-ghost">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>

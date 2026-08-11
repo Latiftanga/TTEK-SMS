@@ -3,7 +3,8 @@
   import { toast } from '$lib/stores/toast';
 
   type EntityType = 'students' | 'staff';
-  type Fmt = 'csv' | 'excel';
+  type Fmt = 'csv' | 'excel' | 'pdf';
+  const FMT_LABEL: Record<Fmt, string> = { excel: 'Excel', csv: 'CSV', pdf: 'PDF' };
 
   interface FieldDef  { key: string; label: string; }
   interface FieldGroup { heading: string; fields: FieldDef[]; }
@@ -119,18 +120,12 @@
     try {
       localStorage.setItem(LS_KEY, JSON.stringify([...selected]));
       const fieldsParam = [...selected].join(',');
-      const ext = fmt === 'excel' ? 'xlsx' : 'csv';
+      const ext = fmt === 'excel' ? 'xlsx' : fmt === 'pdf' ? 'pdf' : 'csv';
 
-      let blob: Blob;
-      if (entityType === 'students') {
-        const { customExportStudents } = await import('$lib/api/students');
-        blob = await customExportStudents({ ...filterParams as any, fields: fieldsParam, fmt });
-      } else {
-        const { customExportStaff } = await import('$lib/api/staff');
-        await customExportStaff({ ...filterParams as any, fields: fieldsParam, fmt });
-        onClose();
-        return;
-      }
+      const blob = entityType === 'students'
+        ? await (await import('$lib/api/students')).customExportStudents({ ...filterParams as any, fields: fieldsParam, fmt })
+        : await (await import('$lib/api/staff')).customExportStaff({ ...filterParams as any, fields: fieldsParam, fmt });
+
       const url = URL.createObjectURL(blob);
       Object.assign(document.createElement('a'), { href: url, download: `${entityType}.${ext}` }).click();
       URL.revokeObjectURL(url);
@@ -197,11 +192,11 @@
     <div class="flex shrink-0 items-center justify-between gap-4 border-t border-[var(--border)] px-6 py-4">
       <!-- Format toggle -->
       <div class="flex items-center gap-1 rounded-xl border border-[var(--border)] p-0.5">
-        {#each (['excel', 'csv'] as Fmt[]) as f}
+        {#each (['excel', 'csv', 'pdf'] as Fmt[]) as f}
           <button onclick={() => fmt = f}
             class="rounded-lg px-3 py-1.5 text-xs font-medium transition
                    {fmt === f ? 'bg-[var(--brand)] text-white' : 'text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
-            {f === 'excel' ? 'Excel' : 'CSV'}
+            {FMT_LABEL[f]}
           </button>
         {/each}
       </div>
@@ -216,7 +211,7 @@
           class="rounded-xl px-5 py-2 text-sm font-semibold text-white transition
                  hover:opacity-90 disabled:opacity-50"
           style="background: var(--brand)">
-          {busy ? 'Exporting…' : `Export ${fmt === 'excel' ? 'Excel' : 'CSV'}`}
+          {busy ? 'Exporting…' : `Export ${FMT_LABEL[fmt]}`}
         </button>
       </div>
     </div>

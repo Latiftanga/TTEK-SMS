@@ -1,22 +1,24 @@
-"""Custom-field student export — CSV or Excel.
+"""Custom-field student export — CSV, Excel, or PDF.
 
 Caller selects which columns to include from STUDENT_FIELDS.
 All standard filter params (search, class_id, gender, level, etc.) are respected.
 """
 from __future__ import annotations
-import csv
-import io
 import uuid
+from datetime import datetime, timezone
 from typing import Callable
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import Class
+from app.models.school import School
 from app.models.students import (
     Guardian, Student, StudentClassAssignment, StudentGuardian, TermEnrollment,
 )
+from app.services.export_utils import rows_to_bytes
 from app.services.student_display import _class_display_name, _display_name, _get_class_map
+from app.services.student_query import graduated_condition
 
 # Keys of fields that require the class or guardian lookup queries.
 _CLASS_FIELDS    = {"current_class", "level"}
@@ -63,6 +65,7 @@ async def export_students_custom(
     level: str | None = None,
     year_group: int | None = None,
     scope: set[uuid.UUID] | None = None,
+    graduated: bool | None = None,
 ) -> bytes:
     # Resolve requested field keys against registry (preserve order, skip unknown)
     resolved = [(k, STUDENT_FIELDS[k]) for k in fields if k in STUDENT_FIELDS]
@@ -71,6 +74,8 @@ async def export_students_custom(
 
     # ── Query ─────────────────────────────────────────────────────────────────
     q = select(Student).where(Student.school_id == school_id)
+    if graduated is not None:
+        q = q.where(graduated_condition(school_id, graduated))
     if scope is not None:
         # Restrict to students the caller is directly responsible for — see
         # core/student_scope.py::resolve_student_view_scope(). Same gate
@@ -137,38 +142,12 @@ async def export_students_custom(
         for s in students
     ]
 
-    return _to_bytes(headers, data_rows, fmt)
-
-
-def _to_bytes(headers: list[str], rows: list[list[str]], fmt: str) -> bytes:
-    if fmt == "excel":
-        try:
-            import openpyxl
-            from openpyxl.styles import Alignment, Font, PatternFill
-        except ImportError as exc:
-            raise RuntimeError("openpyxl is not installed.") from exc
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Students"
-        hfill = PatternFill("solid", fgColor="D9E1F2")
-        for col, h in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=h)
-            cell.font = Font(bold=True)
-            cell.fill = hfill
-            cell.alignment = Alignment(horizontal="center")
-        for ri, row in enumerate(rows, 2):
-            for ci, val in enumerate(row, 1):
-                ws.cell(row=ri, column=ci, value=val)
-        for col in ws.columns:
-            ws.column_dimensions[col[0].column_letter].width = min(
-                max(len(str(c.value or "")) for c in col) + 4, 50
-            )
-        buf = io.BytesIO()
-        wb.save(buf)
-        return buf.getvalue()
-
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(headers)
-    writer.writerows(rows)
-    return buf.getvalue().encode("utf-8-sig")
+    if fmt == "pdf":
+        from app.services.pdf import render_export_table
+        school = await db.get(School, school_id)
+        return render_export_table(
+            school, "Student Register", headers, data_rows,
+            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            total=len(data_rows),
+        )
+    return rows_to_bytes(headers, data_rows, fmt, sheet_title="Students")

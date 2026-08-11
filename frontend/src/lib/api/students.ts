@@ -348,12 +348,9 @@ export const importStudents = (file: File): Promise<ImportBatchResult> => {
   return api.post('/students/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data);
 };
 
-export const exportStudentsCsv = (params: StudentListParams = {}): Promise<Blob> =>
-  api.get('/students/export', { params, responseType: 'blob' }).then(r => r.data);
-
 export interface StudentCustomExportParams extends Omit<StudentListParams, 'limit' | 'skip'> {
   fields: string;
-  fmt: 'csv' | 'excel';
+  fmt: 'csv' | 'excel' | 'pdf';
 }
 
 export const customExportStudents = (params: StudentCustomExportParams): Promise<Blob> =>

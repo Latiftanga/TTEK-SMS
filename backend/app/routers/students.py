@@ -10,7 +10,7 @@ ACCESS CONTROL
 --------------
 GET  /students                                    students.view
 POST /students                                     students.create
-GET  /students/export, /export/custom              students.view
+GET  /students/export/custom                       students.view
 GET  /students/import/template                     students.create
 POST /students/import                              students.create
 
@@ -95,38 +95,18 @@ async def list_students(
     return items
 
 
-@router.get("/export")
-async def export_students(
-    active_only: bool = Query(True),
-    class_id: uuid.UUID | None = Query(None),
-    term_id: uuid.UUID | None = Query(None),
-    gender: str | None = Query(None),
-    level: str | None = Query(None),
-    year_group: int | None = Query(None),
-    search: str | None = Query(None),
-    ids=Depends(require_permission("students", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    from app.services.student_export import export_students_csv
-    user_id, school_id = ids
-    scope = await resolve_student_view_scope(user_id, school_id, db)
-    csv_bytes = await export_students_csv(
-        school_id, db,
-        active_only=active_only, class_id=class_id, term_id=term_id,
-        gender=gender, level=level, year_group=year_group, search=search,
-        scope=scope,
-    )
-    return StreamingResponse(
-        iter([csv_bytes]),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="students.csv"'},
-    )
+_MEDIA_TYPES = {
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+    "csv": "text/csv",
+}
+_EXTENSIONS = {"excel": "xlsx", "pdf": "pdf", "csv": "csv"}
 
 
 @router.get("/export/custom")
 async def export_students_custom(
     fields: str = Query(""),
-    fmt: str = Query("csv", pattern="^(csv|excel)$"),
+    fmt: str = Query("csv", pattern="^(csv|excel|pdf)$"),
     active_only: bool = Query(True),
     class_id: uuid.UUID | None = Query(None),
     term_id: uuid.UUID | None = Query(None),
@@ -134,10 +114,15 @@ async def export_students_custom(
     level: str | None = Query(None),
     year_group: int | None = Query(None),
     search: str | None = Query(None),
+    graduated: bool | None = Query(None),
     ids=Depends(require_permission("students", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Export students with caller-selected fields as CSV or Excel."""
+    """Export students with caller-selected fields as CSV, Excel, or PDF —
+    the single student export path (a fixed-column CSV-only quick-export
+    used to exist alongside this; it duplicated exactly what a default
+    field selection here already produces, so it was removed in favour of
+    this one endpoint)."""
     from app.services.student_custom_export import export_students_custom as _export
     user_id, school_id = ids
     scope = await resolve_student_view_scope(user_id, school_id, db)
@@ -147,18 +132,12 @@ async def export_students_custom(
         fields=field_list, fmt=fmt,
         active_only=active_only, class_id=class_id, term_id=term_id,
         gender=gender, level=level, year_group=year_group, search=search,
-        scope=scope,
+        scope=scope, graduated=graduated,
     )
-    if fmt == "excel":
-        return StreamingResponse(
-            iter([data]),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": 'attachment; filename="students.xlsx"'},
-        )
     return StreamingResponse(
         iter([data]),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="students.csv"'},
+        media_type=_MEDIA_TYPES[fmt],
+        headers={"Content-Disposition": f'attachment; filename="students.{_EXTENSIONS[fmt]}"'},
     )
 
 

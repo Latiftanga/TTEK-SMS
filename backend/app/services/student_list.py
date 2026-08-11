@@ -8,13 +8,13 @@ import uuid
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.documents import GraduationRecord, GraduationType
 from app.models.academic import Class
 from app.models.students import Student, TermEnrollment
 from app.schemas.students import StudentSummary
 from app.services.class_progression import CLASS_LEVEL_ORDER
 from app.services.student import _to_summary
 from app.services.student_display import _active_class_assignment_subquery, _get_class_map
+from app.services.student_query import graduated_condition
 
 
 async def list_students(
@@ -38,13 +38,7 @@ async def list_students(
     q = select(Student).where(Student.school_id == school_id)
 
     if graduated is not None:
-        graduated_ids = select(GraduationRecord.student_id).where(
-            GraduationRecord.school_id == school_id,
-            GraduationRecord.graduation_type == GraduationType.GRADUATED,
-        )
-        # Lifetime check, not scoped to one academic year — a student graduated
-        # in any past year should still surface under this filter.
-        q = q.where(Student.id.in_(graduated_ids) if graduated else Student.id.not_in(graduated_ids))
+        q = q.where(graduated_condition(school_id, graduated))
 
     if scope is not None:
         # Restrict to students the caller is directly responsible for — see
