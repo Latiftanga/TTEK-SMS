@@ -9,13 +9,14 @@ import io
 import uuid
 from typing import Callable
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.school import School, SchoolOwnership
 from app.models.staff import StaffMember
 from app.models.staff_history import StaffPromotion
+from app.services.staff_query import staff_search_condition
 
 
 def _full_name(m: StaffMember) -> str:
@@ -86,12 +87,7 @@ async def export_staff_custom(
     if gender:
         q = q.where(StaffMember.gender == gender)
     if search:
-        pat = f"%{search}%"
-        q = q.where(or_(
-            StaffMember.first_name.ilike(pat),
-            StaffMember.last_name.ilike(pat),
-            StaffMember.staff_number.ilike(pat),
-        ))
+        q = q.where(staff_search_condition(search))
     members = list(await db.scalars(q))
 
     headers = [label for _, (label, _) in resolved]

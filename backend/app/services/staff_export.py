@@ -10,13 +10,14 @@ import io
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.school import School, SchoolOwnership
 from app.models.staff import StaffMember
 from app.models.staff_history import StaffPromotion
+from app.services.staff_query import staff_search_condition
 
 
 async def _load_staff(
@@ -44,12 +45,7 @@ async def _load_staff(
     if gender:
         q = q.where(StaffMember.gender == gender)
     if search:
-        s = f"%{search}%"
-        q = q.where(or_(
-            StaffMember.first_name.ilike(s),
-            StaffMember.last_name.ilike(s),
-            StaffMember.staff_number.ilike(s),
-        ))
+        q = q.where(staff_search_condition(search))
     members = list(await db.scalars(q))
     return school, members
 
