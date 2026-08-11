@@ -9,9 +9,11 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select
+
 from app.models.academic import AcademicTerm, Class
 from app.models.assessments import Assessment, AssessmentType, Score
-from app.models.school import School
+from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.students import Student
 
 
@@ -221,6 +223,92 @@ async def test_outbox_detects_conflict(
     result = resp.json()[0]
     assert result["status"] == "conflict"
     assert result["conflict_id"] is not None
+
+
+# ── Cross-school FK rejection ────────────────────────────────────────────────
+# assessment_id/student_id come straight from the offline outbox payload with
+# no ownership check before this fix — a lookup that found no existing Score
+# at this school (because the ids belonged to a different school) fell
+# through to CREATING a new Score row stamped with the caller's own
+# school_id but pointing at another school's real Assessment/Student.
+
+async def _other_school(db_session: AsyncSession) -> School:
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other = School(
+        name="Other Sync School", school_code="OTHER_SYNC", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other)
+    await db_session.flush()
+    return other
+
+
+@pytest.mark.asyncio
+async def test_outbox_rejects_cross_school_assessment_id(
+    client: AsyncClient, auth: dict, student: Student, db_session: AsyncSession,
+):
+    other = await _other_school(db_session)
+    from app.models.academic import AcademicTerm as _AT, AcademicYear, Class as _Cls
+    from app.models.academic import SubjectCatalogue, SubjectType, Subject, SchoolLevel
+
+    year = AcademicYear(school_id=other.id, name="2024/2025", start_date=date(2024, 9, 1), end_date=date(2025, 7, 31), is_current=True)
+    db_session.add(year)
+    await db_session.flush()
+    term = _AT(school_id=other.id, academic_year_id=year.id, term_number=1, name="Term 1",
+               start_date=date(2024, 9, 1), end_date=date(2024, 12, 15), is_current=True)
+    cls = _Cls(school_id=other.id, level="SHS", year_group=1, stream="A", is_active=True)
+    cat = SubjectCatalogue(name="Foreign Subj", code="FOR_SYNC", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add_all([term, cls, cat])
+    await db_session.flush()
+    subj = Subject(school_id=other.id, catalogue_id=cat.id, code="FORSUB", name="Foreign Subj", is_active=True)
+    atype = AssessmentType(school_id=other.id, name="Foreign Test", code="FT_SYNC", weight=Decimal("30.00"))
+    db_session.add_all([subj, atype])
+    await db_session.flush()
+    foreign_assessment = Assessment(
+        school_id=other.id, class_id=cls.id, subject_id=subj.id, assessment_type_id=atype.id,
+        academic_term_id=term.id, description="Foreign", recorded_date=date.today(),
+        max_score=Decimal("100.00"),
+    )
+    db_session.add(foreign_assessment)
+    await db_session.flush()
+
+    offline_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    resp = await client.post("/sync/outbox",
+        json=_outbox_payload(foreign_assessment, student, "78.00", "ob-xschool-1", offline_ts),
+        headers=auth,
+    )
+    assert resp.status_code == 422
+
+    leaked = await db_session.scalar(
+        select(Score).where(Score.assessment_id == foreign_assessment.id, Score.student_id == student.id)
+    )
+    assert leaked is None
+
+
+@pytest.mark.asyncio
+async def test_outbox_rejects_cross_school_student_id(
+    client: AsyncClient, auth: dict, assessment: Assessment, db_session: AsyncSession,
+):
+    other = await _other_school(db_session)
+    foreign_student = Student(
+        school_id=other.id, admission_number="FOR-001",
+        first_name="Foreign", last_name="Student", is_active=True,
+    )
+    db_session.add(foreign_student)
+    await db_session.flush()
+
+    offline_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    resp = await client.post("/sync/outbox",
+        json=_outbox_payload(assessment, foreign_student, "78.00", "ob-xschool-2", offline_ts),
+        headers=auth,
+    )
+    assert resp.status_code == 422
+
+    leaked = await db_session.scalar(
+        select(Score).where(Score.assessment_id == assessment.id, Score.student_id == foreign_student.id)
+    )
+    assert leaked is None
 
 
 # ── Conflict list ─────────────────────────────────────────────────────────────

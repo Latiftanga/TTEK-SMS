@@ -22,8 +22,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.assessments import Score, ScoreAuditLog
+from app.models.assessments import Assessment, Score, ScoreAuditLog
 from app.models.documents import ConflictResolution, OfflineSyncConflict, OutboxProcessedItem
+from app.models.students import Student
 from app.schemas.sync import (
     ConflictRead, ConflictResolveRequest,
     OutboxItem, OutboxItemResult, OutboxScoreData,
@@ -34,12 +35,32 @@ def _conflict_read(c: OfflineSyncConflict) -> ConflictRead:
     return ConflictRead.model_validate(c)
 
 
+async def _assert_score_target_in_school(
+    data: OutboxScoreData, school_id: uuid.UUID, db: AsyncSession
+) -> None:
+    """assessment_id/student_id come straight from the offline outbox payload
+    (or, for a conflict resolve, from previously-stored client_data/caller-
+    supplied merged_data) — nothing upstream verifies they belong to the
+    syncing user's own school. Without this, a lookup that finds no existing
+    Score at this school (because the ids are actually a different school's)
+    falls through to creating a brand-new Score row stamped with the
+    caller's own school_id but pointing via FK at another school's real
+    Assessment/Student — corrupting their data with a fabricated score."""
+    assessment = await db.get(Assessment, data.assessment_id)
+    if not assessment or assessment.school_id != school_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "assessment_id not found for this school.")
+    student = await db.get(Student, data.student_id)
+    if not student or student.school_id != school_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "student_id not found for this school.")
+
+
 async def _apply_score(
     data: OutboxScoreData,
     school_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> None:
+    await _assert_score_target_in_school(data, school_id, db)
     now = datetime.now(timezone.utc)
     existing = await db.scalar(
         select(Score).where(

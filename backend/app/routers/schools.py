@@ -17,13 +17,22 @@ GET  /schools/me/positions         Authenticated — list positions for caller's
 PATCH /schools/me                  Requires 'school.edit' permission
 POST /schools/me/logo              Requires 'school.edit' permission
 POST /schools                      Superadmin only (require_superadmin)
-GET  /schools                      Any authenticated user
-GET  /schools/{id}                 Any authenticated user
+GET  /schools                      Superadmin only — lists every school platform-wide
+GET  /schools/{id}                 Superadmin only (legacy — use /me for self-service)
 PATCH /schools/{id}                Superadmin only (legacy — use /me for self-service)
 POST /schools/{id}/logo            Superadmin only
-PUT  /schools/{id}/config          Requires 'school.edit' permission
-GET  /schools/{id}/config          Any authenticated user
-PUT  /schools/{id}/sms-config      Requires 'school.edit' permission
+PUT  /schools/{id}/config          Superadmin only (legacy — use /me self-service where it exists)
+GET  /schools/{id}/config          Superadmin only
+PUT  /schools/{id}/sms-config      Superadmin only
+
+NOTE: the {id}-path endpoints above used to be gated by require_auth /
+require_permission("school", "edit") — that only checks the CALLER's own
+permission/school, never that the path {id} matches the caller's own
+school_id, so any staff member holding school.edit at their own school
+could read/edit ANY other school's profile, config, or SMS credentials by
+substituting a different UUID in the path. Since the frontend only ever
+calls the /me equivalents (confirmed: no {id}-path call site exists), these
+are now superadmin-only — the same fix already applied to POST {id}/logo.
 """
 from __future__ import annotations
 
@@ -215,30 +224,32 @@ async def list_schools(
     active_only: bool = Query(True, description="Exclude deactivated schools"),
     limit: int = Query(100, ge=1, le=500, description="Maximum results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
-    _ids: tuple = Depends(require_auth),
+    _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """List schools with pagination.  Superadmin sees all; school users see only their own."""
+    """List every school on the platform, paginated. Superadmin only — a
+    school's own users already have everything they need via /schools/me."""
     return await school_svc.list_schools(db, active_only=active_only, limit=limit, offset=offset)
 
 
 @router.get("/{school_id}", response_model=SchoolRead)
 async def get_school(
     school_id: uuid.UUID,
-    _ids: tuple = Depends(require_auth),
+    _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Fetch a single school by its UUID."""
+    """Fetch a single school by its UUID. Superadmin only — use /schools/me
+    for the caller's own school."""
     return await school_svc.get_school(school_id, db)
 
 
-# ── School updates (requires 'school.edit' permission) ───────────────────────
+# ── School updates (superadmin only — see module docstring) ──────────────────
 
 @router.patch("/{school_id}", response_model=SchoolRead)
 async def update_school(
     school_id: uuid.UUID,
     req: SchoolUpdate,
-    _ids: tuple = Depends(require_permission("school", "edit")),
+    _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
     """Update school profile fields.  school_code and school_type cannot be changed."""
@@ -265,7 +276,7 @@ async def upload_logo(
 async def set_config(
     school_id: uuid.UUID,
     req: SchoolConfigSet,
-    _ids: tuple = Depends(require_permission("school", "edit")),
+    _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
     """Create or update a single config key-value pair for the school."""
@@ -275,7 +286,7 @@ async def set_config(
 @router.get("/{school_id}/config")
 async def get_config(
     school_id: uuid.UUID,
-    _ids: tuple = Depends(require_auth),
+    _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all config key-value pairs for the school as a JSON object."""
@@ -286,7 +297,7 @@ async def get_config(
 async def upsert_sms_config(
     school_id: uuid.UUID,
     req: SmsConfigCreate,
-    _ids: tuple = Depends(require_permission("school", "edit")),
+    _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
     """Create or update the SMS provider configuration for the school."""

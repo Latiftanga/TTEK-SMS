@@ -2,7 +2,7 @@
 ARQ job: bulk_generate_report_cards
 
 Generates one PDF per student in a class for a given term, zips them,
-and writes the ZIP to /uploads/bulk/{job_id}.zip.
+and writes the ZIP to /uploads/bulk/{school_id}/{job_id}.zip.
 
 The API router queues this job and returns the job_id.
 The download endpoint streams the ZIP once it exists.
@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.academic import AcademicTerm
+from app.models.academic import AcademicTerm, Class
 from app.models.students import StudentClassAssignment, TermEnrollment
 from app.services.pdf import render_report_card
 from app.services.report_card import assemble
@@ -54,6 +54,14 @@ async def _run(
     user_id: uuid.UUID,
 ) -> dict:
     term = await db.get(AcademicTerm, academic_term_id)
+    cls = await db.get(Class, class_id)
+    if not term or term.school_id != school_id or not cls or cls.school_id != school_id:
+        # academic_term_id/class_id come straight from the request body — a
+        # bogus or cross-school id must not crash the worker (a None term
+        # would otherwise raise AttributeError on term.academic_year_id
+        # below) or silently run against another school's term/class.
+        return {"job_id": job_id, "generated": 0, "failed": 0}
+
     enrollments = (await db.scalars(
         select(TermEnrollment)
         .join(
@@ -87,7 +95,11 @@ async def _run(
                 zf.writestr(f"error_{te.student_id}.txt", str(exc))
                 failed += 1
 
-    bulk_dir = Path(settings.local_upload_dir) / "bulk"
+    # Namespaced by school_id — download_bulk_report() builds this same path
+    # from the CALLER's own school_id, so a job_id from another school (even
+    # if guessed/leaked) resolves to a path that was never written and 404s,
+    # rather than streaming a different school's full class roster + scores.
+    bulk_dir = Path(settings.local_upload_dir) / "bulk" / str(school_id)
     bulk_dir.mkdir(parents=True, exist_ok=True)
     zip_path = bulk_dir / f"{job_id}.zip"
     zip_path.write_bytes(zip_buffer.getvalue())

@@ -7,10 +7,51 @@ import io
 import pytest
 from httpx import AsyncClient
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import hash_password
 from app.core.config import settings
-from app.models.school import School
+from app.models.auth import LoginType, StaffPosition, User
+from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
+
+
+async def _login_as_head(client: AsyncClient, auth: dict, db_session: AsyncSession, school: School) -> dict:
+    """Create a real (non-superadmin) staff login holding HEAD — which grants
+    school.edit — to prove the {school_id}-path endpoints reject a normal
+    school admin, not just a superadmin. The default `auth` fixture is
+    itself a superadmin (see conftest.py::school_admin), so it can't be used
+    to test this."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == "HEAD"))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post("/staff", json={
+        "staff_number": "TST-HEAD", "first_name": "Test", "last_name": "Head",
+    }, headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
+
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email="head@presec-test.edu.gh",
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": "head@presec-test.edu.gh", "password": "Whatever123!",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+async def _other_school(db_session: AsyncSession) -> School:
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other = School(
+        name="Other School Router Test", school_code="OTHER_SCH_RT", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other)
+    await db_session.flush()
+    return other
 
 
 def _tiny_png(color: str) -> bytes:
@@ -107,3 +148,72 @@ def test_logo_url_cache_busting():
     assert _logo_url(None, t1) is None, "no logo_path means no URL, cache-buster or not"
     assert _logo_url("logos/school.webp") == f"{settings.app_base_url.rstrip('/')}/uploads/logos/school.webp", \
         "updated_at is optional — every current caller passes it, but omitting it must still degrade to an unbusted URL"
+
+
+# ── {school_id}-path endpoints must reject a normal (non-superadmin) caller ──
+# Previously gated by require_auth/require_permission("school","edit"), which
+# only checks the CALLER's own permission/school and never that the path id
+# matches — a school.edit holder could read/edit/list ANY school by
+# substituting a different UUID. Now superadmin-only, matching the existing
+# POST /{school_id}/logo convention. The frontend never calls these — only
+# /schools/me and friends — so this is a pure lockdown, no behaviour lost.
+
+@pytest.mark.asyncio
+async def test_get_school_by_id_rejects_non_superadmin(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    other = await _other_school(db_session)
+    resp = await client.get(f"/schools/{other.id}", headers=head_auth)
+    assert resp.status_code == 403
+
+    own_resp = await client.get(f"/schools/{school.id}", headers=head_auth)
+    assert own_resp.status_code == 403, "even the caller's OWN school_id must 403 here — /schools/me is the self-service path"
+
+
+@pytest.mark.asyncio
+async def test_update_school_by_id_rejects_non_superadmin(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    other = await _other_school(db_session)
+    resp = await client.patch(f"/schools/{other.id}", json={"name": "Hijacked"}, headers=head_auth)
+    assert resp.status_code == 403
+
+    await db_session.refresh(other)
+    assert other.name == "Other School Router Test"
+
+
+@pytest.mark.asyncio
+async def test_list_schools_rejects_non_superadmin(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    resp = await client.get("/schools", headers=head_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_school_config_by_id_rejects_non_superadmin(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    other = await _other_school(db_session)
+    put_resp = await client.put(
+        f"/schools/{other.id}/config", json={"key": "timezone", "value": "hijacked"}, headers=head_auth,
+    )
+    assert put_resp.status_code == 403
+    get_resp = await client.get(f"/schools/{other.id}/config", headers=head_auth)
+    assert get_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_sms_config_by_id_rejects_non_superadmin(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    other = await _other_school(db_session)
+    resp = await client.put(f"/schools/{other.id}/sms-config", json={
+        "provider": "ARKESEL", "api_key": "hijacked-key",
+    }, headers=head_auth)
+    assert resp.status_code == 403

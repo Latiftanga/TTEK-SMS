@@ -126,14 +126,24 @@ async def register_subjects(
     resolved_reason = await check_term_lock_override(term.id, override_reason, user_id, db)
     for item in items:
         if not await class_subject_exists(sca.class_id, item.subject_id, school_id, db):
-            subject = await db.get(Subject, item.subject_id)
+            # Scoped by school_id, not a bare db.get() — item.subject_id is
+            # caller-supplied, and an unscoped lookup would leak another
+            # school's private subject name into this 422's error message.
+            subject = await db.scalar(
+                select(Subject).where(Subject.id == item.subject_id, Subject.school_id == school_id)
+            )
             name = subject.name if subject else str(item.subject_id)
             raise HTTPException(
                 status_code=422,
                 detail=f"'{name}' is not assigned to this student's class.",
             )
         if not await subject_teacher_assigned(sca.class_id, item.subject_id, term.academic_year_id, school_id, db):
-            subject = await db.get(Subject, item.subject_id)
+            # Scoped by school_id, not a bare db.get() — item.subject_id is
+            # caller-supplied, and an unscoped lookup would leak another
+            # school's private subject name into this 422's error message.
+            subject = await db.scalar(
+                select(Subject).where(Subject.id == item.subject_id, Subject.school_id == school_id)
+            )
             name = subject.name if subject else str(item.subject_id)
             raise HTTPException(
                 status_code=422,

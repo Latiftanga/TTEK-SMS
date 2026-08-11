@@ -46,10 +46,13 @@ async def _make_enrollment(
     return te
 
 
-def _read_zip_names(job_id: str) -> list[str]:
-    zip_path = Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip"
+def _zip_path(school_id: uuid.UUID, job_id: str) -> Path:
+    return Path(settings.local_upload_dir) / "bulk" / str(school_id) / f"{job_id}.zip"
+
+
+def _read_zip_names(school_id: uuid.UUID, job_id: str) -> list[str]:
     import zipfile
-    with zipfile.ZipFile(zip_path) as zf:
+    with zipfile.ZipFile(_zip_path(school_id, job_id)) as zf:
         return zf.namelist()
 
 
@@ -76,11 +79,11 @@ async def test_bulk_generate_report_cards_creates_zip_for_every_student(
     )
     try:
         assert result == {"job_id": job_id, "generated": 2, "failed": 0}
-        names = _read_zip_names(job_id)
+        names = _read_zip_names(school.id, job_id)
         assert len(names) == 2
         assert all(name.endswith(".pdf") for name in names)
     finally:
-        (Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip").unlink(missing_ok=True)
+        _zip_path(school.id, job_id).unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -119,10 +122,10 @@ async def test_bulk_generate_report_cards_excludes_withdrawn_student(
     )
     try:
         assert result == {"job_id": job_id, "generated": 1, "failed": 0}
-        names = _read_zip_names(job_id)
+        names = _read_zip_names(school.id, job_id)
         assert len(names) == 1
     finally:
-        (Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip").unlink(missing_ok=True)
+        _zip_path(school.id, job_id).unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -159,8 +162,61 @@ async def test_bulk_generate_report_cards_isolates_a_single_student_failure(
     )
     try:
         assert result == {"job_id": job_id, "generated": 1, "failed": 1}
-        names = _read_zip_names(job_id)
+        names = _read_zip_names(school.id, job_id)
         assert any(name.endswith(".pdf") for name in names)
         assert any(name.startswith("error_") for name in names)
     finally:
-        (Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip").unlink(missing_ok=True)
+        _zip_path(school.id, job_id).unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_bulk_generate_report_cards_rejects_bogus_term_without_crashing(
+    db_session: AsyncSession, school: School, school_class: Class, school_admin: User,
+):
+    """academic_term_id comes straight from the request body — a nonexistent
+    id used to crash the ARQ worker (term.academic_year_id on a None term)
+    instead of failing cleanly. No zip should be written either."""
+    job_id = f"test-{uuid.uuid4()}"
+    result = await _run(
+        db_session, job_id=job_id, class_id=school_class.id,
+        academic_term_id=uuid.uuid4(), school_id=school.id,
+        user_id=school_admin.id,
+    )
+    assert result == {"job_id": job_id, "generated": 0, "failed": 0}
+    assert not _zip_path(school.id, job_id).exists()
+
+
+@pytest.mark.asyncio
+async def test_bulk_generate_report_cards_rejects_cross_school_term(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_term: AcademicTerm, school_admin: User, student: Student,
+):
+    """A term/class belonging to a DIFFERENT school must not be usable here,
+    even though the resulting enrollment query would return zero rows for it
+    either way — this proves the explicit ownership check, not just the
+    incidental emptiness of the join."""
+    from app.models.school import GhanaDistrict, GhanaRegion, SchoolType
+    from sqlalchemy import select
+
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other = School(
+        name="Other Bulk School", school_code="OTHER_BULK", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other)
+    await db_session.flush()
+
+    await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
+
+    job_id = f"test-{uuid.uuid4()}"
+    # Real term/class, but owned by `school` — passed here as if `other` were
+    # the caller's school. Must be rejected even though academic_term_id and
+    # class_id both look like real, existing rows.
+    result = await _run(
+        db_session, job_id=job_id, class_id=school_class.id,
+        academic_term_id=academic_term.id, school_id=other.id,
+        user_id=school_admin.id,
+    )
+    assert result == {"job_id": job_id, "generated": 0, "failed": 0}
+    assert not _zip_path(other.id, job_id).exists()

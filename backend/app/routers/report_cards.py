@@ -206,7 +206,13 @@ async def download_bulk_report(
     job_id: str,
     auth=Depends(require_permission("assessments", "view")),
 ):
-    zip_path = Path(settings.local_upload_dir) / "bulk" / f"{job_id}.zip"
+    # Path is built from the CALLER's own school_id, never a client-supplied
+    # one — bulk_report_job.py writes into this same school-namespaced
+    # directory, so a job_id belonging to another school (job_id alone gives
+    # no ownership signal) resolves to a path that was never written here
+    # and cleanly 404s instead of streaming a different school's report cards.
+    _user_id, school_id = auth
+    zip_path = Path(settings.local_upload_dir) / "bulk" / str(school_id) / f"{job_id}.zip"
     if not zip_path.exists():
         from fastapi import HTTPException
         raise HTTPException(404, "Bulk report not ready or job ID not found.")
