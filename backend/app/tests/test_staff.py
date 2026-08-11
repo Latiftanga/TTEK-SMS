@@ -78,6 +78,34 @@ async def _seed_rank(db_session: AsyncSession) -> tuple[str, str]:
     return str(cat.id), str(rank.id)
 
 
+async def _other_school_rank(db_session: AsyncSession) -> tuple[str, str]:
+    """Create a second school with its own PRIVATE (non-template) category +
+    rank — mirrors _other_school_position_id, for testing the cross-school
+    ownership gap fixed in staff_category.py/staff_leave.py. Returns
+    (category_id, rank_id)."""
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Other Rank School", school_code="OTHER_RANK", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+    cat = StaffCategory(
+        school_id=other_school.id, name="Foreign Category", code="FOREIGNCAT",
+        staff_type=StaffType.TEACHING, is_template=False, is_active=True,
+    )
+    db_session.add(cat)
+    await db_session.flush()
+    rank = StaffRank(
+        school_id=other_school.id, category_id=cat.id, title="Foreign Rank",
+        is_template=False, is_active=True,
+    )
+    db_session.add(rank)
+    await db_session.flush()
+    return str(cat.id), str(rank.id)
+
+
 def _staff_payload(**overrides) -> dict:
     base = {
         "staff_number": "TST001",
@@ -323,6 +351,72 @@ async def test_promotion_invalid_rank(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
+async def test_record_promotion_rejects_cross_school_to_rank(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    """to_rank_id referencing a different school's private rank must 404 —
+    without this, a promotion could silently reference another school's
+    private StaffRank."""
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    _, foreign_rank_id = await _other_school_rank(db_session)
+
+    resp = await client.post(f"/staff/{staff_id}/promotions", json={
+        "to_rank_id": foreign_rank_id,
+        "effective_date": "2024-01-15",
+    }, headers=auth)
+    assert resp.status_code == 404
+
+    list_resp = await client.get(f"/staff/{staff_id}/promotions", headers=auth)
+    assert list_resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_record_promotion_rejects_cross_school_from_rank(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    """from_rank_id referencing a different school's private rank must 404,
+    even when to_rank_id is a valid shared template."""
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    _, own_rank_id = await _seed_rank(db_session)
+    _, foreign_rank_id = await _other_school_rank(db_session)
+
+    resp = await client.post(f"/staff/{staff_id}/promotions", json={
+        "from_rank_id": foreign_rank_id,
+        "to_rank_id": own_rank_id,
+        "effective_date": "2024-01-15",
+    }, headers=auth)
+    assert resp.status_code == 404
+
+    list_resp = await client.get(f"/staff/{staff_id}/promotions", headers=auth)
+    assert list_resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_update_promotion_rejects_cross_school_rank(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    """PATCH on an existing promotion with a cross-school to_rank_id must
+    404 and leave the promotion's own rank unchanged."""
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    _, own_rank_id = await _seed_rank(db_session)
+    _, foreign_rank_id = await _other_school_rank(db_session)
+
+    create_resp = await client.post(f"/staff/{staff_id}/promotions", json={
+        "to_rank_id": own_rank_id,
+        "effective_date": "2024-01-15",
+    }, headers=auth)
+    promotion_id = create_resp.json()["id"]
+
+    resp = await client.patch(f"/staff/{staff_id}/promotions/{promotion_id}", json={
+        "to_rank_id": foreign_rank_id,
+    }, headers=auth)
+    assert resp.status_code == 404
+
+    list_resp = await client.get(f"/staff/{staff_id}/promotions", headers=auth)
+    assert list_resp.json()[0]["to_rank_id"] == own_rank_id
+
+
+@pytest.mark.asyncio
 async def test_list_promotions(client: AsyncClient, auth: dict, db_session: AsyncSession):
     staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
     _, rank_id = await _seed_rank(db_session)
@@ -336,6 +430,50 @@ async def test_list_promotions(client: AsyncClient, auth: dict, db_session: Asyn
     promos = resp.json()
     assert len(promos) == 1
     assert promos[0]["to_rank_title"] == "Superintendent I"
+
+
+# ── Categories & Ranks ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_rank_rejects_cross_school_category(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    """POST /staff/ranks with category_id from a different school's private
+    category must 404, not silently create a rank under it."""
+    foreign_category_id, _ = await _other_school_rank(db_session)
+
+    resp = await client.post("/staff/ranks", json={
+        "category_id": foreign_category_id,
+        "title": "Leaked Rank",
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_ranks_rejects_cross_school_category(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    """GET /staff/ranks?category_id=<other school's private category> must
+    404 rather than silently returning that other school's ranks."""
+    foreign_category_id, _ = await _other_school_rank(db_session)
+
+    resp = await client.get(
+        "/staff/ranks", params={"category_id": foreign_category_id}, headers=auth
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_rank_allowed_for_own_category(
+    client: AsyncClient, auth: dict, db_session: AsyncSession
+):
+    category_id, _ = await _seed_rank(db_session)
+    resp = await client.post("/staff/ranks", json={
+        "category_id": category_id,
+        "title": "Brand New Title",
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()["title"] == "Brand New Title"
 
 
 # ── Leave ─────────────────────────────────────────────────────────────────────
@@ -501,6 +639,51 @@ async def test_staff_permissions_reject_cross_school_clear(
     other_staff = await _other_school_staff(db_session)
     resp = await client.delete(f"/staff/{other_staff.id}/permissions/fees/manage", headers=auth)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_set_permission_rejects_unknown_module_action(
+    client: AsyncClient, auth: dict, redis_permissions,
+):
+    """An unrecognised module/action pair must 422, not silently persist —
+    resolve_permissions() would never match it against any real permission,
+    so a caller would otherwise get no sign their override never took effect."""
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    resp = await client.post(f"/staff/{staff_id}/permissions", json={
+        "module": "fees", "action": "not_a_real_action", "is_allowed": True,
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_permission_catalogue_includes_record_behaviour_and_documents(
+    client: AsyncClient, auth: dict,
+):
+    """assessments.record_behaviour and the documents module must appear in
+    the returned catalogue and be settable — both were silently absent from
+    the old hand-maintained ALL_PERMISSIONS copy despite being seeded onto
+    real staff positions."""
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    resp = await client.get(f"/staff/{staff_id}/permissions", headers=auth)
+    assert resp.status_code == 200
+    keys = {(p["module"], p["action"]) for p in resp.json()}
+    assert ("assessments", "record_behaviour") in keys
+    assert ("documents", "view") in keys
+    assert ("documents", "manage") in keys
+
+
+@pytest.mark.asyncio
+async def test_set_permission_allows_record_behaviour(
+    client: AsyncClient, auth: dict, redis_permissions,
+):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    resp = await client.post(f"/staff/{staff_id}/permissions", json={
+        "module": "assessments", "action": "record_behaviour", "is_allowed": True,
+    }, headers=auth)
+    assert resp.status_code == 200
+    row = next(p for p in resp.json() if p["module"] == "assessments" and p["action"] == "record_behaviour")
+    assert row["effective"] is True
+    assert row["source"] == "override"
 
 
 @pytest.mark.asyncio

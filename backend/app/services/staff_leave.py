@@ -31,6 +31,19 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def _assert_rank_visible(rank_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> None:
+    """A StaffRank is visible to a school if it's a shared GES template
+    (school_id IS NULL) or the school's own private rank. Without this, a
+    promotion could reference a completely different school's private rank —
+    its title would then leak into this school's promotion history display,
+    and an edit/delete on the other school's rank would silently ripple into
+    this one. Same cross-tenant gap already closed for Subject/Programme/
+    Position/StaffCategory elsewhere in this codebase."""
+    rank = await db.get(StaffRank, rank_id)
+    if not rank or (rank.school_id is not None and rank.school_id != school_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rank not found.")
+
+
 def _promotion_to_read(p: StaffPromotion) -> PromotionRead:
     return PromotionRead(
         id=p.id,
@@ -58,9 +71,9 @@ async def record_promotion(
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found.")
 
-    to_rank = await db.get(StaffRank, req.to_rank_id)
-    if not to_rank:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="to_rank_id not found.")
+    await _assert_rank_visible(req.to_rank_id, school_id, db)
+    if req.from_rank_id is not None:
+        await _assert_rank_visible(req.from_rank_id, school_id, db)
 
     promotion = StaffPromotion(
         school_id=school_id,
@@ -130,10 +143,10 @@ async def update_promotion(
     if not p:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promotion not found.")
     if req.to_rank_id is not None:
-        if not await db.get(StaffRank, req.to_rank_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="to_rank_id not found.")
+        await _assert_rank_visible(req.to_rank_id, school_id, db)
         p.to_rank_id = req.to_rank_id
     if req.from_rank_id is not None:
+        await _assert_rank_visible(req.from_rank_id, school_id, db)
         p.from_rank_id = req.from_rank_id
     if req.effective_date is not None:
         p.effective_date = req.effective_date

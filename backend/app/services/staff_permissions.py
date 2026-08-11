@@ -10,6 +10,7 @@ from app.core.permissions import invalidate_permissions
 from app.models.auth import PositionPermission, StaffPermission
 from app.models.staff import StaffMember, staff_member_positions
 from app.schemas.auth import StaffPermissionRead, StaffPermissionUpsert
+from app.schemas.permissions import PERMISSION_MATRIX, VALID_PAIRS
 
 
 async def _assert_owns(staff_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> None:
@@ -22,17 +23,14 @@ async def _assert_owns(staff_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSessi
     if not member or member.school_id != school_id:
         raise HTTPException(status_code=404, detail="Staff member not found.")
 
-# Full catalogue — mirrors the docstring in core/permissions.py
+# Full catalogue — sourced from the one canonical list (schemas/permissions.py
+# ::PERMISSION_MATRIX) instead of a second hand-maintained copy. The old copy
+# here had drifted stale — missing assessments.record_behaviour and the
+# entire documents module — silently making them impossible to grant or
+# revoke as a personal override through this API, even though several seeded
+# positions already carry them.
 ALL_PERMISSIONS: list[tuple[str, str]] = [
-    ("school", "view"), ("school", "edit"), ("school", "manage_users"),
-    ("staff", "view"), ("staff", "create"), ("staff", "edit"), ("staff", "delete"),
-    ("students", "view"), ("students", "create"), ("students", "edit"), ("students", "delete"),
-    ("academic", "view"), ("academic", "create"), ("academic", "edit"), ("academic", "delete"),
-    ("attendance", "view"), ("attendance", "record"), ("attendance", "approve"),
-    ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
-    ("fees", "view"), ("fees", "collect"), ("fees", "manage"),
-    ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
-    ("reports", "view"), ("reports", "generate"),
+    (module, action) for module, actions in PERMISSION_MATRIX.items() for action in actions
 ]
 
 
@@ -101,6 +99,13 @@ async def set_permission(
     db: AsyncSession,
 ) -> list[StaffPermissionRead]:
     await _assert_owns(staff_id, school_id, db)
+    if (req.module, req.action) not in VALID_PAIRS:
+        # StaffPermissionUpsert has no schema-level validator of its own — an
+        # unrecognised module/action previously saved silently and did
+        # nothing (resolve_permissions() would never match it against any
+        # real permission), giving the caller no sign their override never
+        # took effect.
+        raise HTTPException(status_code=422, detail=f"Unknown permission '{req.module}.{req.action}'.")
     existing = await db.scalar(
         select(StaffPermission).where(
             StaffPermission.staff_member_id == staff_id,

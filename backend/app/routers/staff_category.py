@@ -69,6 +69,18 @@ async def create_category(
     return StaffCategoryRead.model_validate(cat)
 
 
+async def _get_visible_category(category_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> StaffCategory:
+    """A category is visible to a school if it's a shared GES template
+    (school_id IS NULL) or the school's own. Without this check, a caller
+    could reference (and, for ranks, silently pull data from) a completely
+    different school's private custom category — the same cross-tenant gap
+    already closed for Subject/Programme/Position elsewhere in this codebase."""
+    cat = await db.get(StaffCategory, category_id)
+    if not cat or (cat.school_id is not None and cat.school_id != school_id):
+        raise HTTPException(status_code=404, detail="Category not found.")
+    return cat
+
+
 @router.get("/staff/ranks", response_model=list[StaffRankRead])
 async def list_ranks(
     category_id: uuid.UUID = Query(...),
@@ -76,6 +88,7 @@ async def list_ranks(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
+    await _get_visible_category(category_id, school_id, db)
     school = await db.get(School, school_id)
     if school and school.ownership == SchoolOwnership.PUBLIC:
         condition = or_(StaffRank.school_id == school_id, StaffRank.school_id.is_(None))
@@ -98,9 +111,7 @@ async def create_rank(
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
-    cat = await db.get(StaffCategory, req.category_id)
-    if not cat:
-        raise HTTPException(status_code=404, detail="Category not found.")
+    await _get_visible_category(req.category_id, school_id, db)
     rank = StaffRank(
         school_id=school_id,
         category_id=req.category_id,
