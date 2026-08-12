@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.dependencies import assert_self_or_permission
+from app.core.student_scope import assert_can_view_student, assert_can_write_student
 from app.models.documents import DocumentRecord
 from app.models.staff import StaffMember
 from app.models.students import Student
@@ -82,6 +84,39 @@ async def _verify_entity_ownership(
         raise HTTPException(404, f"No {entity_type} found with that id at this school.")
 
 
+async def _assert_entity_access(
+    user_id: uuid.UUID,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    action: str,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """documents.view/manage alone used to be the whole check — no scoping
+    to which specific student/staff member the caller is actually
+    responsible for. CLASS_TEACHER holds documents.manage (needed to upload
+    a form for their own student) but that let a class teacher upload/view/
+    delete documents for ANY student school-wide, or even for a completely
+    unrelated STAFF MEMBER's personal file (id card, contract) via
+    entity_type=staff — the same unscoped-flat-permission gap already
+    closed for Students/Attendance/Housing elsewhere in this codebase.
+
+    A student's documents follow the exact same class-teacher scope as the
+    rest of the Students module (core/student_scope.py — bypassed for
+    students.delete holders and the same broad-access permissions that
+    module already treats as unrestricted). A staff member's documents
+    require the same self-or-staff.edit/view tier as touching that staff
+    member's own HR record directly (core/dependencies.py::assert_self_or_permission)."""
+    if entity_type == "student":
+        if action == "manage":
+            await assert_can_write_student(user_id, entity_id, db)
+        else:
+            await assert_can_view_student(user_id, entity_id, school_id, db)
+    elif entity_type == "staff":
+        perm_action = "edit" if action == "manage" else "view"
+        await assert_self_or_permission(user_id, entity_id, "staff", perm_action, db)
+
+
 async def upload_document(
     entity_type: str,
     entity_id: uuid.UUID,
@@ -92,6 +127,7 @@ async def upload_document(
     db: AsyncSession,
 ) -> DocumentRecordRead:
     await _verify_entity_ownership(entity_type, entity_id, school_id, db)
+    await _assert_entity_access(user_id, entity_type, entity_id, "manage", school_id, db)
 
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(415, f"File type not allowed: {file.content_type}")
@@ -131,8 +167,9 @@ async def upload_document(
 
 
 async def list_documents(
-    entity_type: str, entity_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    entity_type: str, entity_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> list[DocumentRecordRead]:
+    await _assert_entity_access(user_id, entity_type, entity_id, "view", school_id, db)
     rows = (await db.scalars(
         select(DocumentRecord)
         .where(
@@ -146,7 +183,7 @@ async def list_documents(
 
 
 async def get_document(
-    doc_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    doc_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession, *, action: str,
 ) -> DocumentRecord:
     rec = await db.scalar(
         select(DocumentRecord).where(
@@ -155,13 +192,16 @@ async def get_document(
     )
     if not rec:
         raise HTTPException(404, "Document not found.")
+    # entity_type/entity_id are always "student"/"staff" here — only those
+    # two ever get stored, gated by _verify_entity_ownership at upload time.
+    await _assert_entity_access(user_id, rec.entity_type, rec.entity_id, action, school_id, db)
     return rec
 
 
 async def delete_document(
-    doc_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+    doc_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> None:
-    rec = await get_document(doc_id, school_id, db)
+    rec = await get_document(doc_id, school_id, user_id, db, action="manage")
     full_path = Path(settings.local_upload_dir) / rec.file_path
     if full_path.exists():
         full_path.unlink()

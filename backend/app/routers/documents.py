@@ -35,8 +35,8 @@ async def download_document(
     auth=Depends(require_permission("documents", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    rec = await doc_svc.get_document(doc_id, school_id, db)
+    user_id, school_id = auth
+    rec = await doc_svc.get_document(doc_id, school_id, user_id, db, action="view")
     from pathlib import Path
     full_path = Path(settings.local_upload_dir) / rec.file_path
     if not full_path.exists():
@@ -56,8 +56,8 @@ async def list_documents(
     auth=Depends(require_permission("documents", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    return await doc_svc.list_documents(entity_type, entity_id, school_id, db)
+    user_id, school_id = auth
+    return await doc_svc.list_documents(entity_type, entity_id, school_id, user_id, db)
 
 
 @router.delete("/{doc_id}", status_code=204)
@@ -66,5 +66,5 @@ async def delete_document(
     auth=Depends(require_permission("documents", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
-    await doc_svc.delete_document(doc_id, school_id, db)
+    user_id, school_id = auth
+    await doc_svc.delete_document(doc_id, school_id, user_id, db)

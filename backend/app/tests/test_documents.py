@@ -44,9 +44,10 @@ async def _second_school_auth(client: AsyncClient, db_session: AsyncSession) -> 
 
 async def _login_as_position(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
-) -> dict:
-    """Create a staff member holding `position_code`, give them a login, and return
-    their bearer-token auth headers — mirrors test_scoring_lock.py's helper."""
+) -> tuple[dict, str]:
+    """Create a staff member holding `position_code`, give them a login, and
+    return (their bearer-token auth headers, their staff_member id) —
+    mirrors test_student_export.py's helper."""
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
     assert pos is not None, "Run seed_reference_data.py first"
 
@@ -66,7 +67,7 @@ async def _login_as_position(
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
     })
     assert resp.status_code == 200, resp.text
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
 
 
 @pytest.mark.asyncio
@@ -237,17 +238,32 @@ async def test_same_filename_uploaded_twice_does_not_alias(
     assert dl_second.content == b"%PDF-1.4 SECOND"
 
 
-# ── Permission model ─────────────────────────────────────────────────────────────
+# ── Permission model / per-entity scoping ─────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_class_teacher_can_manage_documents(
+async def test_class_teacher_can_manage_documents_for_own_student(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school, student: Student,
-    redis_permissions: None,
+    school_class, academic_year, redis_permissions: None,
 ):
     """Previously gated on the unrelated reports.generate permission, which
     CLASS_TEACHER never held — they couldn't even list or download a
-    document for their own student. Now gated on documents.view/manage."""
-    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    document for their own student. Now gated on documents.view/manage,
+    scoped (core/student_scope.py) to students in a class the caller is an
+    active ClassTeacher of."""
+    from app.models.academic import ClassTeacher
+    from app.models.students import StudentClassAssignment
+
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
 
     upload = await client.post(
         f"/documents/student/{student.id}?document_type=certificate",
@@ -259,6 +275,94 @@ async def test_class_teacher_can_manage_documents(
 
     list_resp = await client.get(f"/documents/student/{student.id}", headers=teacher_auth)
     assert list_resp.status_code == 200
+
+    dl_resp = await client.get(f"/documents/{doc_id}/download", headers=teacher_auth)
+    assert dl_resp.status_code == 200
+
+    del_resp = await client.delete(f"/documents/{doc_id}", headers=teacher_auth)
+    assert del_resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_class_teacher_cannot_manage_documents_for_unassigned_student(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school, student: Student,
+    redis_permissions: None,
+):
+    """The bug this scoping closes: a class teacher with documents.manage
+    but NO ClassTeacher assignment to this student's class must not be able
+    to upload/list/download/delete their documents at all."""
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    upload = await client.post(
+        f"/documents/student/{student.id}?document_type=certificate",
+        files={"file": ("cert.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=teacher_auth,
+    )
+    assert upload.status_code == 404
+
+    list_resp = await client.get(f"/documents/student/{student.id}", headers=teacher_auth)
+    assert list_resp.status_code == 404
+
+    # A real document uploaded by the (unrestricted) admin must also be
+    # unreachable to this out-of-scope class teacher.
+    admin_upload = await client.post(
+        f"/documents/student/{student.id}?document_type=certificate",
+        files={"file": ("cert.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=auth,
+    )
+    doc_id = admin_upload.json()["id"]
+    dl_resp = await client.get(f"/documents/{doc_id}/download", headers=teacher_auth)
+    assert dl_resp.status_code == 404
+    del_resp = await client.delete(f"/documents/{doc_id}", headers=teacher_auth)
+    assert del_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_class_teacher_cannot_manage_documents_for_other_staff_member(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school, redis_permissions: None,
+):
+    """entity_type=staff documents (id cards, contracts) require the same
+    self-or-staff.edit tier as editing that staff member directly — a class
+    teacher holding documents.manage must not reach a colleague's files."""
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    other_staff_id = (await client.post("/staff", json={
+        "staff_number": "DOCS-OTHER", "first_name": "Other", "last_name": "Colleague",
+    }, headers=auth)).json()["id"]
+
+    upload = await client.post(
+        f"/documents/staff/{other_staff_id}?document_type=id_card",
+        files={"file": ("id.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=teacher_auth,
+    )
+    assert upload.status_code == 403
+
+    admin_upload = await client.post(
+        f"/documents/staff/{other_staff_id}?document_type=id_card",
+        files={"file": ("id.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=auth,
+    )
+    doc_id = admin_upload.json()["id"]
+    dl_resp = await client.get(f"/documents/{doc_id}/download", headers=teacher_auth)
+    assert dl_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_class_teacher_can_manage_own_staff_documents(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school, redis_permissions: None,
+):
+    """Self-service: CLASS_TEACHER holds documents.manage but not
+    staff.edit — assert_self_or_permission's self branch still lets them
+    manage their OWN staff document (e.g. uploading their own certificate),
+    same tier as PATCH /staff/{id} already allows for self-edit."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    upload = await client.post(
+        f"/documents/staff/{staff_id}?document_type=certificate",
+        files={"file": ("cert.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=teacher_auth,
+    )
+    assert upload.status_code == 201
+    doc_id = upload.json()["id"]
 
     dl_resp = await client.get(f"/documents/{doc_id}/download", headers=teacher_auth)
     assert dl_resp.status_code == 200
