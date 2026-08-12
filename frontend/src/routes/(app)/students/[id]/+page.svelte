@@ -14,6 +14,8 @@
   import BehaviourTab  from './BehaviourTab.svelte';
   import PhotoAvatar   from './PhotoAvatar.svelte';
   import TabBar        from '$lib/components/TabBar.svelte';
+  import Badge         from '$lib/components/Badge.svelte';
+  import ConfirmModal  from '$lib/components/ConfirmModal.svelte';
 
   const qc = useQueryClient();
   const studentId = $derived($page.params.id!);
@@ -110,94 +112,70 @@
   {@const s = $query.data}
 
   <!-- Card header -->
-  <div class="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div class="flex items-center gap-4">
-        <PhotoAvatar studentId={studentId} firstName={s.first_name} lastName={s.last_name} photoUrl={s.photo_url} canEdit={s.can_edit} />
-        <div>
-          <h1 class="text-xl font-bold text-[var(--fg)]">{s.display_name}</h1>
-          <p class="mt-0.5 font-mono text-sm text-[var(--fg-muted)]">{s.admission_number}</p>
-          <div class="mt-2 flex flex-wrap items-center gap-2">
-            {#if s.is_active}
-              <span class="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-500"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Active</span>
-            {:else}
-              <span class="rounded-full bg-[var(--hover)] px-2.5 py-0.5 text-xs font-semibold text-[var(--fg-muted)]">Inactive</span>
-            {/if}
-            {#if s.gender}
-              <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold
-                {s.gender === 'MALE' ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300' : 'bg-pink-50 text-pink-700 dark:bg-pink-950/30 dark:text-pink-300'}">
-                {s.gender.charAt(0) + s.gender.slice(1).toLowerCase()}
-              </span>
-            {/if}
+  <div class="mb-6 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+    <!-- Accent bar — matches admin/staff/[id]'s hero card -->
+    <div class="h-1.5" style="background: linear-gradient(90deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 55%, #7c3aed) 100%)"></div>
+
+    <div class="p-6">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div class="flex min-w-0 items-center gap-4">
+          <PhotoAvatar studentId={studentId} firstName={s.first_name} lastName={s.last_name} photoUrl={s.photo_url} canEdit={s.can_edit} />
+          <div class="min-w-0">
+            <h1 class="truncate text-xl font-bold text-[var(--fg)]">{s.display_name}</h1>
+            <p class="mt-0.5 font-mono text-sm text-[var(--fg-muted)]">{s.admission_number}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <Badge label={s.is_active ? 'Active' : 'Inactive'} color={s.is_active ? 'green' : 'gray'} variant="dot" />
+              {#if s.gender}
+                <Badge label={s.gender.charAt(0) + s.gender.slice(1).toLowerCase()} color={s.gender === 'MALE' ? 'blue' : 'violet'} variant="solid" />
+              {/if}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="flex flex-wrap items-center gap-2 sm:justify-end">
-        <button onclick={downloadTranscript} disabled={downloadingTranscript}
-          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
-          {downloadingTranscript ? 'Generating…' : 'Download transcript'}
-        </button>
-        {#if s.can_manage}
-          {#if s.is_active}
-            {#if confirmDeactivate}
-              <span class="text-xs text-[var(--fg-muted)]">Deactivate this student?</span>
-              <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-                class="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-inset ring-red-600/20 transition hover:bg-red-100 disabled:opacity-50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50">
-                {$toggleMut.isPending ? 'Deactivating…' : 'Yes, deactivate'}
-              </button>
-              <button onclick={() => confirmDeactivate = false}
-                class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
-                Cancel
-              </button>
-            {:else}
+        <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+          <button onclick={downloadTranscript} disabled={downloadingTranscript}
+            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+            {downloadingTranscript ? 'Generating…' : 'Download transcript'}
+          </button>
+          {#if s.can_manage}
+            {#if s.is_active}
               <button onclick={() => confirmDeactivate = true}
                 class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
                 Deactivate
               </button>
+            {:else if hasApprovedTransfer}
+              <button onclick={() => confirmReactivate = true}
+                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+                Reactivate
+              </button>
+            {:else}
+              <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
+                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+                {$toggleMut.isPending ? '…' : 'Reactivate'}
+              </button>
             {/if}
-          {:else if hasApprovedTransfer && confirmReactivate}
-            <span class="text-xs text-amber-600 dark:text-amber-400">This student has an approved transfer on record — reactivating won't undo it. Continue?</span>
-            <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-              class="rounded-xl bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 transition hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50">
-              {$toggleMut.isPending ? '…' : 'Yes, reactivate'}
-            </button>
-            <button onclick={() => confirmReactivate = false}
-              class="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)] transition">
-              Cancel
-            </button>
-          {:else if hasApprovedTransfer}
-            <button onclick={() => confirmReactivate = true}
-              class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-              Reactivate
-            </button>
-          {:else}
-            <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-              class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
-              {$toggleMut.isPending ? '…' : 'Reactivate'}
-            </button>
           {/if}
-        {/if}
+        </div>
       </div>
-    </div>
 
-    <!-- Quick stats -->
-    <div class="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-4 sm:grid-cols-4">
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Date of birth</p>
-        <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.date_of_birth ?? '—'}</p>
-      </div>
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Nationality</p>
-        <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.nationality ?? '—'}</p>
-      </div>
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Guardians</p>
-        <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.guardians.length}</p>
-      </div>
-      <div>
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Religion</p>
-        <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.religion ?? '—'}</p>
+      <!-- Quick stats -->
+      <div class="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-4 sm:grid-cols-4">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Date of birth</p>
+          <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.date_of_birth ?? '—'}</p>
+        </div>
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Nationality</p>
+          <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.nationality ?? '—'}</p>
+        </div>
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Guardians</p>
+          <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.guardians.length}</p>
+        </div>
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">Religion</p>
+          <p class="mt-0.5 text-sm font-medium text-[var(--fg)]">{s.religion ?? '—'}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -219,4 +197,26 @@
   {:else if activeTab === 'behaviour'}
     <BehaviourTab studentId={studentId} canEdit={s.can_edit} />
   {/if}
+
+  <ConfirmModal
+    open={confirmDeactivate}
+    title="Deactivate student?"
+    message="{s.display_name} will no longer appear in active lists. This can be reversed later."
+    confirmLabel="Deactivate"
+    variant="danger"
+    isPending={$toggleMut.isPending}
+    onConfirm={() => $toggleMut.mutate()}
+    onCancel={() => confirmDeactivate = false}
+  />
+
+  <ConfirmModal
+    open={confirmReactivate}
+    title="Reactivate student?"
+    message="This student has an approved transfer on record — reactivating won't undo it. Continue?"
+    confirmLabel="Reactivate"
+    variant="warning"
+    isPending={$toggleMut.isPending}
+    onConfirm={() => $toggleMut.mutate()}
+    onCancel={() => confirmReactivate = false}
+  />
 {/if}
