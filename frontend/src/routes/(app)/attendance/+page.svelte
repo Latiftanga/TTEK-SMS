@@ -148,11 +148,13 @@
   };
 </script>
 
-<!-- Selectors -->
-<div class="mb-5 flex flex-wrap items-end gap-3">
+<!-- Selectors — stacked full-width on mobile (this pair is the first thing
+     a teacher touches every time they open the page), side by side from
+     sm: up where there's room for both without crowding. -->
+<div class="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
   <div>
     <label class="label" for="att-class">Class</label>
-    <select id="att-class" bind:value={classId} class="sel">
+    <select id="att-class" bind:value={classId} class="sel w-full">
       <option value="">Select class…</option>
       {#each $classesQ.data ?? [] as c (c.id)}
         <option value={c.id}>{c.display_name}</option>
@@ -161,18 +163,18 @@
   </div>
   <div>
     <label class="label" for="att-date">Date</label>
-    <div class="flex items-center gap-1.5">
-      <input id="att-date" type="date" bind:value={selectedDate} max={today} class="sel" />
+    <div class="flex flex-wrap items-center gap-1.5">
+      <input id="att-date" type="date" bind:value={selectedDate} max={today} class="sel min-w-0 flex-1" />
       {#if selectedDate !== today}
         <button onclick={() => selectedDate = today} title="Jump to today"
-          class="rounded-xl border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+          class="today-btn shrink-0">
           Today
         </button>
       {/if}
     </div>
   </div>
   {#if calDay}
-    <span class="mb-1 rounded-full px-3 py-1 text-xs font-semibold {dayTypeColor[calDay.day_type]}">
+    <span class="w-fit rounded-full px-3 py-1 text-xs font-semibold sm:col-span-2 {dayTypeColor[calDay.day_type]}">
       {calDay.day_type.replace(/_/g, ' ')}
       {#if calDay.notes} · {calDay.notes}{/if}
     </span>
@@ -266,6 +268,7 @@
 
 <style>
   @reference "tailwindcss";
-  .label { @apply block text-xs font-medium text-[var(--fg-muted)] mb-1; }
-  .sel   { @apply rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .label     { @apply block text-xs font-medium text-[var(--fg-muted)] mb-1; }
+  .sel       { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .today-btn { @apply min-h-[44px] rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]; }
 </style>

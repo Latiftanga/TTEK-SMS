@@ -135,7 +135,7 @@
 
   <div class="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
     <p class="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Credential guide</p>
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto overflow-y-hidden">
       <table class="w-full text-xs">
         <thead><tr class="border-b border-[var(--border)]">
           <th class="pb-2 text-left font-medium text-[var(--fg-muted)]">Provider</th>

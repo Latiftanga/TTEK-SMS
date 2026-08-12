@@ -169,7 +169,10 @@
   </div>
 
   <!-- Tab bar -->
-  <div class="mb-6 flex gap-1 overflow-x-auto border-b border-[var(--border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+  <!-- overflow-y-hidden is deliberate — see TabBar.svelte's comment: plain
+       overflow-x-auto lets the browser compute overflow-y as auto too,
+       which can show an unwanted vertical scrollbar on hover. -->
+  <div class="mb-6 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <button onclick={() => activeTab = 'students'} title="Students"
       class="tab {activeTab === 'students' ? 'tab-active' : ''}">
       <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
@@ -216,7 +219,7 @@
   .chip         { @apply inline-flex items-center rounded-full bg-[var(--hover)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--fg-muted)] ring-1 ring-inset ring-[var(--border)]; }
 
   .tab {
-    @apply -mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-[var(--fg-muted)] transition hover:text-[var(--fg)];
+    @apply -mb-px flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-4 text-sm font-medium text-[var(--fg-muted)] transition hover:text-[var(--fg)];
   }
   .tab-active {
     @apply border-[var(--brand)] text-[var(--brand)];

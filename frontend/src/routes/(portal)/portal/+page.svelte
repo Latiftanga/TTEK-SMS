@@ -102,7 +102,7 @@
 
   <!-- Child switcher (guardian accounts with 2+ children only) -->
   {#if isGuardian && ($childrenQ.data?.length ?? 0) > 1}
-    <div class="mb-4 flex gap-2 overflow-x-auto pb-1">
+    <div class="mb-4 flex gap-2 overflow-x-auto overflow-y-hidden pb-1">
       {#each $childrenQ.data ?? [] as child (child.student_id)}
         <button onclick={() => selectedChildId = child.student_id}
           class="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-semibold transition

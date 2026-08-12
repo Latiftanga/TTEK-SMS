@@ -10,7 +10,12 @@
   const { tabs, active, onchange }: Props = $props();
 </script>
 
-<nav class="-mb-px flex gap-1 overflow-x-auto border-b border-[var(--border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+<!-- overflow-y-hidden is deliberate, not decorative: setting overflow-x
+     without it lets the browser compute overflow-y as `auto` too (a CSS
+     spec quirk), which can pop a vertical scrollbar into existence for a
+     row that never needed one — sub-pixel/line-height differences between
+     icon+label tabs are enough to trigger it. -->
+<nav class="-mb-px flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--border)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
      role="tablist" aria-label="tabs">
   {#each tabs as tab}
     <button
