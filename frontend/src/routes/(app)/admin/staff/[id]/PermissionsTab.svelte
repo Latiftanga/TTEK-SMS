@@ -101,11 +101,11 @@
             {@const key = `${perm.module}.${perm.action}`}
             {@const isSettingThis = ($setMut.isPending  && ($setMut.variables as {module:string;action:string}).module === perm.module && ($setMut.variables as {module:string;action:string}).action === perm.action)
                                  || ($clearMut.isPending && ($clearMut.variables as {module:string;action:string}).module === perm.module && ($clearMut.variables as {module:string;action:string}).action === perm.action)}
-            <div class="flex items-center gap-3 px-4 py-3
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3
                         {isSettingThis ? 'opacity-60' : ''}">
 
               <!-- Permission name -->
-              <div class="min-w-0 flex-1">
+              <div class="min-w-0 flex-1 basis-40">
                 <p class="text-sm font-medium text-[var(--fg)]">
                   {ACTION_LABEL[perm.action] ?? perm.action}
                 </p>
@@ -148,13 +148,13 @@
               {/if}
 
               <!-- Actions -->
-              <div class="flex shrink-0 items-center gap-1.5">
+              <div class="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
                 {#if perm.source === 'override'}
                   <!-- Flip the override -->
                   <button
                     onclick={() => $setMut.mutate({ module: perm.module, action: perm.action, is_allowed: !perm.override_is_allowed })}
                     disabled={isBusy}
-                    class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11px]
+                    class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 text-xs
                            font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]
                            hover:text-[var(--fg)] disabled:opacity-40">
                     {perm.effective ? 'Deny' : 'Grant'}
@@ -163,8 +163,9 @@
                   <button
                     onclick={() => $clearMut.mutate({ module: perm.module, action: perm.action })}
                     disabled={isBusy}
+                    aria-label="Remove override — revert to position default"
                     title="Remove override — revert to position default"
-                    class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11px]
+                    class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 text-xs
                            font-medium text-red-500 transition hover:bg-red-50
                            dark:hover:bg-red-950/30 disabled:opacity-40">
                     × Clear
@@ -174,7 +175,7 @@
                   <button
                     onclick={() => $setMut.mutate({ module: perm.module, action: perm.action, is_allowed: !perm.effective })}
                     disabled={isBusy}
-                    class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11px]
+                    class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 text-xs
                            font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]
                            hover:text-[var(--fg)] disabled:opacity-40">
                     {perm.effective ? 'Override: Deny' : 'Override: Grant'}

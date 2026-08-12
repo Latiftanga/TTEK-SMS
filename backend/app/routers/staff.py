@@ -8,9 +8,22 @@ ACCESS CONTROL
 --------------
 GET  /staff, /staff/{id}               staff.view
 POST /staff                            staff.create
-PATCH /staff/{id}                      staff.edit
+PATCH /staff/{id}                      staff.edit (profile fields);
+                                        position_ids specifically also
+                                        requires school.manage_users — see
+                                        update_staff's own comment for why
 POST /staff/{id}/invite                school.manage_users
-POST /staff/{id}/reset-password        staff.edit
+POST /staff/{id}/reset-password        school.manage_users
+
+school.manage_users is deliberately the stronger gate for both position
+changes and password resets: staff.edit is held by DEPUTY_HEAD and
+ASSISTANT_HEAD_ADMINISTRATION (not just HEAD), and neither position-
+assignment nor password-reset should be reachable by a staff.edit holder
+acting on themselves or a more senior colleague — the first is a direct
+self-escalation path (PATCH your own position_ids onto HEAD), the second
+is a direct account takeover (reset the HEAD's password, log in as them).
+Both actions are logged to AuditLog, which nothing in this module wrote to
+before.
 """
 from __future__ import annotations
 import uuid
@@ -130,18 +143,19 @@ async def bulk_import_staff(
 @router.post("/{staff_id}/reset-password", response_model=TempPasswordResult)
 async def reset_staff_password(
     staff_id: uuid.UUID,
-    ids=Depends(require_permission("staff", "edit")),
+    ids=Depends(require_permission("school", "manage_users")),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin resets a staff member's login password and returns a temporary password."""
     import secrets, string
-    from app.models.auth import User
+    from datetime import datetime, timezone
+    from app.models.auth import AuditLog, User
     from app.core.auth import hash_password
     from sqlalchemy import select
 
     from app.models.staff import StaffMember
 
-    _, school_id = ids
+    user_id, school_id = ids
     user = await db.scalar(
         select(User).where(User.staff_member_id == staff_id, User.school_id == school_id)
     )
@@ -158,6 +172,14 @@ async def reset_staff_password(
     temp = f"{word1}{word2}{digits}"
 
     user.password_hash = hash_password(temp)
+    # Never log the temp password itself — the point of the audit trail is
+    # "who reset whose password, when," not a secret-leaking transcript.
+    db.add(AuditLog(
+        school_id=school_id, user_id=user_id, action="STAFF_PASSWORD_RESET",
+        entity_type="StaffMember", entity_id=staff_id,
+        new_values={"reset_by_user_id": str(user_id)},
+        created_at=datetime.now(timezone.utc),
+    ))
     await db.flush()
 
     display = f"{staff.first_name} {staff.last_name}" if staff else str(staff_id)
@@ -188,7 +210,7 @@ async def update_staff(
     # Self-edit without staff.edit permission: restrict to personal-contact fields only.
     # Superadmins and staff with staff.edit may update any field.
     from app.models.auth import User
-    from app.core.permissions import resolve_permissions
+    from app.core.permissions import resolve_permissions, user_has_permission
     caller = await db.get(User, user_id)
     is_self = caller and caller.staff_member_id == staff_id
     has_edit = caller and caller.is_superadmin or (
@@ -203,7 +225,20 @@ async def update_staff(
             marital_status=req.marital_status,
         )
 
-    return await staff_svc.update_staff(staff_id, req, school_id, db)
+    # position_ids is a stronger action than the rest of this endpoint —
+    # staff.edit alone (held by DEPUTY_HEAD/ASSISTANT_HEAD_ADMINISTRATION,
+    # not just HEAD) previously let a caller grant themselves or anyone else
+    # a more powerful position with no check at all. Gated the same as
+    # POST /staff/{id}/invite, the other "decide who has system access"
+    # action in this router.
+    if req.position_ids is not None and not await user_has_permission(user_id, "school", "manage_users", db):
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="Changing a staff member's positions requires school.manage_users.",
+        )
+
+    return await staff_svc.update_staff(staff_id, req, school_id, db, changed_by_id=user_id)
 
 
 @router.post("/{staff_id}/invite", status_code=201)

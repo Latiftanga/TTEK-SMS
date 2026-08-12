@@ -13,7 +13,7 @@ import pytest_asyncio
 
 from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class, ClassTeacher
-from app.models.auth import LoginType, StaffPermission, StaffPosition, User
+from app.models.auth import AuditLog, LoginType, StaffPermission, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.staff import StaffCategory, StaffMember, StaffRank, StaffType
 from sqlalchemy import select
@@ -136,6 +136,31 @@ async def _login_as_teacher_no_edit(
     await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
 
     email = "teacher-noedit@presec-test.edu.gh"
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+    })
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
+
+
+async def _login_as_position(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, position_code: str,
+) -> tuple[dict, str]:
+    """Create a real staff login holding `position_code`. Returns (auth headers, staff_id)."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff_id = (await client.post("/staff", json=_staff_payload(
+        staff_number=f"TST-{position_code}",
+    ), headers=auth)).json()["id"]
+    await client.patch(f"/staff/{staff_id}", json={"position_ids": [str(pos.id)]}, headers=auth)
+
+    email = f"{position_code.lower()}@presec-test.edu.gh"
     db_session.add(User(
         school_id=school.id, login_type=LoginType.EMAIL, email=email,
         password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
@@ -814,3 +839,112 @@ async def test_upload_staff_photo_self_service_without_staff_edit(
         headers=teacher_auth,
     )
     assert other_resp.status_code == 403
+
+
+# ── Position/password-reset escalation guard ───────────────────────────────────
+# staff.edit (held by DEPUTY_HEAD, not just HEAD) previously let a caller
+# change ANY staff member's position_ids — including their own, straight
+# onto HEAD — and reset ANY staff member's password with zero seniority
+# check. Both now require school.manage_users, matching the existing
+# POST /staff/{id}/invite precedent.
+
+@pytest.mark.asyncio
+async def test_reset_password_rejected_without_manage_users(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions,
+):
+    """A DEPUTY_HEAD (holds staff.edit, not school.manage_users) must not be
+    able to reset the HEAD's password — that's a direct account takeover."""
+    head_auth, head_staff_id = await _login_as_position(client, auth, db_session, school, "HEAD")
+    deputy_auth, _deputy_id = await _login_as_position(client, auth, db_session, school, "DEPUTY_HEAD")
+
+    resp = await client.post(f"/staff/{head_staff_id}/reset-password", headers=deputy_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_reset_password_allowed_for_manage_users_holder(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions,
+):
+    _head_auth, head_staff_id = await _login_as_position(client, auth, db_session, school, "HEAD")
+
+    resp = await client.post(f"/staff/{head_staff_id}/reset-password", headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["temporary_password"]
+
+    log = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.entity_id == head_staff_id, AuditLog.action == "STAFF_PASSWORD_RESET",
+        )
+    )
+    assert log is not None
+    # Never log the actual temp password.
+    assert "password" not in str(log.new_values).lower() or "reset_by_user_id" in log.new_values
+
+
+@pytest.mark.asyncio
+async def test_update_position_ids_rejected_without_manage_users(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions,
+):
+    """The self-escalation path: a DEPUTY_HEAD must not be able to PATCH
+    their own (or anyone's) position_ids onto something stronger."""
+    head_pos_id = await _get_head_position_id(db_session)
+    deputy_auth, deputy_staff_id = await _login_as_position(client, auth, db_session, school, "DEPUTY_HEAD")
+
+    resp = await client.patch(
+        f"/staff/{deputy_staff_id}", json={"position_ids": [head_pos_id]}, headers=deputy_auth,
+    )
+    assert resp.status_code == 403
+
+    # Confirm nothing actually changed.
+    check = await client.get(f"/staff/{deputy_staff_id}", headers=auth)
+    assert head_pos_id not in check.json()["position_ids"]
+
+
+@pytest.mark.asyncio
+async def test_update_position_ids_rejected_against_other_staff_without_manage_users(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions,
+):
+    deputy_auth, _deputy_id = await _login_as_position(client, auth, db_session, school, "DEPUTY_HEAD")
+    other_staff_id = (await client.post("/staff", json=_staff_payload(staff_number="TST-OTHER"), headers=auth)).json()["id"]
+    some_pos_id = await _get_position_id(db_session)
+
+    resp = await client.patch(
+        f"/staff/{other_staff_id}", json={"position_ids": [some_pos_id]}, headers=deputy_auth,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_profile_fields_still_allowed_without_manage_users(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions,
+):
+    """Ordinary profile edits (no position_ids) must be unaffected — only
+    the position-assignment sub-action needs the stronger permission."""
+    deputy_auth, _deputy_id = await _login_as_position(client, auth, db_session, school, "DEPUTY_HEAD")
+    other_staff_id = (await client.post("/staff", json=_staff_payload(staff_number="TST-EDITABLE"), headers=auth)).json()["id"]
+
+    resp = await client.patch(
+        f"/staff/{other_staff_id}", json={"phone": "0244000000"}, headers=deputy_auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["phone"] == "0244000000"
+
+
+@pytest.mark.asyncio
+async def test_update_position_ids_allowed_for_manage_users_holder_writes_audit_log(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    staff_id = (await client.post("/staff", json=_staff_payload(), headers=auth)).json()["id"]
+    pos_id = await _get_position_id(db_session)
+
+    resp = await client.patch(f"/staff/{staff_id}", json={"position_ids": [pos_id]}, headers=auth)
+    assert resp.status_code == 200
+    assert pos_id in resp.json()["position_ids"]
+
+    log = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.entity_id == staff_id, AuditLog.action == "STAFF_POSITION_CHANGE",
+        )
+    )
+    assert log is not None
+    assert log.new_values["position_ids"] == [pos_id]

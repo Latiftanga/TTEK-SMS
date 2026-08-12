@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-  import { updateStaff, listCategories, addEmergencyContact, deleteEmergencyContact, type StaffDetail } from '$lib/api/staff';
+  import { updateStaff, listCategories, type StaffDetail } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
+  import EmergencyContactsPanel from './EmergencyContactsPanel.svelte';
 
   interface Props { staff: StaffDetail; staffId: string; isOwnProfile?: boolean; }
   const { staff, staffId, isOwnProfile = false }: Props = $props();
@@ -70,22 +71,6 @@
     onError: (e) => { editError = apiError(e, 'Failed to save.'); },
   });
 
-  // ── Emergency contacts ──────────────────────────────────────────────────────
-  let showContactForm = $state(false);
-  let cForm = $state({ name: '', contact_type: '', phone: '', email: '' });
-  let cError = $state('');
-
-  const addContactMut = createMutation({
-    mutationFn: () => addEmergencyContact(staffId, { name: cForm.name, contact_type: cForm.contact_type, phone: cForm.phone, email: cForm.email || undefined }),
-    onSuccess: () => { invalidate(); showContactForm = false; cForm = { name: '', contact_type: '', phone: '', email: '' }; cError = ''; },
-    onError: (e) => { cError = apiError(e, 'Failed to save contact.'); },
-  });
-
-  const delContactMut = createMutation({
-    mutationFn: (contactId: string) => deleteEmergencyContact(staffId, contactId),
-    onSuccess: () => invalidate(),
-  });
-
   function fmtDate(d: string | null) {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -132,7 +117,7 @@
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
               <input bind:value={editForm[f.key as keyof typeof editForm] as string}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
           {/each}
         {/if}
@@ -145,7 +130,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
             <input bind:value={editForm[f.key as keyof typeof editForm] as string}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
         {/each}
 
@@ -154,7 +139,7 @@
           <div class="sm:col-span-2">
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Category</label>
             <select bind:value={editForm.category_id}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
               <option value="">Not specified</option>
               {#each $categoriesQuery.data ?? [] as cat (cat.id)}
                 <option value={cat.id}>{cat.name}</option>
@@ -165,7 +150,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
             <select bind:value={editForm.employment_type}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
               <option value="">Select…</option>
               <option value="PERMANENT">Permanent</option>
               <option value="CONTRACT">Contract</option>
@@ -178,7 +163,7 @@
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Marital status</label>
           <select bind:value={editForm.marital_status}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+            class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
             <option value="">Select…</option>
             <option value="SINGLE">Single</option>
             <option value="MARRIED">Married</option>
@@ -196,7 +181,7 @@
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
               <input bind:value={editForm[f.key as keyof typeof editForm] as string} placeholder={f.placeholder}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+                class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
           {/each}
         {/if}
@@ -204,14 +189,14 @@
         <div class="sm:col-span-2">
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Home address</label>
           <textarea bind:value={editForm.address} rows="2" placeholder="Street, Town, Region"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none resize-none"></textarea>
+            class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none resize-none"></textarea>
         </div>
 
         {#if !isOwnProfile}
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
             <select bind:value={editForm.gender}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
               <option value="">Not specified</option>
               <option value="MALE">Male</option>
               <option value="FEMALE">Female</option>
@@ -220,24 +205,24 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date of birth</label>
             <input type="date" bind:value={editForm.date_of_birth}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
             <input type="date" bind:value={editForm.joined_date}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
         {/if}
       </div>
       {#if editError}<p class="mt-2 text-xs text-red-500">{editError}</p>{/if}
       <div class="mt-4 flex gap-2">
         <button onclick={() => $editMut.mutate()} disabled={$editMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+          class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           style="background-color: var(--brand)">
           {$editMut.isPending ? 'Saving…' : 'Save changes'}
         </button>
         <button onclick={() => { editing = false; editError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">
+          class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">
           Cancel
         </button>
       </div>
@@ -253,62 +238,5 @@
     {/if}
   </div>
 
-  <!-- Emergency contacts -->
-  <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-xs font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Emergency contacts</h2>
-      {#if !showContactForm}
-        <button onclick={() => showContactForm = true}
-          class="text-xs font-semibold transition hover:underline" style="color: var(--brand)">+ Add</button>
-      {/if}
-    </div>
-
-    {#if showContactForm}
-      <div class="mb-4 grid gap-3 sm:grid-cols-2">
-        {#each [
-          { label: 'Name', key: 'name', placeholder: '' },
-          { label: 'Relationship', key: 'contact_type', placeholder: 'e.g. Spouse, Parent' },
-          { label: 'Phone', key: 'phone', placeholder: '' },
-          { label: 'Email (optional)', key: 'email', placeholder: '' },
-        ] as f}
-          <div>
-            <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
-            <input bind:value={cForm[f.key as keyof typeof cForm]} placeholder={f.placeholder}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
-          </div>
-        {/each}
-      </div>
-      {#if cError}<p class="text-xs text-red-500">{cError}</p>{/if}
-      <div class="flex gap-2">
-        <button onclick={() => $addContactMut.mutate()} disabled={$addContactMut.isPending}
-          class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-          style="background-color: var(--brand)">
-          {$addContactMut.isPending ? 'Saving…' : 'Save'}
-        </button>
-        <button onclick={() => { showContactForm = false; cError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">
-          Cancel
-        </button>
-      </div>
-    {/if}
-
-    {#if staff.emergency_contacts.length === 0 && !showContactForm}
-      <div class="rounded-lg border border-dashed border-[var(--border)] py-5 text-center">
-        <p class="text-sm text-[var(--fg-muted)]">No emergency contacts on file.</p>
-      </div>
-    {:else}
-      <div class="mt-3 space-y-2">
-        {#each staff.emergency_contacts as c (c.id)}
-          <div class="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
-            <div>
-              <p class="text-sm font-medium text-[var(--fg)]">{c.name} <span class="text-xs text-[var(--fg-muted)]">({c.contact_type})</span></p>
-              <p class="text-xs text-[var(--fg-muted)]">{c.phone}{c.email ? ' · ' + c.email : ''}</p>
-            </div>
-            <button onclick={() => $delContactMut.mutate(c.id)}
-              class="text-xs text-[var(--fg-muted)] transition hover:text-red-500">Remove</button>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
+  <EmergencyContactsPanel {staffId} contacts={staff.emergency_contacts} />
 </div>

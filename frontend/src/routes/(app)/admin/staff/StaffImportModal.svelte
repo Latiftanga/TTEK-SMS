@@ -56,19 +56,20 @@
 
 {#if open}
   <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+    <div class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
 
       {#if phase === 'upload'}
-        <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
+        <div class="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <h2 class="text-lg font-semibold text-[var(--fg)]">Import Staff</h2>
-          <button onclick={onClose} class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+          <button onclick={onClose} aria-label="Close"
+            class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </button>
         </div>
 
-        <div class="space-y-3 px-6 py-5">
+        <div class="space-y-3 overflow-y-auto px-6 py-5">
           <!-- Step 1 -->
           <div class="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
             <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--brand)_12%,transparent)] text-xs font-bold text-[var(--brand)]">1</div>
@@ -76,7 +77,7 @@
               <p class="text-sm font-medium text-[var(--fg)]">Download the Excel template</p>
               <p class="mt-0.5 text-xs text-[var(--fg-muted)]">Pre-filled with your school's staff positions as a dropdown. Fill in one row per staff member.</p>
               <button onclick={download} disabled={downloading}
-                class="mt-2.5 flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+                class="mt-2.5 flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-xs font-medium text-[var(--fg)] transition hover:bg-[var(--hover)] disabled:opacity-50">
                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
                 </svg>
@@ -119,10 +120,10 @@
           </div>
         </div>
 
-        <div class="flex items-center justify-end gap-3 border-t border-[var(--border)] px-6 py-4">
-          <button onclick={onClose} class="rounded-lg px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)]">Cancel</button>
+        <div class="flex shrink-0 items-center justify-end gap-3 border-t border-[var(--border)] px-6 py-4">
+          <button onclick={onClose} class="min-h-[44px] rounded-lg px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)]">Cancel</button>
           <button onclick={() => file && $importMut.mutate(file)} disabled={!file || $importMut.isPending}
-            class="flex items-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40 hover:opacity-90">
+            class="flex min-h-[44px] items-center gap-2 rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40 hover:opacity-90">
             {#if $importMut.isPending}
               <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -139,16 +140,17 @@
         <!-- Results -->
         {@const allOk = result!.failed === 0 && result!.warnings.length === 0}
         {@const hasWarnings = result!.warnings.length > 0}
-        <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
+        <div class="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <h2 class="text-lg font-semibold text-[var(--fg)]">Import Complete</h2>
-          <button onclick={onClose} class="rounded-lg p-1 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+          <button onclick={onClose} aria-label="Close"
+            class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </button>
         </div>
 
-        <div class="space-y-4 px-6 py-5">
+        <div class="space-y-4 overflow-y-auto px-6 py-5">
           <!-- Summary banner -->
           <div class="flex items-center gap-3 rounded-xl border p-4
                       {allOk
@@ -238,13 +240,13 @@
           {/if}
         </div>
 
-        <div class="flex items-center justify-between border-t border-[var(--border)] px-6 py-4">
+        <div class="flex shrink-0 items-center justify-between border-t border-[var(--border)] px-6 py-4">
           <button onclick={() => { phase = 'upload'; file = null; result = null; }}
-            class="rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg)] hover:bg-[var(--hover)]">
+            class="min-h-[44px] rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg)] hover:bg-[var(--hover)]">
             Import another
           </button>
           <button onclick={onClose}
-            class="rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+            class="min-h-[44px] rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white hover:opacity-90">
             Done
           </button>
         </div>

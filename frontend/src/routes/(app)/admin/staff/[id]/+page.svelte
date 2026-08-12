@@ -7,6 +7,7 @@
   import { auth } from '$lib/stores/auth';
   import { toast } from '$lib/stores/toast';
   import { apiError } from '$lib/utils';
+  import { userRole } from '$lib/stores/permissions';
   import Badge                from '$lib/components/Badge.svelte';
   import TabBar               from '$lib/components/TabBar.svelte';
   import StaffPhotoAvatar     from './StaffPhotoAvatar.svelte';
@@ -96,6 +97,12 @@
     PERMANENT: 'Permanent', CONTRACT: 'Contract',
     NATIONAL_SERVICE: 'National Service', INTERN: 'Intern',
   };
+
+  // Resetting a colleague's password is an account-takeover-shaped action —
+  // requires school.manage_users specifically (backend 403s otherwise, same
+  // as position changes on ResponsibilitiesTab.svelte); $userRole is
+  // 'admin' exactly when the caller holds it.
+  const canResetPassword = $derived($userRole === 'admin');
 
   function fmtDate(d: string | null | undefined) {
     if (!d) return '—';
@@ -202,9 +209,11 @@
           <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending} class="btn-ghost">
             {$toggleMut.isPending ? '…' : s.is_active ? 'Deactivate' : 'Reactivate'}
           </button>
-          <button onclick={() => confirmReset = true} class="btn-ghost">
-            Reset password
-          </button>
+          {#if canResetPassword}
+            <button onclick={() => confirmReset = true} class="btn-ghost">
+              Reset password
+            </button>
+          {/if}
         </div>
       {/if}
     </div>

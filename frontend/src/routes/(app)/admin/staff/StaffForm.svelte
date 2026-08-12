@@ -4,6 +4,7 @@
   import { toast } from '$lib/stores/toast';
   import { portal } from '$lib/actions/portal';
   import { apiError } from '$lib/utils';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   interface Props {
     open: boolean;
@@ -28,6 +29,16 @@
     phone: '', email: '', joined_date: '',
   });
   let formError = $state('');
+
+  // A ~10-field drawer, longer than most modals in this app — a stray
+  // backdrop tap or Cancel shouldn't silently discard everything typed.
+  const hasUnsaved = $derived(Object.values(form).some(v => v !== ''));
+  let confirmDiscard = $state(false);
+
+  function requestClose() {
+    if (hasUnsaved) confirmDiscard = true;
+    else onCancel();
+  }
 
   const createMut = createMutation({
     mutationFn: createStaff,
@@ -69,7 +80,7 @@
 
 {#if open}
   <div use:portal class="contents">
-  <div class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onclick={onCancel} role="none"></div>
+  <div class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onclick={requestClose} role="none"></div>
 
   <div class="fixed inset-y-0 right-0 z-50 flex w-full max-w-[440px] flex-col
               border-l border-[var(--border)] bg-[var(--card)]"
@@ -81,8 +92,8 @@
         <h2 class="text-sm font-semibold text-[var(--fg)]">New staff member</h2>
         <p class="mt-0.5 text-xs text-[var(--fg-muted)]">Fill in the details below to add to the directory.</p>
       </div>
-      <button onclick={onCancel} aria-label="Close"
-        class="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--fg-muted)]
+      <button onclick={requestClose} aria-label="Close"
+        class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-muted)]
                transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -100,7 +111,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Staff number *</label>
             <input bind:value={form.staff_number} placeholder="e.g. T001"
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                      text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
           <div class="grid grid-cols-2 gap-3">
@@ -112,7 +123,7 @@
               <div class="{f.key === 'middle_name' ? 'col-span-2' : ''}">
                 <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
                 <input bind:value={form[f.key as keyof typeof form] as string} placeholder={f.placeholder}
-                  class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                  class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                          text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
               </div>
             {/each}
@@ -120,7 +131,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Gender</label>
             <select bind:value={form.gender}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                      text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
               <option value="">Not specified</option>
               <option value="MALE">Male</option>
@@ -137,7 +148,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Category</label>
             <select bind:value={form.category_id}
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                      text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
               <option value="">Select category…</option>
               {#each $categoriesQuery.data ?? [] as cat (cat.id)}
@@ -149,7 +160,7 @@
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Employment type</label>
               <select bind:value={form.employment_type}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                        text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
                 <option value="">Select…</option>
                 <option value="PERMANENT">Permanent</option>
@@ -161,7 +172,7 @@
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Date joined</label>
               <input type="date" bind:value={form.joined_date}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                        text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
           </div>
@@ -179,7 +190,7 @@
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{f.label}</label>
               <input bind:value={form[f.key as keyof typeof form] as string} placeholder={f.placeholder}
-                class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                        text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
             </div>
           {/each}
@@ -195,13 +206,13 @@
       {/if}
       <div class="flex gap-2">
         <button onclick={submit} disabled={$createMut.isPending}
-          class="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition
+          class="min-h-[44px] flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition
                  hover:opacity-90 disabled:opacity-50"
           style="background-color: var(--brand)">
           {$createMut.isPending ? 'Creating…' : 'Create and open profile'}
         </button>
-        <button onclick={onCancel}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium
+        <button onclick={requestClose}
+          class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium
                  text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
           Cancel
         </button>
@@ -210,4 +221,14 @@
 
   </div>
   </div>
+
+  <ConfirmModal
+    open={confirmDiscard}
+    title="Discard new staff member?"
+    message="You've entered details that haven't been saved yet. Closing now will lose them."
+    confirmLabel="Discard"
+    variant="warning"
+    onConfirm={() => { confirmDiscard = false; onCancel(); }}
+    onCancel={() => confirmDiscard = false}
+  />
 {/if}

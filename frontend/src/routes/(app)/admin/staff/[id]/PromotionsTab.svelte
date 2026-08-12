@@ -142,14 +142,14 @@
               </div>
               {#if !readOnly}
                 <div class="flex shrink-0 gap-1">
-                  <button onclick={() => startEdit(p)} title="Edit"
-                    class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+                  <button onclick={() => startEdit(p)} title="Edit" aria-label="Edit"
+                    class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
                     </svg>
                   </button>
-                  <button onclick={() => confirmDelId = p.id} title="Delete"
-                    class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30">
+                  <button onclick={() => confirmDelId = p.id} title="Delete" aria-label="Delete"
+                    class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
                     </svg>
@@ -171,7 +171,7 @@
         From rank <span class="font-normal">(leave blank for first entry)</span>
       </label>
       <select bind:value={fromRankId}
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+        class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
         <option value="">— First promotion —</option>
         {#each $ranksQuery.data ?? [] as r (r.id)}
           <option value={r.id}>{r.title}</option>
@@ -182,7 +182,7 @@
     <div>
       <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">To rank *</label>
       <select bind:value={toRankId}
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+        class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
         <option value="">Select rank…</option>
         {#each $ranksQuery.data ?? [] as r (r.id)}
           <option value={r.id}>{r.title}</option>
@@ -193,7 +193,7 @@
     <div>
       <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Effective date *</label>
       <input type="date" bind:value={effDate}
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
+        class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none" />
     </div>
 
     <div>
@@ -201,7 +201,7 @@
         Letter / reference <span class="font-normal">(optional)</span>
       </label>
       <input type="text" bind:value={reason} placeholder="e.g. GES/HQ/PROMO/2024/001"
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+        class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
     </div>
   </div>
 

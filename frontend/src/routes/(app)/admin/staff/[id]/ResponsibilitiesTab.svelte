@@ -6,6 +6,7 @@
   import { listHouses, assignHouseMaster, type House } from '$lib/api/housing';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
+  import { userRole } from '$lib/stores/permissions';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
 
@@ -13,6 +14,15 @@
   const { staff, staffId, boardingEnabled, isOwnProfile = false }: Props = $props();
 
   const admin = !isOwnProfile;
+  // Assigning/removing an "Authority" position (StaffPosition — distinct
+  // from the Class Teacher/House Master rows below) grants real system
+  // access, so it requires school.manage_users specifically, not just
+  // staff.edit — the backend enforces this (PATCH /staff/{id} 403s a
+  // position_ids change otherwise); hiding the controls here just avoids
+  // offering something that will fail. $userRole is 'admin' exactly when
+  // the caller holds school.manage_users (services/dashboard.py's own
+  // role-detection cascade), so it's a reliable proxy client-side.
+  const canManagePositions = $derived($userRole === 'admin');
   const qc = useQueryClient();
   const invalidateStaff = () => qc.invalidateQueries({ queryKey: ['staff', staffId] });
   const invalidateResps = () => qc.invalidateQueries({ queryKey: ['staff-responsibilities', staffId] });
@@ -93,7 +103,7 @@
     return list;
   });
 
-  const sel = 'w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none disabled:opacity-50';
+  const sel = 'w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none disabled:opacity-50';
 </script>
 
 <div class="space-y-4">
@@ -115,7 +125,7 @@
         <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Responsibility *</label>
         <select bind:value={assignType} onchange={onTypeChange} class={sel}>
           <option value="">Select…</option>
-          {#if availablePos.length}
+          {#if canManagePositions && availablePos.length}
             <optgroup label="Authority">
               {#each availablePos as p (p.id)}<option value="pos:{p.id}">{p.name}</option>{/each}
             </optgroup>
@@ -201,7 +211,7 @@
             <p class="text-sm font-medium text-[var(--fg)]">{row.label}</p>
             {#if row.detail}<p class="text-xs text-[var(--fg-muted)]">{row.detail}</p>{/if}
           </div>
-          {#if admin && row.posId}
+          {#if admin && canManagePositions && row.posId}
             <button onclick={() => confirmRemovePosId = row.posId!} disabled={$removePosMut.isPending}
               class="shrink-0 text-xs text-[var(--fg-muted)] transition hover:text-red-500 disabled:opacity-50">
               Remove

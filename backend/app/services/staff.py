@@ -211,6 +211,7 @@ async def update_staff(
     req: StaffMemberUpdate,
     school_id: uuid.UUID,
     db: AsyncSession,
+    changed_by_id: uuid.UUID | None = None,
 ) -> StaffMemberDetail:
     member = await db.scalar(
         select(StaffMember)
@@ -242,6 +243,8 @@ async def update_staff(
         await _assert_positions_owned(new_position_ids, school_id, db)
         await guard_last_admin(staff_id, school_id, new_position_ids, db)
 
+        old_position_ids = [p.id for p in member.positions]
+
         await db.execute(
             delete(staff_member_positions).where(
                 staff_member_positions.c.staff_member_id == staff_id
@@ -255,6 +258,19 @@ async def update_staff(
         await db.refresh(member, attribute_names=["positions"])
         from app.core.permissions import invalidate_permissions
         await invalidate_permissions(staff_id)
+
+        # Grants system access — the router requires school.manage_users to
+        # even reach here, but log it regardless of caller (e.g. superadmin)
+        # since this is a security-sensitive change, not just a profile edit.
+        from datetime import datetime, timezone
+        from app.models.auth import AuditLog
+        db.add(AuditLog(
+            school_id=school_id, user_id=changed_by_id, action="STAFF_POSITION_CHANGE",
+            entity_type="StaffMember", entity_id=staff_id,
+            old_values={"position_ids": [str(p) for p in old_position_ids]},
+            new_values={"position_ids": [str(p) for p in new_position_ids]},
+            created_at=datetime.now(timezone.utc),
+        ))
 
     if deactivating or reactivating:
         # StaffMember.is_active and User.is_active are separate fields — without this,
