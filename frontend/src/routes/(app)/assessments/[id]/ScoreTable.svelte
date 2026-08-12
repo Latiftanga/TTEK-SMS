@@ -101,8 +101,10 @@
   </div>
 {/if}
 
-<!-- Score table -->
-<div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+<!-- Score table. overflow-x-auto (not overflow-hidden) so the 4 columns can
+     scroll into view on a narrow phone instead of being silently clipped;
+     overflow-y-hidden pairs with it deliberately — see TabBar.svelte's comment. -->
+<div class="overflow-x-auto overflow-y-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
   <!-- Mobile hint -->
   {#if !a.is_published && canEnterScores}
     <p class="border-b border-[var(--border)] px-4 py-2 text-[10px] text-[var(--fg-subtle)]">
@@ -115,7 +117,7 @@
       <tr class="border-b border-[var(--border)] text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
         <th class="px-4 py-3">Student</th>
         <th class="px-4 py-3 text-center">Score<span class="hidden sm:inline"> / {a.max_score}</span></th>
-        <th class="px-4 py-3 text-center">Grade</th>
+        <th class="px-4 py-3 text-center {a.is_published ? '' : 'hidden sm:table-cell'}">Grade</th>
         <th class="px-4 py-3 text-center">Status</th>
       </tr>
     </thead>
@@ -150,7 +152,7 @@
               <span class="font-mono text-[var(--fg-muted)]">{existing?.raw_score ?? '—'}</span>
             {/if}
           </td>
-          <td class="px-4 py-3 text-center">
+          <td class="px-4 py-3 text-center {a.is_published ? '' : 'hidden sm:table-cell'}">
             {#if existing?.cached_grade_label}
               <span class="inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ring-1 ring-inset {gradeColor(existing.cached_grade_label)}">
                 {existing.cached_grade_label}

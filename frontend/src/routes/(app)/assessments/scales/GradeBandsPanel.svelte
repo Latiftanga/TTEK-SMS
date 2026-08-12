@@ -57,7 +57,7 @@
 </script>
 
 {#if sortedGrades.length > 0}
-  <div class="overflow-hidden rounded-xl border border-[var(--border)]">
+  <div class="overflow-x-auto overflow-y-hidden rounded-xl border border-[var(--border)]">
     <table class="w-full text-xs">
       <thead><tr class="border-b border-[var(--border)] text-left text-[9px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
         <th class="px-3 py-2">Range</th>
