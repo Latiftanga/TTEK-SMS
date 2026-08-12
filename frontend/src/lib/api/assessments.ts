@@ -173,8 +173,8 @@ export const getAssessment = (id: string): Promise<Assessment> =>
 export const createAssessment = (data: {
   class_id: string; subject_id: string; assessment_type_id: string;
   academic_term_id: string; description?: string; max_score: number; due_date?: string;
-}): Promise<Assessment> =>
-  api.post('/assessments', data).then(r => r.data);
+}, overrideReason?: string): Promise<Assessment> =>
+  api.post('/assessments', { ...data, override_reason: overrideReason }).then(r => r.data);
 
 export const updateAssessment = (id: string, data: {
   description?: string; max_score?: number; due_date?: string | null;

@@ -11,10 +11,11 @@
     canEnterScores: boolean;
     isPending: boolean;
     onSave: () => void;
+    onUnsavedChange?: (hasUnsaved: boolean) => void;
   }
   let {
     assessment: a, students, scoreMap, canEnterScores,
-    scoreInputs = $bindable(), isPending, onSave,
+    scoreInputs = $bindable(), isPending, onSave, onUnsavedChange,
   }: Props = $props();
 
   // ── Progress / stats ──────────────────────────────────────────────────────────
@@ -33,6 +34,10 @@
     }
     return false;
   });
+
+  // Lets the parent page warn before navigating away with scores unsaved —
+  // this component owns the input state, so it's the only place that knows.
+  $effect(() => { onUnsavedChange?.(hasUnsaved); });
 
   const rawScores = $derived(
     [...scoreMap.values()].map(s => Number(s.raw_score)).filter(v => !isNaN(v))
@@ -108,7 +113,7 @@
   <!-- Mobile hint -->
   {#if !a.is_published && canEnterScores}
     <p class="border-b border-[var(--border)] px-4 py-2 text-[10px] text-[var(--fg-subtle)]">
-      Tip: press Enter or ↓ to move to the next student
+      Tip: tap Next (or press Enter) on your keyboard to move to the next student
     </p>
   {/if}
 
@@ -116,7 +121,7 @@
     <thead>
       <tr class="border-b border-[var(--border)] text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
         <th class="px-4 py-3">Student</th>
-        <th class="px-4 py-3 text-center">Score<span class="hidden sm:inline"> / {a.max_score}</span></th>
+        <th class="px-4 py-3 text-center">Score / {a.max_score}</th>
         <th class="px-4 py-3 text-center {a.is_published ? '' : 'hidden sm:table-cell'}">Grade</th>
         <th class="px-4 py-3 text-center">Status</th>
       </tr>
@@ -139,11 +144,12 @@
             {:else if canEnterScores}
               <input
                 type="number" min="0" max={a.max_score} step="0.5"
+                inputmode="decimal" enterkeyhint="next"
                 bind:value={scoreInputs[student.id]}
                 placeholder="—"
                 data-score-idx={idx}
                 onkeydown={(e) => handleKeydown(e, idx)}
-                class="w-20 rounded-xl border px-2 py-2 text-center font-mono text-sm text-[var(--fg)]
+                class="min-h-[44px] w-20 rounded-xl border px-2 py-2 text-center font-mono text-sm text-[var(--fg)]
                        focus:outline-none focus:ring-2 transition sm:w-24
                        {outOfRange
                          ? 'border-red-400 bg-red-50 focus:ring-red-300 dark:bg-red-950/30'
@@ -188,7 +194,7 @@
       {hasUnsaved ? 'You have unsaved changes' : enteredCount > 0 ? 'All scores saved' : ''}
     </p>
     <button onclick={onSave} disabled={isPending || !hasUnsaved}
-      class="rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+      class="min-h-[44px] rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
       style="background: var(--brand)">
       {isPending ? 'Saving…' : 'Save scores'}
     </button>

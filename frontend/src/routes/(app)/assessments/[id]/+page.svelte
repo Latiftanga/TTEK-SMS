@@ -2,7 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
+  import { goto, beforeNavigate } from '$app/navigation';
   import {
     getAssessment, getAssessmentRoster, listScores, submitScores, approveScores,
     publishAssessment, unpublishAssessment, updateAssessment, deleteAssessment,
@@ -17,6 +17,7 @@
   import ScoreTable from './ScoreTable.svelte';
   import AssessmentHeaderCard from './AssessmentHeaderCard.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   const qc = useQueryClient();
   const assessmentId   = $derived($page.params.id!);
@@ -211,6 +212,34 @@
     const a = $assessmentQ.data;
     setPageTitle(a ? assessmentLabel(a, typeName(a.assessment_type_id)) : 'Assessment');
   });
+
+  // ── Unsaved-changes guard ─────────────────────────────────────────────────────
+  // ScoreTable owns the input state, so it reports up whenever it changes.
+  let hasUnsavedScores = $state(false);
+  let pendingNavUrl     = $state<string | null>(null);
+  let allowNextNav      = false;
+
+  beforeNavigate((nav) => {
+    if (!hasUnsavedScores || allowNextNav || !nav.to) return;
+    nav.cancel();
+    pendingNavUrl = nav.to.url.pathname + nav.to.url.search;
+  });
+
+  function confirmLeave() {
+    allowNextNav = true;
+    const url = pendingNavUrl;
+    pendingNavUrl = null;
+    if (url) goto(url);
+  }
+
+  $effect(() => {
+    function warnBeforeUnload(e: BeforeUnloadEvent) {
+      if (!hasUnsavedScores) return;
+      e.preventDefault();
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  });
 </script>
 
 <button onclick={() => goto(backHref)}
@@ -267,6 +296,7 @@
       {canEnterScores}
       isPending={$submitMut.isPending}
       onSave={() => $submitMut.mutate(undefined)}
+      onUnsavedChange={(v) => hasUnsavedScores = v}
     />
   {/if}
 {/if}
@@ -291,5 +321,15 @@
   isPending={$unpublishMut.isPending}
   onSubmit={(reason) => $unpublishMut.mutate(reason)}
   onCancel={() => showUnpublish = false}
+/>
+
+<ConfirmModal
+  open={pendingNavUrl !== null}
+  title="Leave without saving?"
+  message="You have score changes that haven't been saved yet. If you leave now, they'll be lost."
+  confirmLabel="Leave anyway"
+  variant="warning"
+  onConfirm={confirmLeave}
+  onCancel={() => pendingNavUrl = null}
 />
 

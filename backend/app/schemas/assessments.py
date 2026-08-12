@@ -12,6 +12,13 @@ class AssessmentUpdate(BaseModel):
     due_date: date | None = None
     override_reason: str | None = None
 
+    @field_validator("max_score")
+    @classmethod
+    def max_score_positive(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and v <= 0:
+            raise ValueError("max_score must be greater than 0.")
+        return v
+
 
 # Identity is (class, subject, term, category, recorded_date) — not a typed
 # name. description is optional supplementary detail; recorded_date is set
@@ -25,6 +32,14 @@ class AssessmentCreate(BaseModel):
     description: str | None = None
     max_score: Decimal
     due_date: date | None = None
+    override_reason: str | None = None
+
+    @field_validator("max_score")
+    @classmethod
+    def max_score_positive(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("max_score must be greater than 0.")
+        return v
 
 
 class AssessmentRead(BaseModel):

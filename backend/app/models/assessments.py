@@ -214,14 +214,21 @@ class Score(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     assessment: Mapped[Assessment] = relationship(back_populates="scores")
-    audit_logs: Mapped[list[ScoreAuditLog]] = relationship(back_populates="score", cascade="all, delete-orphan")
 
 
 class ScoreAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    score_id is SET NULL (not CASCADE) on delete so the log survives an
+    assessment/score deletion, mirroring AssessmentAuditLog/BehaviourAuditLog.
+    No ORM relationship back to Score, deliberately — a relationship with
+    cascade="delete-orphan" would delete these rows in Python before the DB's
+    own ON DELETE SET NULL ever ran; AssessmentAuditLog/BehaviourAuditLog use
+    the same no-relationship pattern for the same reason.
+    """
     __tablename__ = "score_audit_log"
 
-    score_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("score.id", ondelete="CASCADE"), nullable=False, index=True
+    score_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("score.id", ondelete="SET NULL"), nullable=True, index=True
     )
     changed_by_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
@@ -230,8 +237,6 @@ class ScoreAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     new_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-    score: Mapped[Score] = relationship(back_populates="audit_logs")
 
 
 class AssessmentAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):

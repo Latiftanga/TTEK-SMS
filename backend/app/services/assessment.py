@@ -21,6 +21,9 @@ written to AssessmentAuditLog with an old/new value snapshot, mirroring
 ScoreAuditLog and BehaviourAuditLog. recorded_date is never editable, so
 never appears in that log. reason is only populated when the edit overrode a
 locked term (see core/permissions.py::check_term_lock_override).
+create_assessment enforces the same term lock (a locked term shouldn't grow
+new assessments any more than it should let existing ones be edited) and logs
+an AssessmentAuditLog entry when the caller had to override it.
 """
 from __future__ import annotations
 import uuid
@@ -92,6 +95,7 @@ async def create_assessment(
             "You are not assigned to teach this subject in this class.",
         )
     await enforce_current_term_for_scoring(user_id, req.academic_term_id, db)
+    override_reason = await check_term_lock_override(req.academic_term_id, req.override_reason, user_id, db)
 
     if not await class_subject_exists(req.class_id, req.subject_id, school_id, db):
         raise HTTPException(
@@ -154,6 +158,13 @@ async def create_assessment(
     )
     db.add(a)
     await db.flush()
+    if override_reason:
+        db.add(AssessmentAuditLog(
+            school_id=school_id, assessment_id=a.id, changed_by_id=user_id,
+            old_values={}, new_values={"created": "true"}, reason=override_reason,
+            changed_at=datetime.now(timezone.utc),
+        ))
+        await db.flush()
     return _assessment_read(a)
 
 
@@ -267,7 +278,7 @@ async def delete_assessment(
         raise HTTPException(
             status.HTTP_423_LOCKED,
             "This term's results are locked. Unlock the term before deleting an assessment "
-            "— deleting one permanently removes its scores and their audit trail.",
+            "— deleting one permanently removes its scores.",
         )
     await db.delete(a)
     await db.flush()

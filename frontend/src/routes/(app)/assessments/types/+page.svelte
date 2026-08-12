@@ -213,36 +213,26 @@
     <p class="text-sm text-[var(--fg-muted)]">No assessment types defined yet.</p>
   </div>
 {:else}
-  <div class="overflow-x-auto overflow-y-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-    <table class="w-full text-sm">
-      <thead><tr class="border-b border-[var(--border)] text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
-        <th class="px-4 py-3">Name</th>
-        <th class="px-4 py-3">Code</th>
-        <th class="px-4 py-3">Category</th>
-        <th class="px-4 py-3 text-right">Weight</th>
-        <th class="px-4 py-3">Status</th>
-        <th class="px-4 py-3"></th>
-      </tr></thead>
-      <tbody>
-        {#each $typesQ.data ?? [] as t (t.id)}
-          <TypeRow
-            {t}
-            isEditing={editingId === t.id}
-            {editForm}
-            {editError}
-            updatePending={$updateMut.isPending}
-            toggleActivePending={$toggleActiveMut.isPending}
-            deletePending={$deleteMut.isPending}
-            onToggleEdit={toggleEdit}
-            onEditFormChange={patch => editForm = { ...editForm, ...patch }}
-            onSaveEdit={() => handleUpdate(t.id)}
-            onCancelEdit={() => { editingId = null; editError = ''; }}
-            onToggleActive={tt => tt.is_active ? (confirmDeactivate = { id: tt.id, name: tt.name }) : $toggleActiveMut.mutate({ id: tt.id, is_active: true })}
-            onRequestDelete={tt => confirmDelete = { id: tt.id, name: tt.name }}
-          />
-        {/each}
-      </tbody>
-    </table>
+  <!-- A card per type, not a table — see TypeRow.svelte's own comment: a
+       6-column row forced horizontal scroll on a phone. -->
+  <div class="space-y-2">
+    {#each $typesQ.data ?? [] as t (t.id)}
+      <TypeRow
+        {t}
+        isEditing={editingId === t.id}
+        {editForm}
+        {editError}
+        updatePending={$updateMut.isPending}
+        toggleActivePending={$toggleActiveMut.isPending}
+        deletePending={$deleteMut.isPending}
+        onToggleEdit={toggleEdit}
+        onEditFormChange={patch => editForm = { ...editForm, ...patch }}
+        onSaveEdit={() => handleUpdate(t.id)}
+        onCancelEdit={() => { editingId = null; editError = ''; }}
+        onToggleActive={tt => tt.is_active ? (confirmDeactivate = { id: tt.id, name: tt.name }) : $toggleActiveMut.mutate({ id: tt.id, is_active: true })}
+        onRequestDelete={tt => confirmDelete = { id: tt.id, name: tt.name }}
+      />
+    {/each}
   </div>
 {/if}
 

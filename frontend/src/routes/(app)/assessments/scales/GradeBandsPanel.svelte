@@ -76,7 +76,8 @@
             {#if !isShared}
               <td class="px-3 py-2 text-right">
                 <button onclick={() => $deleteMut.mutate(g.id)} disabled={$deleteMut.isPending}
-                  class="rounded p-0.5 text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30">
+                  class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-[var(--fg-subtle)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30"
+                  aria-label="Remove grade band" title="Remove grade band">
                   <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
                   </svg>

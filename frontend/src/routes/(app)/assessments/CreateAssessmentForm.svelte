@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { createAssessment, formatAssessmentDate, type Assessment } from '$lib/api/assessments';
+  import { detailOf, isLocked } from '$lib/apiError';
+  import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
   interface Props {
     classId: string; subjectId: string; termId: string; categoryId: string;
@@ -13,20 +15,24 @@
   const qc = useQueryClient();
   let cf = $state({ description: '', maxScore: '100', dueDate: '' });
   let cfError = $state('');
+  let lockOverride = $state(false);
+  let lockOverrideError = $state('');
 
   const createMut = createMutation({
-    mutationFn: () => createAssessment({
+    mutationFn: (overrideReason: string | undefined) => createAssessment({
       class_id: classId, subject_id: subjectId,
       assessment_type_id: categoryId, academic_term_id: termId,
       description: cf.description.trim() || undefined, max_score: parseFloat(cf.maxScore),
       due_date: cf.dueDate || undefined,
-    }),
+    }, overrideReason),
     onSuccess: (a: Assessment) => {
+      lockOverride = false; lockOverrideError = '';
       qc.invalidateQueries({ queryKey: ['assessments', classId, termId] });
       onCreated(a);
     },
     onError: (e: unknown) => {
-      cfError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not create.';
+      if (isLocked(e)) { lockOverride = true; lockOverrideError = detailOf(e) ?? 'This term is locked.'; return; }
+      cfError = detailOf(e) ?? 'Could not create.';
     },
   });
 
@@ -34,7 +40,7 @@
     cfError = '';
     const score = parseFloat(cf.maxScore);
     if (isNaN(score) || score <= 0) { cfError = 'Enter a valid max score.'; return; }
-    $createMut.mutate();
+    $createMut.mutate(undefined);
   }
 </script>
 
@@ -48,7 +54,7 @@
   </p>
   <div class="grid gap-3 sm:grid-cols-2">
     <div><label for="cf-due" class="label">Date given to students</label><input id="cf-due" type="date" bind:value={cf.dueDate} class="input" /></div>
-    <div><label for="cf-max" class="label">Max score <span class="text-red-500">*</span></label><input id="cf-max" type="number" min="1" step="0.5" bind:value={cf.maxScore} class="input" /></div>
+    <div><label for="cf-max" class="label">Max score <span class="text-red-500">*</span></label><input id="cf-max" type="number" min="1" step="0.5" inputmode="decimal" bind:value={cf.maxScore} class="input" /></div>
     <div class="sm:col-span-2"><label for="cf-desc" class="label">Description (optional)</label><input id="cf-desc" bind:value={cf.description} placeholder="e.g. Covers chapters 3–4" class="input" /></div>
   </div>
   {#if cfError}<p class="mt-2 text-xs text-red-500">{cfError}</p>{/if}
@@ -61,6 +67,14 @@
       class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Cancel</button>
   </div>
 </div>
+
+<OverrideReasonModal
+  open={lockOverride}
+  errorMessage={lockOverrideError}
+  isPending={$createMut.isPending}
+  onSubmit={(reason) => $createMut.mutate(reason)}
+  onCancel={() => { lockOverride = false; lockOverrideError = ''; }}
+/>
 
 <style>
   @reference "tailwindcss";

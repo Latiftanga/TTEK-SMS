@@ -276,6 +276,84 @@ async def test_delete_assessment_allowed_when_term_unlocked(
     assert resp.status_code == 204
 
 
+@pytest.mark.asyncio
+async def test_delete_assessment_preserves_score_audit_log(
+    client: AsyncClient, auth: dict, assessment: Assessment, student: Student,
+    db_session: AsyncSession,
+):
+    """Deleting an assessment CASCADEs Assessment -> Score, but ScoreAuditLog
+    must survive with score_id set to NULL — it's the "who changed what,
+    when" trail, not disposable metadata, mirroring AssessmentAuditLog/
+    BehaviourAuditLog's own SET NULL convention."""
+    submit_resp = await client.post(f"/assessments/{assessment.id}/scores", json={
+        "scores": [{"student_id": str(student.id), "raw_score": "77.00"}],
+    }, headers=auth)
+    assert submit_resp.status_code == 201
+    score_id = submit_resp.json()[0]["id"]
+
+    log_before = await db_session.scalar(
+        select(ScoreAuditLog).where(ScoreAuditLog.score_id == score_id)
+    )
+    assert log_before is not None
+    log_id = log_before.id
+
+    resp = await client.delete(f"/assessments/{assessment.id}", headers=auth)
+    assert resp.status_code == 204
+
+    db_session.expire_all()
+    log_after = await db_session.get(ScoreAuditLog, log_id)
+    assert log_after is not None
+    assert log_after.score_id is None
+    assert log_after.new_score == Decimal("77.00")
+
+
+# ── Create assessment ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_assessment_blocked_when_term_locked_without_reason(
+    client: AsyncClient, auth: dict, school_class: Class, subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm,
+):
+    await _lock_term(client, auth, academic_term.id)
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": "100.00",
+    }, headers=auth)
+    assert resp.status_code == 423
+
+
+@pytest.mark.asyncio
+async def test_create_assessment_allowed_when_locked_with_reason(
+    client: AsyncClient, auth: dict, school: School, school_class: Class, subject, assessment_type: AssessmentType,
+    academic_term: AcademicTerm, db_session: AsyncSession,
+):
+    from app.models.academic import ClassSubject
+    db_session.add(ClassSubject(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    await _lock_term(client, auth, academic_term.id)
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": "100.00",
+        "override_reason": "Backfilling a missed assessment after term close.",
+    }, headers=auth)
+    assert resp.status_code == 201
+    new_id = resp.json()["id"]
+    log = await db_session.scalar(
+        select(AssessmentAuditLog).where(AssessmentAuditLog.assessment_id == new_id)
+    )
+    assert log is not None
+    assert log.reason == "Backfilling a missed assessment after term close."
+
+
 # ── Assessment due_date term bounds ────────────────────────────────────────────
 
 @pytest.mark.asyncio

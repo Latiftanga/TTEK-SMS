@@ -523,6 +523,32 @@ async def test_create_assessment(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_max_score", ["0", "-5.00"])
+async def test_create_assessment_rejects_non_positive_max_score(
+    client: AsyncClient, auth: dict, bad_max_score: str,
+    school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
+):
+    """A zero/negative max_score would self-lock scoring for this assessment —
+    every real score submitted afterward fails the 0..max_score range check."""
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": bad_max_score,
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_rejects_non_positive_max_score(
+    client: AsyncClient, auth: dict, assessment: Assessment,
+):
+    resp = await client.patch(f"/assessments/{assessment.id}", json={"max_score": "0"}, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_assessment_rejects_deactivated_type(
     db_session: AsyncSession, client: AsyncClient, auth: dict,
     school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,

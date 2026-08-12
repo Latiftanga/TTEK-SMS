@@ -166,10 +166,16 @@
 
 <PageHeader title="Assessments" description="Enter scores, approve, and publish results by class and term." />
 
-<!-- Filters — a single stacked column on phones (Class → Subject → Category
-     is a strict left-to-right dependency, so a 2-up grid was jumbling the
-     read order); reverts to a wrapping row from sm: up where there's room
-     to read them side by side. -->
+<!-- Filters — progressive disclosure: Class → Subject → Category is a strict
+     left-to-right dependency, so Subject/Category don't render at all until
+     the step before them is chosen, instead of sitting on screen disabled
+     and grayed-out. On a phone that's the difference between one dropdown
+     to deal with at a time and scrolling past two dead ones to reach it.
+     Each step usually auto-selects itself anyway when there's only one
+     option (see the $effect blocks above), so most callers never even see
+     more than one select here. A single stacked column on phones; reverts
+     to a wrapping row from sm: up where there's room to read them side by
+     side. -->
 <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
   <div class="sm:w-44">
     <label for="f-class" class="label">Class</label>
@@ -178,26 +184,31 @@
       {#each myClasses as c}<option value={c.id}>{c.display_name}</option>{/each}
     </select>
   </div>
-  <div class="sm:w-44">
-    <label for="f-subject" class="label">Subject</label>
-    <select id="f-subject" value={subjectId} onchange={e => setFilter('subject', e.currentTarget.value)} class="sel" disabled={!classId}>
-      <option value="">{classId ? 'Select subject…' : 'Select a class first'}</option>
-      {#each subjectsForClass as p}<option value={p.subject_id}>{p.subject_name}</option>{/each}
-    </select>
-  </div>
-  <div class="sm:w-44">
-    <label for="f-category" class="label">Category</label>
-    <select id="f-category" value={categoryId} onchange={e => setFilter('category', e.currentTarget.value)} class="sel" disabled={!subjectId}>
-      <option value="">{subjectId ? 'Select category…' : 'Select a subject first'}</option>
-      {#each activeTypes as t}<option value={t.id}>{t.name}</option>{/each}
-    </select>
-  </div>
+  {#if classId}
+    <div class="sm:w-44">
+      <label for="f-subject" class="label">Subject</label>
+      <select id="f-subject" value={subjectId} onchange={e => setFilter('subject', e.currentTarget.value)} class="sel">
+        <option value="">Select subject…</option>
+        {#each subjectsForClass as p}<option value={p.subject_id}>{p.subject_name}</option>{/each}
+      </select>
+    </div>
+  {/if}
+  {#if subjectId}
+    <div class="sm:w-44">
+      <label for="f-category" class="label">Category</label>
+      <select id="f-category" value={categoryId} onchange={e => setFilter('category', e.currentTarget.value)} class="sel">
+        <option value="">Select category…</option>
+        {#each activeTypes as t}<option value={t.id}>{t.name}</option>{/each}
+      </select>
+    </div>
+  {/if}
   {#if canManage}
     <!-- Admin/approver keep a real term picker — they legitimately browse past
          terms' assessments. A class/subject teacher is locked to the current
          term server-side (services/scoring.py::submit_scores), and the current
          term is already shown in the top bar, so no picker or label is shown
-         to them here at all — replaced by the Subject filter above instead. -->
+         to them here at all — replaced by the Subject filter above instead.
+         Not part of the Class→Subject→Category chain, so it's always shown. -->
     <div class="sm:flex-1 sm:min-w-[180px]">
       <label for="f-term" class="label">Term</label>
       <select id="f-term" value={termId} onchange={e => setFilter('term', e.currentTarget.value)} class="sel">
