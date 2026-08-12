@@ -15,6 +15,7 @@
   import PageHeader          from '$lib/components/PageHeader.svelte';
   import CustomExportModal   from '$lib/components/CustomExportModal.svelte';
   import Pagination          from '$lib/components/Pagination.svelte';
+  import ActionMenu          from '$lib/components/ActionMenu.svelte';
 
   const PAGE_SIZE = 50;
 
@@ -161,14 +162,12 @@
   description={$isSchoolAdmin ? 'Manage enrolment, guardians, and student records.' : 'Students assigned to your classes or house.'}
 >
   {#if $isSchoolAdmin}
-    <button onclick={() => importOpen = true} class="btn-ghost">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-      Import
-    </button>
-    <button onclick={() => customExportOpen = true} class="btn-ghost">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-      Export
-    </button>
+    <ActionMenu actions={[
+      { label: 'Import', onClick: () => importOpen = true,
+        icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>' },
+      { label: 'Export', onClick: () => customExportOpen = true,
+        icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>' },
+    ]} />
     <button onclick={() => formOpen = true} class="btn-primary">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
       Add student

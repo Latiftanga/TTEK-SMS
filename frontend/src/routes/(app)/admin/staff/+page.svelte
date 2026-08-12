@@ -5,10 +5,12 @@
   import { listStaffPage, listCategories, type StaffSummary, type StaffListParams, type StaffListPage } from '$lib/api/staff';
   import StaffForm        from './StaffForm.svelte';
   import StaffImportModal from './StaffImportModal.svelte';
+  import StaffFilterBar   from './StaffFilterBar.svelte';
   import Badge            from '$lib/components/Badge.svelte';
   import EmptyState       from '$lib/components/EmptyState.svelte';
   import CustomExportModal from '$lib/components/CustomExportModal.svelte';
   import Pagination        from '$lib/components/Pagination.svelte';
+  import ActionMenu        from '$lib/components/ActionMenu.svelte';
   import { setPageTitle } from '$lib/stores/title';
 
   setPageTitle('Staff');
@@ -17,7 +19,7 @@
   let drawerOpen   = $state(false);
   let importOpen   = $state(false);
   let activeOnly   = $state(true);
-  let genderFilter = $state('');
+  let genderFilter = $state<'' | 'MALE' | 'FEMALE'>('');
   let jobFilter    = $state(''); // category_id
   let page         = $state(1);
 
@@ -65,6 +67,10 @@
     category_id: jobFilter || undefined,
   });
 
+  function clearFilters() {
+    searchInput = ''; search = ''; genderFilter = ''; jobFilter = '';
+  }
+
   function initials(s: StaffSummary) { return (s.first_name[0] + s.last_name[0]).toUpperCase(); }
 
   const GENDER_BG: Record<string, string> = { MALE: '#3B82F6', FEMALE: '#EC4899' };
@@ -87,19 +93,13 @@
         {total} member{total !== 1 ? 's' : ''}{hasFilters ? ' matching filters' : ' on record'}
       </p>
     </div>
-    <div class="flex gap-2">
-      <button onclick={() => customExportOpen = true} class="btn-ghost">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-        </svg>
-        Export
-      </button>
-      <button onclick={() => importOpen = true} class="btn-ghost">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
-        </svg>
-        Import
-      </button>
+    <div class="flex items-center gap-2">
+      <ActionMenu actions={[
+        { label: 'Export', onClick: () => customExportOpen = true,
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>' },
+        { label: 'Import', onClick: () => importOpen = true,
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>' },
+      ]} />
       <button onclick={() => drawerOpen = true} class="btn-primary">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
@@ -109,52 +109,15 @@
     </div>
   </div>
 
-  <!-- Stats strip -->
-  {#if $query.isSuccess && total > 0}
-    <div class="flex flex-wrap gap-2">
-      <div class="flex items-baseline gap-1.5 rounded-xl border border-[var(--border)]
-                  bg-[var(--card)] px-3.5 py-2">
-        <span class="text-base font-bold text-[var(--fg)]">{total}</span>
-        <span class="text-xs text-[var(--fg-muted)]">Total</span>
-      </div>
-      <label class="flex cursor-pointer items-baseline gap-1.5 rounded-xl border border-[var(--border)]
-                    bg-[var(--card)] px-3.5 py-2 transition hover:bg-[var(--hover)]">
-        <input type="checkbox" bind:checked={activeOnly} class="accent-[var(--brand)] mr-0.5 h-3 w-3" />
-        <span class="text-xs text-[var(--fg-muted)]">Active only</span>
-      </label>
-    </div>
-  {/if}
-
-  <!-- Search + filters -->
-  <div class="flex flex-wrap gap-2">
-    <div class="relative min-w-48 flex-1">
-      <svg class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--fg-muted)]"
-           fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/>
-      </svg>
-      <input bind:value={searchInput} placeholder="Search name, ID, or position…"
-        class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] py-2.5 pl-9 pr-4
-               text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)]
-               focus:border-[var(--brand)] focus:outline-none" />
-    </div>
-    <select bind:value={genderFilter}
-      class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm
-             text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-      <option value="">All genders</option>
-      <option value="MALE">Male</option>
-      <option value="FEMALE">Female</option>
-    </select>
-    {#if ($categoriesQ.data ?? []).length > 0}
-      <select bind:value={jobFilter}
-        class="h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 text-sm
-               text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
-        <option value="">All categories</option>
-        {#each $categoriesQ.data ?? [] as cat}
-          <option value={cat.id}>{cat.name}</option>
-        {/each}
-      </select>
-    {/if}
-  </div>
+  <StaffFilterBar
+    {searchInput} onSearchInput={(v) => searchInput = v}
+    {genderFilter} onGenderChange={(v) => genderFilter = v as typeof genderFilter}
+    {jobFilter} onJobChange={(v) => jobFilter = v}
+    {activeOnly} onActiveOnlyChange={(v) => activeOnly = v}
+    categories={$categoriesQ.data ?? []}
+    total={total} isPending={$query.isPending} {hasFilters}
+    onClearFilters={clearFilters}
+  />
 
   <!-- Table -->
   {#if $query.isPending}
@@ -176,9 +139,7 @@
       description={hasFilters
         ? 'Try adjusting or clearing your search and filters.'
         : 'Add your first staff member to get started.'}
-      action={hasFilters
-        ? () => { searchInput = ''; search = ''; genderFilter = ''; jobFilter = ''; }
-        : () => { drawerOpen = true; }}
+      action={hasFilters ? clearFilters : () => { drawerOpen = true; }}
       actionLabel={hasFilters ? 'Clear filters' : 'Add first staff member'}
     />
   {:else}

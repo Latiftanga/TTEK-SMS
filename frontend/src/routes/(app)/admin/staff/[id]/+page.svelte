@@ -220,7 +220,6 @@
           tabs={TABS.map(t => ({ id: t.key, label: t.label, icon: t.icon }))}
           active={activeTab}
           onchange={(id) => setTab(id as typeof activeTab)}
-          variant="pill"
         />
       </div>
 
