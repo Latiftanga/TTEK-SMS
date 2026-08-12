@@ -42,15 +42,16 @@
 </script>
 
 <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-  <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+  <div class="flex max-h-[90vh] w-full max-w-sm flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
     <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
       <h2 class="text-base font-semibold text-[var(--fg)]">{editing ? 'Edit' : 'New'} Fee Type</h2>
-      <button onclick={onClose} class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+      <button onclick={onClose} aria-label="Close"
+        class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
 
-    <div class="space-y-3 p-6">
+    <div class="space-y-3 overflow-y-auto p-6">
       <label class="block">
         <span class="label-xs">Name</span>
         <input bind:value={name} class="inp mt-1" placeholder="e.g. Tuition Fee" />
@@ -65,13 +66,13 @@
         <span class="label-xs">Description <span class="font-normal text-[var(--fg-subtle)]">(optional)</span></span>
         <input bind:value={description} class="inp mt-1" />
       </label>
-      <div class="flex items-center gap-4">
-        <label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">
+      <div class="flex flex-wrap items-center gap-4">
+        <label class="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">
           <input type="checkbox" bind:checked={isRecurring} class="rounded" />
           Recurring per term
         </label>
         {#if editing}
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">
+          <label class="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">
             <input type="checkbox" bind:checked={isActive} class="rounded" />
             Active
           </label>
@@ -81,8 +82,8 @@
       {#if error}<p class="text-xs text-red-500">{error}</p>{/if}
 
       <div class="flex justify-end gap-3 pt-2">
-        <button onclick={onClose} class="btn-ghost">Cancel</button>
-        <button onclick={submit} disabled={$mut.isPending} class="btn-primary">
+        <button onclick={onClose} class="btn-ghost min-h-[44px]">Cancel</button>
+        <button onclick={submit} disabled={$mut.isPending} class="btn-primary min-h-[44px]">
           {$mut.isPending ? 'Saving…' : editing ? 'Save' : 'Create'}
         </button>
       </div>
@@ -93,5 +94,5 @@
 <style>
   @reference "tailwindcss";
   .label-xs { @apply block text-xs font-medium text-[var(--fg-muted)]; }
-  .inp { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .inp { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

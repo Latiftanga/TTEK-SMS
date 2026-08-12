@@ -1,5 +1,6 @@
 from __future__ import annotations
 import uuid
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -82,8 +83,8 @@ async def record_payment(
         )
     )
     balance = (
-        float(summary.total_due - summary.total_paid - summary.total_discounted)
-        if summary else max(0.0, float(rec.amount_due) - float(req.amount_paid))
+        summary.total_due - summary.total_paid - summary.total_discounted
+        if summary else max(Decimal("0"), rec.amount_due - req.amount_paid)
     )
 
     await sms_svc.notify_fee_receipt(
@@ -129,6 +130,8 @@ async def apply_discount(
     req: FeeDiscountCreate, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession
 ) -> FeeDiscountRead:
     rec = await _get_record(req.fee_record_id, school_id, db)
+    if rec.is_waived:
+        raise HTTPException(409, "Cannot apply a discount to a waived fee record.")
     discount = FeeDiscount(
         school_id=school_id,
         student_id=rec.student_id,
@@ -166,9 +169,18 @@ async def create_instalment_plan(
     db: AsyncSession,
 ) -> list[InstalmentRead]:
     rec = await _get_record(record_id, school_id, db)
+    if rec.is_waived:
+        raise HTTPException(409, "Cannot set an instalment plan on a waived fee record.")
     nums = [i.instalment_number for i in items]
     if len(nums) != len(set(nums)):
         raise HTTPException(422, "Duplicate instalment_number values in plan.")
+    total = sum((i.amount for i in items), Decimal("0"))
+    if abs(total - rec.amount_due) > Decimal("0.01"):
+        raise HTTPException(
+            422,
+            f"Instalments total {total} but the fee record's amount due is {rec.amount_due} — "
+            "they must match.",
+        )
     # Replace existing plan
     existing = (await db.scalars(
         select(FeeInstalmentPlan).where(FeeInstalmentPlan.fee_record_id == record_id)

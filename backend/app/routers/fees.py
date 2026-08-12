@@ -1,3 +1,15 @@
+"""
+fees.collect/fees.manage are deliberately unscoped school-wide (a bursar's
+job legitimately spans every student) — but a plain fees.view holder (e.g.
+CLASS_TEACHER/TEACHER, who need it for other reasons) was previously able
+to read *any* student's balance/payment/discount history via the four
+per-student read endpoints below, with no scoping at all, unlike every
+other module that draws this line (Students/Attendance/Assessments/
+Housing). assert_can_view_student() closes that gap; it already returns
+"unrestricted" for fees.collect/fees.manage holders (see
+core/student_scope.py::resolve_student_view_scope's own docstring), so a
+bursar's access is unaffected.
+"""
 from __future__ import annotations
 import uuid
 
@@ -6,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
+from app.core.student_scope import assert_can_view_student
 from app.schemas.fees import (
     BulkAssignResult, FeeDiscountCreate, FeeDiscountRead,
     FeePaymentCreate, FeePaymentRead, FeeRecordRead, FeeSummaryRead,
@@ -103,7 +116,8 @@ async def get_student_fee_records(
     auth=Depends(require_permission("fees", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
+    user_id, school_id = auth
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await fee_svc.get_student_fee_records(student_id, term_id, school_id, db)
 
 
@@ -114,7 +128,8 @@ async def get_fee_summary(
     auth=Depends(require_permission("fees", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
+    user_id, school_id = auth
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await fee_svc.get_fee_summary(student_id, term_id, school_id, db)
 
 
@@ -137,7 +152,8 @@ async def list_payments(
     auth=Depends(require_permission("fees", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
+    user_id, school_id = auth
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await payment_svc.list_payments(student_id, term_id, school_id, db)
 
 
@@ -160,7 +176,8 @@ async def list_discounts(
     auth=Depends(require_permission("fees", "view")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = auth
+    user_id, school_id = auth
+    await assert_can_view_student(user_id, student_id, school_id, db)
     return await payment_svc.list_discounts(student_id, term_id, school_id, db)
 
 

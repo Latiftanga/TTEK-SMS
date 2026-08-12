@@ -194,6 +194,47 @@ async def test_discount_percentage_over_100_rejected(
 
 
 @pytest.mark.asyncio
+async def test_discount_negative_amount_rejected(
+    client: AsyncClient, auth: dict, fee_record: StudentFeeRecord
+):
+    """A negative fixed-GHS discount would flow into the StudentFeeSummary
+    trigger's SUM(fd.amount) and *increase* the computed balance — an
+    unaudited fee hike disguised as a discount row."""
+    resp = await client.post("/fees/discounts", json={
+        "fee_record_id": str(fee_record.id),
+        "discount_type": "SCHOLARSHIP",
+        "amount": "-50.00",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_discount_zero_amount_rejected(
+    client: AsyncClient, auth: dict, fee_record: StudentFeeRecord
+):
+    resp = await client.post("/fees/discounts", json={
+        "fee_record_id": str(fee_record.id),
+        "discount_type": "SCHOLARSHIP",
+        "amount": "0",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_discount_on_waived_record_rejected(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, fee_record: StudentFeeRecord
+):
+    fee_record.is_waived = True
+    await db_session.flush()
+    resp = await client.post("/fees/discounts", json={
+        "fee_record_id": str(fee_record.id),
+        "discount_type": "SCHOLARSHIP",
+        "amount": "50.00",
+    }, headers=auth)
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_list_discounts(
     client: AsyncClient, auth: dict,
     student: Student, academic_term: AcademicTerm, fee_record: StudentFeeRecord
@@ -254,6 +295,32 @@ async def test_duplicate_instalment_numbers_rejected(
         {"instalment_number": 1, "amount": "250.00", "due_date": "2024-11-01"},
     ], headers=auth)
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_instalment_plan_not_summing_to_amount_due_rejected(
+    client: AsyncClient, auth: dict, fee_record: StudentFeeRecord
+):
+    """fee_record.amount_due is 500 — a plan that doesn't add up to that no
+    longer represents how the fee will actually be paid off."""
+    resp = await client.put(f"/fees/records/{fee_record.id}/instalments", json=[
+        {"instalment_number": 1, "amount": "200.00", "due_date": "2024-10-01"},
+        {"instalment_number": 2, "amount": "200.00", "due_date": "2024-11-01"},
+    ], headers=auth)
+    assert resp.status_code == 422
+    assert "500" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_instalment_plan_on_waived_record_rejected(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, fee_record: StudentFeeRecord
+):
+    fee_record.is_waived = True
+    await db_session.flush()
+    resp = await client.put(f"/fees/records/{fee_record.id}/instalments", json=[
+        {"instalment_number": 1, "amount": "500.00", "due_date": "2024-10-01"},
+    ], headers=auth)
+    assert resp.status_code == 409
 
 
 @pytest.mark.asyncio

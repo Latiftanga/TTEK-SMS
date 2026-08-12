@@ -275,6 +275,7 @@ async def get_fee_summary(
         select(StudentFeeSummary).where(
             StudentFeeSummary.student_id == student_id,
             StudentFeeSummary.academic_term_id == term_id,
+            StudentFeeSummary.school_id == school_id,
         )
     )
     if not summary:

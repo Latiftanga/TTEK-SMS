@@ -140,8 +140,16 @@ class StudentFeeRecord(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     instalment_plans: Mapped[list[FeeInstalmentPlan]] = relationship(back_populates="fee_record")
 
 
-class FeePayment(Base, UUIDPrimaryKey, SchoolScopedMixin):
-    """A single payment credited against a StudentFeeRecord."""
+class FeePayment(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+    """
+    A single payment credited against a StudentFeeRecord.
+
+    payment_date is self-reported (a cashier can back/future-date it) and is
+    the only date this table used to have — TimestampMixin's created_at is
+    the actual system-entry timestamp, needed to ever answer "was this
+    payment backdated" during a dispute. Every other financial audit column
+    in this codebase (FeeDiscount, ...) already had this; FeePayment didn't.
+    """
     __tablename__ = "fee_payment"
 
     student_id: Mapped[uuid.UUID] = mapped_column(
@@ -203,7 +211,7 @@ class FeeDiscount(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     fee_record: Mapped[StudentFeeRecord] = relationship(back_populates="discounts")
 
 
-class FeeInstalmentPlan(Base, UUIDPrimaryKey, SchoolScopedMixin):
+class FeeInstalmentPlan(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     """A scheduled instalment within a fee record's payment plan."""
     __tablename__ = "fee_instalment_plan"
 

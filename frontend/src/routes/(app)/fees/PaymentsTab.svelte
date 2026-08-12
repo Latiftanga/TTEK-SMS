@@ -128,7 +128,7 @@
       placeholder="Search student by name or admission number…"
       class="min-w-0 flex-1 bg-transparent text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:outline-none" />
     {#if selected}
-      <button onclick={clear} class="shrink-0 text-xs text-[var(--fg-muted)] transition hover:text-[var(--fg)]">Clear ✕</button>
+      <button onclick={clear} class="flex min-h-[44px] shrink-0 items-center px-2 text-xs text-[var(--fg-muted)] transition hover:text-[var(--fg)]">Clear ✕</button>
     {/if}
   </div>
   {#if showResults && searchResults.length > 0}
@@ -176,7 +176,7 @@
       <div class="mt-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 dark:border-red-900 dark:bg-red-950/30">
         <p class="text-sm text-red-700 dark:text-red-400">Could not load fee data.</p>
         <button onclick={() => $feeQ.refetch()}
-          class="ml-3 shrink-0 text-xs font-semibold text-red-700 underline hover:no-underline dark:text-red-400">
+          class="ml-3 flex min-h-[44px] shrink-0 items-center px-2 text-xs font-semibold text-red-700 underline hover:no-underline dark:text-red-400">
           Retry
         </button>
       </div>

@@ -59,6 +59,14 @@
       if (!r.due_date) { formError = 'All instalments need a due date.'; return; }
     }
     if (rows.length === 0) { formError = 'Add at least one instalment.'; return; }
+    // The backend now rejects a plan that doesn't sum to the fee's
+    // amount_due (it stopped representing how the fee actually gets paid
+    // off) — catch it here so the amber "fee is X" hint above doesn't lead
+    // to a surprise 422 on submit.
+    if (Math.abs(totalPlanned - parseFloat(record.amount_due)) > 0.01) {
+      formError = `Instalments total ${totalPlanned.toFixed(2)} but the fee due is ${record.amount_due} — they must match.`;
+      return;
+    }
     $saveMut.mutate();
   }
 
@@ -76,8 +84,8 @@
         <h2 class="text-base font-semibold text-[var(--fg)]">Instalment Plan</h2>
         <p class="text-xs text-[var(--fg-muted)]">{record.fee_type_name} · {ghs(record.amount_due)}</p>
       </div>
-      <button onclick={onClose}
-        class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+      <button onclick={onClose} aria-label="Close"
+        class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -97,7 +105,7 @@
         <!-- No plan yet -->
         <p class="mb-5 text-sm text-[var(--fg-muted)]">No instalment schedule set for this fee. Set one below.</p>
         <button onclick={() => showForm = true}
-          class="w-full rounded-xl border border-dashed border-[var(--brand)] py-2.5 text-sm
+          class="min-h-[44px] w-full rounded-xl border border-dashed border-[var(--brand)] py-2.5 text-sm
                  font-medium text-[var(--brand)] transition hover:bg-[var(--brand)]/5">
           + Create plan
         </button>
@@ -126,7 +134,7 @@
             </div>
           </div>
           <button onclick={() => showForm = true}
-            class="mb-4 text-xs font-medium text-[var(--brand)] transition hover:underline">
+            class="mb-4 flex min-h-[44px] items-center text-xs font-medium text-[var(--brand)] transition hover:underline">
             Replace plan
           </button>
         {/if}
@@ -138,7 +146,7 @@
               <div class="flex items-center gap-2">
                 <span class="w-5 shrink-0 text-center text-xs text-[var(--fg-muted)]">{i + 1}</span>
                 <input
-                  type="number" min="0.01" step="0.01"
+                  type="number" inputmode="decimal" min="0.01" step="0.01"
                   bind:value={row.amount}
                   placeholder="Amount"
                   class="inp w-28 shrink-0" />
@@ -149,7 +157,8 @@
                 <button
                   onclick={() => removeRow(i)}
                   disabled={rows.length <= 1}
-                  class="shrink-0 rounded-lg p-1 text-[var(--fg-subtle)] transition hover:text-red-500 disabled:opacity-30">
+                  aria-label="Remove instalment {i + 1}"
+                  class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-[var(--fg-subtle)] transition hover:text-red-500 disabled:opacity-30">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
@@ -159,7 +168,7 @@
           </div>
 
           <button onclick={addRow}
-            class="mb-4 text-xs font-medium text-[var(--brand)] transition hover:underline">
+            class="mb-4 flex min-h-[44px] items-center text-xs font-medium text-[var(--brand)] transition hover:underline">
             + Add instalment
           </button>
 
@@ -191,7 +200,7 @@
 
 <style>
   @reference "tailwindcss";
-  .inp { @apply rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
-  .btn-primary { @apply rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50; background: var(--brand); }
-  .btn-ghost   { @apply rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]; }
+  .inp { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .btn-primary { @apply min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50; background: var(--brand); }
+  .btn-ghost   { @apply min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]; }
 </style>

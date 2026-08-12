@@ -62,25 +62,31 @@
                 </div>
               {/if}
             </div>
-            <div class="tabular-nums text-right text-sm text-[var(--fg)]">{ghs(r.amount_due)}</div>
-            <div class="tabular-nums text-right text-sm text-green-600 dark:text-green-400">
-              {paid > 0 ? ghs(paid) : '—'}
+            <div class="text-right">
+              <p class="text-[9px] font-semibold uppercase tracking-wider text-[var(--fg-subtle)]">Due</p>
+              <p class="tabular-nums text-sm text-[var(--fg)]">{ghs(r.amount_due)}</p>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="text-right">
+              <p class="text-[9px] font-semibold uppercase tracking-wider text-[var(--fg-subtle)]">Paid</p>
+              <p class="tabular-nums text-sm text-green-600 dark:text-green-400">
+                {paid > 0 ? ghs(paid) : '—'}
+              </p>
+            </div>
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
               {#if r.is_waived}
                 <span class="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--fg-muted)]">Waived</span>
               {:else if rem <= 0}
                 <span class="text-xs font-semibold text-green-600 dark:text-green-400">✓ Paid</span>
               {:else}
                 <button onclick={() => onPay(r)}
-                  class="rounded-lg border border-[var(--brand)] px-2.5 py-1 text-xs font-semibold
+                  class="min-h-[44px] rounded-lg border border-[var(--brand)] px-2.5 text-xs font-semibold
                          text-[var(--brand)] transition hover:bg-[var(--brand)] hover:text-white">
                   Pay
                 </button>
               {/if}
               {#if isAdmin && !r.is_waived}
                 <button onclick={() => onDiscount(r)}
-                  class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold
+                  class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 text-xs font-semibold
                          text-[var(--fg-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]">
                   Discount
                 </button>

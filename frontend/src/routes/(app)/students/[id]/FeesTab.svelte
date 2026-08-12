@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
-  import { portal } from '$lib/actions/portal';
   import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
   import {
-    listStudentFeeRecords, getFeeSummary, listPayments, applyDiscount, recordPayment,
-    ghs, PAYMENT_METHOD_LABELS, DISCOUNT_TYPE_LABELS,
-    type FeeRecord, type PaymentMethod, type DiscountType,
+    listStudentFeeRecords, getFeeSummary, listPayments,
+    ghs, PAYMENT_METHOD_LABELS,
+    type FeeRecord,
   } from '$lib/api/fees';
   import InstalmentModal from './InstalmentModal.svelte';
-  import { toast } from '$lib/stores/toast';
+  import PaymentModal from '../../fees/PaymentModal.svelte';
+  import DiscountModal from '../../fees/DiscountModal.svelte';
 
   interface Props { studentId: string; }
   const { studentId }: Props = $props();
@@ -49,74 +49,18 @@
     qc.invalidateQueries({ queryKey: ['student-fee-summary',   studentId, termId] });
   }
 
-  // ── Payment modal ─────────────────────────────────────────────────────────────
-  let payRecord = $state<FeeRecord | null>(null);
-  const today = new Date().toISOString().slice(0, 10);
-  let payAmount = $state('');
-  let payMethod = $state<PaymentMethod>('CASH');
-  let payRef    = $state('');
-  let payDate   = $state(today);
-  let payNotes  = $state('');
-  let payError  = $state('');
-  const methods = Object.entries(PAYMENT_METHOD_LABELS) as [PaymentMethod, string][];
-
-  const payMut = createMutation({
-    mutationFn: () => recordPayment({
-      fee_record_id: payRecord!.id,
-      amount_paid: parseFloat(payAmount),
-      payment_method: payMethod,
-      reference_number: payRef.trim() || undefined,
-      payment_date: payDate,
-      notes: payNotes.trim() || undefined,
-    }),
-    onSuccess: () => { toast.success('Payment recorded.'); payRecord = null; invalidateFees(); },
-    onError: (e: unknown) => { payError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.'; },
-  });
-
-  function openPay(r: FeeRecord) {
-    payRecord = r;
-    const remaining = Math.max(0, parseFloat(r.amount_due) - (paidByRecord.get(r.id) ?? 0));
-    payAmount = remaining.toFixed(2);
-    payMethod = 'CASH'; payRef = ''; payDate = today; payNotes = ''; payError = '';
-  }
-  function submitPay() {
-    payError = '';
-    const n = parseFloat(payAmount);
-    if (!payAmount || isNaN(n) || n <= 0) { payError = 'Enter a valid amount.'; return; }
-    $payMut.mutate();
-  }
-
-  // ── Instalment modal ──────────────────────────────────────────────────────────
+  // Payment/Discount modals are the shared fees/PaymentModal.svelte and
+  // fees/DiscountModal.svelte components (also used by the standalone /fees
+  // page) — this tab used to hand-roll its own copies of both, which had
+  // quietly drifted to be missing the Notes field entirely (captured in
+  // state, never actually rendered as an input) and never picked up mobile
+  // fixes made to the shared originals. One component, two places it's used.
+  let payRecord  = $state<FeeRecord | null>(null);
+  let discRecord = $state<FeeRecord | null>(null);
   let instRecord = $state<FeeRecord | null>(null);
 
-  // ── Discount modal ────────────────────────────────────────────────────────────
-  let discRecord  = $state<FeeRecord | null>(null);
-  let discType    = $state<DiscountType>('SCHOLARSHIP');
-  let discMode    = $state<'amount' | 'percentage'>('percentage');
-  let discValue   = $state('');
-  let discReason  = $state('');
-  let discError   = $state('');
-  const discTypes = Object.entries(DISCOUNT_TYPE_LABELS) as [DiscountType, string][];
-
-  const discMut = createMutation({
-    mutationFn: () => applyDiscount({
-      fee_record_id: discRecord!.id,
-      discount_type: discType,
-      amount:     discMode === 'amount'      ? parseFloat(discValue) : undefined,
-      percentage: discMode === 'percentage'  ? parseFloat(discValue) : undefined,
-      reason: discReason.trim() || undefined,
-    }),
-    onSuccess: () => { toast.success('Discount applied.'); discRecord = null; invalidateFees(); },
-    onError: (e: unknown) => { discError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.'; },
-  });
-
-  function openDisc(r: FeeRecord) { discRecord = r; discType = 'SCHOLARSHIP'; discMode = 'percentage'; discValue = ''; discReason = ''; discError = ''; }
-  function submitDisc() {
-    discError = '';
-    const n = parseFloat(discValue);
-    if (!discValue || isNaN(n) || n <= 0) { discError = 'Enter a valid value.'; return; }
-    if (discMode === 'percentage' && n > 100) { discError = 'Percentage cannot exceed 100.'; return; }
-    $discMut.mutate();
+  function remainingFor(r: FeeRecord): number {
+    return Math.max(0, parseFloat(r.amount_due) - (paidByRecord.get(r.id) ?? 0));
   }
 </script>
 
@@ -170,10 +114,10 @@
             {:else if remaining <= 0}
               <span class="text-xs font-semibold text-green-600 dark:text-green-400">✓ Paid</span>
             {:else}
-              <div class="flex gap-1">
-                <button onclick={() => openPay(r)} class="rounded-lg border border-[var(--brand)] px-2.5 py-1 text-xs font-semibold text-[var(--brand)] transition hover:bg-[var(--brand)] hover:text-white">Pay</button>
-                <button onclick={() => openDisc(r)} class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--fg-muted)] transition hover:border-[var(--fg-muted)] hover:text-[var(--fg)]">Discount</button>
-                <button onclick={() => instRecord = r} class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--fg-muted)] transition hover:border-[var(--fg-muted)] hover:text-[var(--fg)]">Instalments</button>
+              <div class="flex flex-wrap gap-1.5">
+                <button onclick={() => payRecord = r} class="min-h-[44px] rounded-lg border border-[var(--brand)] px-2.5 text-xs font-semibold text-[var(--brand)] transition hover:bg-[var(--brand)] hover:text-white">Pay</button>
+                <button onclick={() => discRecord = r} class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 text-xs text-[var(--fg-muted)] transition hover:border-[var(--fg-muted)] hover:text-[var(--fg)]">Discount</button>
+                <button onclick={() => instRecord = r} class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 text-xs text-[var(--fg-muted)] transition hover:border-[var(--fg-muted)] hover:text-[var(--fg)]">Instalments</button>
               </div>
             {/if}
           </div>
@@ -207,86 +151,27 @@
   {/if}
 {/if}
 
-<!-- Payment modal -->
+<!-- Payment / Discount / Instalment modals -->
 {#if payRecord}
-  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
-      <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-        <div>
-          <h2 class="text-base font-semibold text-[var(--fg)]">Record Payment</h2>
-          <p class="text-xs text-[var(--fg-muted)]">{payRecord.fee_type_name} · due {ghs(payRecord.amount_due)}</p>
-        </div>
-        <button onclick={() => payRecord = null} class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div class="space-y-3 p-6">
-        <div class="grid grid-cols-2 gap-3">
-          <label class="block"><span class="lx">Amount (GHS)</span><input type="number" bind:value={payAmount} min="0.01" step="0.01" class="inp mt-1" /></label>
-          <label class="block"><span class="lx">Date</span><input type="date" bind:value={payDate} max={today} class="inp mt-1" /></label>
-        </div>
-        <label class="block"><span class="lx">Method</span>
-          <select bind:value={payMethod} class="sel mt-1">{#each methods as [k,v]}<option value={k}>{v}</option>{/each}</select>
-        </label>
-        <label class="block"><span class="lx">Reference <span class="font-normal text-[var(--fg-subtle)]">(optional)</span></span><input bind:value={payRef} class="inp mt-1" /></label>
-        {#if payError}<p class="text-xs text-red-500">{payError}</p>{/if}
-        <div class="flex justify-end gap-3 pt-1">
-          <button onclick={() => payRecord = null} class="btn-ghost">Cancel</button>
-          <button onclick={submitPay} disabled={$payMut.isPending} class="btn-primary">{$payMut.isPending ? 'Saving…' : 'Record'}</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <PaymentModal
+    record={payRecord} {termId}
+    remainingBalance={remainingFor(payRecord)}
+    onClose={() => payRecord = null}
+    onSuccess={() => { payRecord = null; invalidateFees(); }}
+  />
 {/if}
-
-<!-- Instalment modal -->
+{#if discRecord}
+  <DiscountModal
+    record={discRecord} {termId}
+    onClose={() => discRecord = null}
+    onSuccess={() => { discRecord = null; invalidateFees(); }}
+  />
+{/if}
 {#if instRecord}
   <InstalmentModal record={instRecord} onClose={() => instRecord = null} />
 {/if}
 
-<!-- Discount modal -->
-{#if discRecord}
-  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
-      <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-        <div>
-          <h2 class="text-base font-semibold text-[var(--fg)]">Apply Discount</h2>
-          <p class="text-xs text-[var(--fg-muted)]">{discRecord.fee_type_name}</p>
-        </div>
-        <button onclick={() => discRecord = null} class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div class="space-y-3 p-6">
-        <label class="block"><span class="lx">Discount type</span>
-          <select bind:value={discType} class="sel mt-1">{#each discTypes as [k,v]}<option value={k}>{v}</option>{/each}</select>
-        </label>
-        <div class="flex gap-3">
-          <label class="flex cursor-pointer items-center gap-1.5 text-sm">
-            <input type="radio" name="disc-mode" value="percentage" bind:group={discMode} /> Percentage
-          </label>
-          <label class="flex cursor-pointer items-center gap-1.5 text-sm">
-            <input type="radio" name="disc-mode" value="amount" bind:group={discMode} /> Fixed amount
-          </label>
-        </div>
-        <label class="block">
-          <span class="lx">{discMode === 'percentage' ? 'Percentage (%)' : 'Amount (GHS)'}</span>
-          <input type="number" bind:value={discValue} min="0.01" step="0.01" class="inp mt-1" placeholder={discMode === 'percentage' ? '0–100' : '0.00'} />
-        </label>
-        <label class="block"><span class="lx">Reason <span class="font-normal text-[var(--fg-subtle)]">(optional)</span></span><input bind:value={discReason} class="inp mt-1" /></label>
-        {#if discError}<p class="text-xs text-red-500">{discError}</p>{/if}
-        <div class="flex justify-end gap-3 pt-1">
-          <button onclick={() => discRecord = null} class="btn-ghost">Cancel</button>
-          <button onclick={submitDisc} disabled={$discMut.isPending} class="btn-primary">{$discMut.isPending ? 'Saving…' : 'Apply'}</button>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
-
 <style>
   @reference "tailwindcss";
-  .sel { @apply rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
-  .inp { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
-  .lx  { @apply block text-xs font-medium text-[var(--fg-muted)]; }
+  .sel { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

@@ -87,18 +87,19 @@
 </script>
 
 <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-  <div class="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+  <div class="flex max-h-[90vh] w-full max-w-md flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
     <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
       <div>
         <h2 class="text-base font-semibold text-[var(--fg)]">{editing ? 'Edit' : 'Add'} Fee Structure</h2>
         <p class="text-xs text-[var(--fg-muted)]">{termName}</p>
       </div>
-      <button onclick={onClose} aria-label="Close" class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+      <button onclick={onClose} aria-label="Close"
+        class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
 
-    <div class="space-y-4 p-6">
+    <div class="space-y-4 overflow-y-auto p-6">
       <!-- Fee type -->
       {#if editing}
         <div class="rounded-xl bg-[var(--hover)] px-3 py-2 text-sm font-medium text-[var(--fg)]">{editing.fee_type_name}</div>
@@ -115,7 +116,7 @@
       <!-- Amount -->
       <label class="block">
         <span class="lx">Amount (GHS)</span>
-        <input type="number" bind:value={amount} min="0.01" step="0.01" class="inp mt-1" placeholder="0.00" />
+        <input type="number" inputmode="decimal" bind:value={amount} min="0.01" step="0.01" class="inp mt-1" placeholder="0.00" />
       </label>
 
       <!-- Scope (only on create) -->
@@ -167,7 +168,7 @@
       {/if}
 
       <!-- Mandatory -->
-      <label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">
+      <label class="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">
         <input type="checkbox" bind:checked={isMandatory} class="accent-[var(--brand)]" />
         Mandatory fee
       </label>
@@ -175,8 +176,8 @@
       {#if error}<p class="text-xs text-red-500">{error}</p>{/if}
 
       <div class="flex justify-end gap-3 pt-1">
-        <button onclick={onClose} class="btn-ghost">Cancel</button>
-        <button onclick={submit} disabled={$mut.isPending} class="btn-primary">
+        <button onclick={onClose} class="btn-ghost min-h-[44px]">Cancel</button>
+        <button onclick={submit} disabled={$mut.isPending} class="btn-primary min-h-[44px]">
           {$mut.isPending ? 'Saving…' : editing ? 'Save' : 'Add'}
         </button>
       </div>
@@ -187,6 +188,6 @@
 <style>
   @reference "tailwindcss";
   .lx  { @apply block text-xs font-medium text-[var(--fg-muted)]; }
-  .inp { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
-  .sel { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .inp { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .sel { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

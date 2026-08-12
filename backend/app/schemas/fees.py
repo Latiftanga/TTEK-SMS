@@ -159,6 +159,7 @@ class FeePaymentRead(BaseModel):
     received_by_id: uuid.UUID
     payment_date: date
     notes: str | None
+    created_at: datetime
     model_config = {"from_attributes": True}
 
 
@@ -175,6 +176,13 @@ class FeeDiscountCreate(BaseModel):
         has_pct = self.percentage is not None
         if has_amount == has_pct:
             raise ValueError("Provide exactly one of 'amount' or 'percentage', not both or neither.")
+        if has_amount and self.amount <= 0:
+            # Unlike percentage (bounded 0-100 below), a fixed-GHS discount
+            # had no positivity check at all — a negative value flows straight
+            # into the StudentFeeSummary trigger's SUM(fd.amount), which
+            # *increases* the computed balance: an unaudited fee hike
+            # disguised as a "discount" row.
+            raise ValueError("amount must be positive.")
         if has_pct and not (Decimal("0") < self.percentage <= Decimal("100")):
             raise ValueError("percentage must be between 0 and 100 (exclusive of 0).")
         return self
