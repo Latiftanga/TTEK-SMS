@@ -145,6 +145,43 @@ async def test_generate_calendar_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_generate_calendar_rejects_overlapping_term(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, academic_term: AcademicTerm,
+):
+    """school_calendar is uniquely constrained on (school_id, date) — a
+    calendar date can only ever belong to one term. Two terms whose date
+    ranges overlap (e.g. a school mid-transition between academic years,
+    or a term-dates typo) must not crash with a raw IntegrityError when the
+    second term's calendar is generated — this is the real scenario that
+    happened live: 'Semester 2' 2026-06-01..08-31 and a new-year 'Semester 1'
+    2026-08-01..11-30 both claiming August."""
+    await client.post("/attendance/calendar/generate", json={
+        "term_id": str(academic_term.id),
+    }, headers=auth)
+
+    overlapping_term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_term.academic_year_id,
+        term_number=2, name="Overlapping Term",
+        start_date=date(2024, 12, 1), end_date=date(2025, 3, 31), is_current=False,
+    )
+    db_session.add(overlapping_term)
+    await db_session.flush()
+
+    resp = await client.post("/attendance/calendar/generate", json={
+        "term_id": str(overlapping_term.id),
+    }, headers=auth)
+    assert resp.status_code == 409
+    assert "already belong to another term" in resp.json()["detail"]
+
+    # No partial writes — zero calendar rows created for the rejected term.
+    orphaned = await db_session.scalar(
+        select(SchoolCalendar).where(SchoolCalendar.academic_term_id == overlapping_term.id)
+    )
+    assert orphaned is None
+
+
+@pytest.mark.asyncio
 async def test_list_calendar(
     client: AsyncClient, auth: dict, academic_term: AcademicTerm
 ):

@@ -98,14 +98,41 @@ async def generate_calendar(
     )
     holiday_dates: set[date] = {h.date for h in holiday_rows}
 
-    # Fetch existing entries — for force mode we need the full objects to update in place
+    # school_calendar is uniquely constrained on (school_id, date) — ONE row per
+    # school per date, school-wide, not per-term (a calendar date can only ever
+    # belong to one term). Scoping this lookup to req.term_id (as before) missed
+    # rows already claimed by a *different* term whose date range happens to
+    # overlap this one — generation would then try to INSERT a duplicate for
+    # that date and crash with a raw IntegrityError instead of a clear message.
     existing_rows = await db.scalars(
         select(SchoolCalendar).where(
             SchoolCalendar.school_id == school_id,
-            SchoolCalendar.academic_term_id == req.term_id,
+            SchoolCalendar.date >= term.start_date,
+            SchoolCalendar.date <= term.end_date,
         )
     )
     existing_map: dict[date, SchoolCalendar] = {r.date: r for r in existing_rows}
+
+    # Validate before writing anything — two terms with overlapping date ranges
+    # is a data problem to fix at the source (the term dates), not something to
+    # silently paper over by skipping days or stealing them from the other term
+    # (which would orphan any AttendanceRecord already marked against them).
+    conflict_term_ids = {
+        r.academic_term_id for r in existing_map.values() if r.academic_term_id != req.term_id
+    }
+    if conflict_term_ids:
+        other_terms = await db.scalars(select(AcademicTerm).where(AcademicTerm.id.in_(conflict_term_ids)))
+        names = ", ".join(sorted({t.name for t in other_terms}))
+        conflict_dates = sorted(
+            d for d, r in existing_map.items() if r.academic_term_id in conflict_term_ids
+        )
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{len(conflict_dates)} day(s) in this term's range ({conflict_dates[0]} to "
+            f"{conflict_dates[-1]}) already belong to another term's calendar ({names}) — "
+            "their date ranges overlap. Fix the term dates so they don't overlap, then "
+            "generate the calendar again.",
+        )
 
     touched: list[SchoolCalendar] = []
     current = term.start_date
