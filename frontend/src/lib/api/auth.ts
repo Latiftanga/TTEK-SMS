@@ -7,7 +7,17 @@ export interface LoginRequest {
   login_type: LoginType;
   identifier: string;
   password: string;
-  school_code?: string;
+  // Required — every school is reached only via its own subdomain/custom
+  // domain, which resolves this automatically before login() is ever
+  // called. Platform-admin login (superadminLogin) is a fully separate
+  // function that never touches school_code at all.
+  school_code: string;
+  remember_me?: boolean;
+}
+
+export interface SuperadminLoginRequest {
+  identifier: string;
+  password: string;
   remember_me?: boolean;
 }
 
@@ -33,6 +43,13 @@ export function detectLoginType(identifier: string): LoginType {
 
 export async function login(req: LoginRequest): Promise<TokenResponse> {
   const { data } = await client.post<TokenResponse>('/auth/login', req);
+  return data;
+}
+
+/** Platform-admin login — separate endpoint, never shares a code path
+ * with login(). See services/auth.py::superadmin_login. */
+export async function superadminLogin(req: SuperadminLoginRequest): Promise<TokenResponse> {
+  const { data } = await client.post<TokenResponse>('/auth/superadmin-login', req);
   return data;
 }
 

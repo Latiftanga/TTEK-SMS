@@ -9,8 +9,24 @@ class LoginRequest(BaseModel):
     login_type: LoginType
     identifier: str    # email / phone / admission_id depending on login_type
     password: str
-    school_code: str | None = None  # required for ADMISSION_ID login
+    # Required for every login_type, no fallback — every school is reached
+    # only via its own subdomain/custom domain, which resolves this
+    # automatically before the request is ever sent (see login/+page.svelte).
+    # A request with no school_code is simply invalid, not "assume global."
+    # Platform-admin login is a fully separate endpoint (superadmin_login)
+    # that never touches school_code at all.
+    school_code: str
     remember_me: bool = False       # extend refresh token to 30 days
+
+
+class SuperadminLoginRequest(BaseModel):
+    """Platform-admin login — deliberately separate from LoginRequest, not a
+    variant of it. Superadmin accounts have school_id=None (see
+    scripts/create_superadmin.py) and are never reached via any school's
+    subdomain, so there is no school_code to resolve, ever."""
+    identifier: str    # email
+    password: str
+    remember_me: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -123,13 +139,13 @@ class InvitationInfo(BaseModel):
 class ForgotPasswordRequest(BaseModel):
     login_type: LoginType
     identifier: str
-    school_code: str | None = None  # required for ADMISSION_ID
+    school_code: str  # required — see LoginRequest.school_code
 
 
 class VerifyOtpRequest(BaseModel):
     login_type: LoginType
     identifier: str
-    school_code: str | None = None
+    school_code: str  # required — see LoginRequest.school_code
     otp: str  # 6-digit string
 
     @field_validator("otp")

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { schoolLoginUrl as buildSchoolLoginUrl } from '$lib/platformDomain';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getStaff, updateStaff, resetStaffPassword, inviteStaff, type TempPasswordResult, type InviteResult } from '$lib/api/staff';
   import { getMySchool } from '$lib/api/schools';
@@ -70,6 +71,12 @@
 
   let inviteResult = $state<InviteResult | null>(null);
   let inviteLinkCopied = $state(false);
+
+  // Every school gets a branded subdomain by default now (see
+  // services/school.py::create_school) — surfacing it here means new staff
+  // have a memorable URL to bookmark instead of a "school code" to
+  // remember on every future login.
+  const schoolLoginUrl = $derived(buildSchoolLoginUrl($schoolQuery.data?.subdomain));
 
   const inviteMut = createMutation({
     mutationFn: () => inviteStaff(staffId),
@@ -373,6 +380,14 @@
       </div>
 
       <p class="mt-3 text-xs text-[var(--fg-subtle)]">Link expires in 72 hours.</p>
+
+      {#if schoolLoginUrl}
+        <p class="mt-4 rounded-xl bg-[var(--hover)]/50 px-3 py-2.5 text-xs text-[var(--fg-muted)]">
+          Once they've set a password, tell them to bookmark
+          <span class="font-mono font-medium text-[var(--fg)]">{schoolLoginUrl}</span>
+          — their school's own sign-in page. No school code to remember, ever.
+        </p>
+      {/if}
 
       <div class="mt-5 flex justify-end">
         <button onclick={() => inviteResult = null}

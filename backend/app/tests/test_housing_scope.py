@@ -53,9 +53,10 @@ async def _make_housemaster_staff(
     return staff, user
 
 
-async def _login(client: AsyncClient, email: str) -> dict:
+async def _login(client: AsyncClient, email: str, school: School) -> dict:
     resp = await client.post("/auth/login", json={
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+        "school_code": school.school_code,
     })
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
@@ -216,7 +217,7 @@ async def test_list_houses_scoped_to_own_house(
         academic_year_id=academic_year.id, is_active=True,
     ))
     await db_session.flush()
-    hm_auth = await _login(client, "hmscope-list@presec-test.edu.gh")
+    hm_auth = await _login(client, "hmscope-list@presec-test.edu.gh", school)
 
     r_mine = await client.get("/housing/houses/mine", headers=hm_auth)
     assert r_mine.status_code == 200
@@ -241,7 +242,7 @@ async def test_get_and_update_house_404_for_other_house(
         academic_year_id=academic_year.id, is_active=True,
     ))
     await db_session.flush()
-    hm_auth = await _login(client, "hmscope-getupd@presec-test.edu.gh")
+    hm_auth = await _login(client, "hmscope-getupd@presec-test.edu.gh", school)
 
     ok = await client.get(f"/housing/houses/{house_a['id']}", headers=hm_auth)
     assert ok.status_code == 200
@@ -265,7 +266,7 @@ async def test_create_house_403_for_scoped_housemaster(
         academic_year_id=academic_year.id, is_active=True,
     ))
     await db_session.flush()
-    hm_auth = await _login(client, "hmscope-create@presec-test.edu.gh")
+    hm_auth = await _login(client, "hmscope-create@presec-test.edu.gh", school)
 
     r = await client.post("/housing/houses", json={
         "name": "Rogue Hall", "code": "ROGUE1", "gender": "MALE",
@@ -285,7 +286,7 @@ async def test_assign_house_master_403_for_scoped_housemaster(
         academic_year_id=academic_year.id, is_active=True,
     ))
     await db_session.flush()
-    hm_auth = await _login(client, "hmscope-assignhm@presec-test.edu.gh")
+    hm_auth = await _login(client, "hmscope-assignhm@presec-test.edu.gh", school)
 
     r = await client.post(f"/housing/houses/{house_b['id']}/master", json={
         "staff_member_id": str(staff.id), "academic_year_id": str(academic_year.id),
@@ -305,7 +306,7 @@ async def test_rooms_and_house_students_scoped(
         academic_year_id=academic_year.id, is_active=True,
     ))
     await db_session.flush()
-    hm_auth = await _login(client, "hmscope-rooms@presec-test.edu.gh")
+    hm_auth = await _login(client, "hmscope-rooms@presec-test.edu.gh", school)
 
     ok_room = await client.post(f"/housing/houses/{house_a['id']}/rooms", json={"room_number": "1A"}, headers=hm_auth)
     assert ok_room.status_code == 201
@@ -330,7 +331,7 @@ async def test_assign_and_vacate_student_scoped(
         academic_year_id=academic_year.id, is_active=True,
     ))
     await db_session.flush()
-    hm_auth = await _login(client, "hmscope-assignstu@presec-test.edu.gh")
+    hm_auth = await _login(client, "hmscope-assignstu@presec-test.edu.gh", school)
 
     s1 = await _make_student_api(client, auth, "SCOPESTU1")
     s2 = await _make_student_api(client, auth, "SCOPESTU2")

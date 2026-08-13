@@ -30,6 +30,14 @@ async def resolve_school_id(school_code: str, db: AsyncSession) -> uuid.UUID | N
     deployments the frontend resolves the domain to a school_code via
     GET /schools/by-domain on mount, then sends that school_code.
 
+    A deactivated school (School.is_active=False) never resolves — this is
+    what makes "Deactivate" in the superadmin console an actual access
+    block, not just a cosmetic flag hidden from list_schools/branding
+    lookups: every login/forgot-password/verify-otp call funnels through
+    find_user_by_identifier -> here, so no school_code/subdomain/custom_domain
+    for a deactivated school can ever resolve a school_id, and the caller
+    (find_user_by_identifier) already 404s "School not found" for that case.
+
     Returns None if no school matches (caller decides whether that is an error).
     """
     slug = school_code.strip().lower()
@@ -39,7 +47,8 @@ async def resolve_school_id(school_code: str, db: AsyncSession) -> uuid.UUID | N
                 func.lower(School.school_code) == slug,
                 School.subdomain == slug,
                 School.custom_domain == slug,
-            )
+            ),
+            School.is_active.is_(True),
         )
     )
     return school.id if school else None
@@ -47,46 +56,52 @@ async def resolve_school_id(school_code: str, db: AsyncSession) -> uuid.UUID | N
 
 async def find_user_by_identifier(req: LoginRequest, db: AsyncSession) -> User | None:
     """
-    Locate a user by the appropriate identifier, scoped to a school when known.
+    Locate a user by the appropriate identifier, always scoped to a school.
 
-    Multi-tenant scoping rules:
-      - school_code provided → resolve school_id, then filter User.school_id.
-        This is always the case for requests originating from a school subdomain
-        or custom domain — both frontends send school_code in every request.
-      - school_code absent   → global lookup (superadmin / platform-admin login
-        from the root domain where no school context exists).
-      - ADMISSION_ID login   → school_code is always required because the same
-        admission number can exist in two different schools.
+    school_code is required on every LoginRequest (schema-enforced — see
+    schemas/auth.py) and resolved once here; every login_type is then
+    looked up scoped to that school uniformly. There is no unscoped/global
+    lookup in this function at all — every school is reached only via its
+    own subdomain/custom domain, which resolves school_code automatically
+    before the request is ever sent (login/+page.svelte), so a caller here
+    always has one. Platform-admin login is a fully separate function
+    (services/auth.py::superadmin_login) that never calls this at all —
+    every query below explicitly excludes is_superadmin accounts too, so
+    the exclusion holds regardless of whether a given superadmin row
+    happens to carry a school_id (the real one never does, but this
+    shouldn't depend on that as an implicit assumption).
 
     Returns None if no matching user exists (caller decides what error to raise).
+
+    Raises:
+        404  school_code does not resolve to any school.
     """
-    school_id: uuid.UUID | None = None
-    if req.school_code:
-        school_id = await resolve_school_id(req.school_code, db)
-
-    if req.login_type == LoginType.EMAIL:
-        q = select(User).where(User.email == req.identifier.lower().strip())
-        if school_id:
-            q = q.where(User.school_id == school_id)
-        return await db.scalar(q)
-
-    if req.login_type == LoginType.PHONE:
-        q = select(User).where(User.phone == req.identifier.strip())
-        if school_id:
-            q = q.where(User.school_id == school_id)
-        return await db.scalar(q)
-
-    # ADMISSION_ID: school_code is mandatory.
-    if not req.school_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="school_code is required when login_type is ADMISSION_ID.",
-        )
+    school_id = await resolve_school_id(req.school_code, db)
     if not school_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"School '{req.school_code}' not found.",
         )
+
+    if req.login_type == LoginType.EMAIL:
+        return await db.scalar(
+            select(User).where(
+                User.email == req.identifier.lower().strip(),
+                User.school_id == school_id,
+                User.is_superadmin.is_(False),
+            )
+        )
+
+    if req.login_type == LoginType.PHONE:
+        return await db.scalar(
+            select(User).where(
+                User.phone == req.identifier.strip(),
+                User.school_id == school_id,
+                User.is_superadmin.is_(False),
+            )
+        )
+
+    # ADMISSION_ID
     return await db.scalar(
         select(User).where(
             User.school_id == school_id,

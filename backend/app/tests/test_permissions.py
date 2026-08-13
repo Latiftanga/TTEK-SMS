@@ -39,8 +39,8 @@ async def _other_school_auth(client: AsyncClient, db_session: AsyncSession) -> t
     )
     db_session.add(user)
     await db_session.flush()
-    resp = await client.post("/auth/login", json={
-        "login_type": "EMAIL", "identifier": "other-admin-perm@test.gh", "password": "pw",
+    resp = await client.post("/auth/superadmin-login", json={
+        "identifier": "other-admin-perm@test.gh", "password": "pw",
     })
     assert resp.status_code == 200
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}, other_school
@@ -123,6 +123,7 @@ async def test_existing_staff_migrated_to_fork_and_see_new_permissions(
     await db_session.flush()
     teacher_auth = {"Authorization": f"Bearer {(await client.post('/auth/login', json={
         'login_type': 'EMAIL', 'identifier': 'permteacher@presec-test.edu.gh', 'password': 'Whatever123!',
+        'school_code': school.school_code,
     })).json()['access_token']}"}
 
     # Before the fork, the teacher can see students.
@@ -219,6 +220,7 @@ async def test_class_teacher_fork_does_not_leak_to_other_school(
     await db_session.flush()
     ct_auth = {"Authorization": f"Bearer {(await client.post('/auth/login', json={
         'login_type': 'EMAIL', 'identifier': 'permct@presec-test.edu.gh', 'password': 'Whatever123!',
+        'school_code': school.school_code,
     })).json()['access_token']}"}
 
     # fees.view was on the original CLASS_TEACHER template but not re-granted

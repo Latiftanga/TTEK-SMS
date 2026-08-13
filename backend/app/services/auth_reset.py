@@ -82,12 +82,50 @@ async def _get_school_driver(school_id: uuid.UUID, db: AsyncSession):
 
 
 async def _resolve_phone(user: User, db: AsyncSession) -> str | None:
-    """Prefer StaffMember.phone; fall back to User.phone (set on PHONE-type accounts)."""
+    """Prefer StaffMember.phone; fall back to User.phone (set on PHONE-type
+    accounts); for a student (ADMISSION_ID) account — which has no phone of
+    its own, Student has no phone field at all — fall back to the primary
+    guardian's phone. The guardian relays the code, the same real-world
+    pattern already used to deliver initial portal-access credentials (see
+    services/student_portal.py::_notify_guardian, same query shape). Without
+    this, forgot_password() silently no-ops for every student: the router
+    always returns 204 regardless (to prevent account enumeration), so the
+    frontend proceeds to the OTP screen even though nothing was ever sent."""
     if user.staff_member_id:
         staff = await db.get(StaffMember, user.staff_member_id)
         if staff and staff.phone:
             return staff.phone
+    if user.student_id:
+        from sqlalchemy import select
+        from app.models.students import Guardian, StudentGuardian
+        sg = await db.scalar(
+            select(StudentGuardian).where(
+                StudentGuardian.student_id == user.student_id,
+                StudentGuardian.is_primary.is_(True),
+            )
+        )
+        guardian = await db.get(Guardian, sg.guardian_id) if sg else None
+        return guardian.phone if guardian else None
     return user.phone
+
+
+async def _reset_sms_text(user: User, otp: str, db: AsyncSession) -> str:
+    """A student's reset code is relayed to their guardian, not the account
+    holder — name the student in the message so a guardian (who may also
+    hold their own separate guardian-portal account, with resets of their
+    own) isn't left guessing which login this code is for."""
+    if user.student_id:
+        from app.models.students import Student
+        student = await db.get(Student, user.student_id)
+        name = f"{student.first_name} {student.last_name}" if student else "your child"
+        return (
+            f"TTEK-SMS: Password reset code for {name}'s student portal is {otp}. "
+            f"Valid for 10 minutes. Do not share this code."
+        )
+    return (
+        f"TTEK-SMS: Your password reset code is {otp}. "
+        f"Valid for 10 minutes. Do not share this code."
+    )
 
 
 async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession) -> str | None:
@@ -133,10 +171,7 @@ async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession) -> str |
         try:
             driver = await _get_school_driver(user.school_id, db)
             if driver:
-                msg = (
-                    f"TTEK-SMS: Your password reset code is {otp}. "
-                    f"Valid for 10 minutes. Do not share this code."
-                )
+                msg = await _reset_sms_text(user, otp, db)
                 await driver.send(phone, msg)
         except Exception:
             pass  # OTP is in Redis — user can still get it another way in dev

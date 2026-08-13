@@ -2,33 +2,25 @@
   import type { SchoolBranding } from '$lib/api/schools';
 
   interface Props {
-    isSubdomain: boolean;
-    schoolCode: string;
     identifier: string;
     password: string;
     showPassword: boolean;
     rememberMe: boolean;
     branding: SchoolBranding | null;
-    brandingState: 'idle' | 'loading' | 'found' | 'not-found';
     formError: string;
     loadingLogin: boolean;
-    onSchoolCodeBlur: () => void;
     onKeydown: (e: KeyboardEvent) => void;
     onSubmit: () => void;
   }
 
   let {
-    isSubdomain,
-    schoolCode = $bindable(),
     identifier = $bindable(),
     password = $bindable(),
     showPassword = $bindable(),
     rememberMe = $bindable(),
     branding,
-    brandingState,
     formError,
     loadingLogin,
-    onSchoolCodeBlur,
     onKeydown,
     onSubmit,
   }: Props = $props();
@@ -59,51 +51,6 @@
 <!-- Card -->
 <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 space-y-4"
      style="box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);">
-
-  {#if !isSubdomain}
-    <div>
-      <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5" for="school-code">
-        School code
-      </label>
-      <div class="relative">
-        <input
-          id="school-code"
-          type="text"
-          bind:value={schoolCode}
-          onblur={onSchoolCodeBlur}
-          onkeydown={onKeydown}
-          placeholder="e.g. presec"
-          autocomplete="off"
-          spellcheck={false}
-          class="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--input-bg)]
-                 px-4 py-3 pr-10 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)]
-                 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20
-                 focus:border-[var(--brand)] transition lowercase"
-        />
-        <span class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          {#if brandingState === 'loading'}
-            <svg class="h-4 w-4 animate-spin text-[var(--fg-muted)]" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-            </svg>
-          {:else if brandingState === 'found'}
-            <svg class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24"
-                 stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-            </svg>
-          {:else if brandingState === 'not-found'}
-            <svg class="h-4 w-4 text-red-400" fill="none" viewBox="0 0 24 24"
-                 stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          {/if}
-        </span>
-      </div>
-      {#if brandingState === 'not-found'}
-        <p class="mt-1.5 text-xs text-red-500">School not found — check the code and try again.</p>
-      {/if}
-    </div>
-  {/if}
 
   <div>
     <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5" for="identifier">

@@ -34,6 +34,7 @@ reads the active config when sending SMS (future SmsService driver).
 """
 from __future__ import annotations
 
+import re
 import uuid
 
 from fastapi import HTTPException, UploadFile, status
@@ -44,6 +45,35 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.models.school import GhanaDistrict, GhanaRegion, School
 from app.schemas.school import SchoolBranding, SchoolCreate, SchoolRead, SchoolUpdate, _logo_url
 
+# Mirrors frontend/src/lib/stores/subdomain.ts's RESERVED set — an
+# auto-generated subdomain must never collide with a platform route.
+_SUBDOMAIN_RESERVED = {"www", "api", "admin", "mail", "staging", "dev"}
+
+
+def _slugify_subdomain(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")[:50].rstrip("-")
+    if len(slug) < 3:
+        slug = (slug + "-school").strip("-")[:50]
+    return slug or "school"
+
+
+async def _generate_unique_subdomain(name: str, db: AsyncSession) -> str:
+    """Every school gets a branded <slug>.ttek-sms.com login page by
+    default, with zero admin action required — a school that never touches
+    the subdomain field still lands on a fully-branded URL, not a bare
+    shared domain. Appends -2, -3, ... on collision (with an existing
+    school's subdomain or a reserved word like 'www')."""
+    base = _slugify_subdomain(name)
+    if base in _SUBDOMAIN_RESERVED:
+        base = f"{base}-school"
+    candidate, n = base, 2
+    while candidate in _SUBDOMAIN_RESERVED or await db.scalar(
+        select(School.id).where(School.subdomain == candidate)
+    ):
+        candidate = f"{base}-{n}"[:50]
+        n += 1
+    return candidate
+
 
 # ── School CRUD ───────────────────────────────────────────────────────────────
 
@@ -52,10 +82,14 @@ async def create_school(req: SchoolCreate, db: AsyncSession) -> SchoolRead:
     Register a new school on the platform.
 
     Validates that the school_code is not already taken and that the
-    provided region and district IDs exist in the reference data.
+    provided region and district IDs exist in the reference data. A blank
+    subdomain is auto-generated from the school name (see
+    _generate_unique_subdomain) rather than left null, so every school gets
+    a branded login URL by default.
 
     Raises:
         409  school_code is already registered by another school.
+        409  subdomain (if explicitly given) is already taken.
         404  region_id or district_id not found in reference data.
     """
     existing = await db.scalar(
@@ -76,6 +110,9 @@ async def create_school(req: SchoolCreate, db: AsyncSession) -> SchoolRead:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Subdomain '{req.subdomain}' is already taken.",
             )
+        subdomain = req.subdomain
+    else:
+        subdomain = await _generate_unique_subdomain(req.name, db)
 
     region = await db.get(GhanaRegion, req.region_id)
     if not region:
@@ -91,7 +128,7 @@ async def create_school(req: SchoolCreate, db: AsyncSession) -> SchoolRead:
             detail=f"District ID '{req.district_id}' not found in reference data.",
         )
 
-    school = School(**req.model_dump())
+    school = School(**{**req.model_dump(), "subdomain": subdomain})
     db.add(school)
     await db.flush()
     return SchoolRead.model_validate(school)

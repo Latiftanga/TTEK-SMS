@@ -251,9 +251,11 @@ async def fee_record(
 
 @pytest_asyncio.fixture
 async def auth(client: AsyncClient, school_admin: User) -> dict:
-    """Bearer token headers for the school admin."""
-    resp = await client.post("/auth/login", json={
-        "login_type": "EMAIL",
+    """Bearer token headers for the school admin (a superadmin — see
+    school_admin fixture). Superadmin login is a separate endpoint from
+    regular school login and never sends school_code (see
+    services/auth.py::superadmin_login)."""
+    resp = await client.post("/auth/superadmin-login", json={
         "identifier": "admin@presec-test.edu.gh",
         "password": "admin1234",
     })

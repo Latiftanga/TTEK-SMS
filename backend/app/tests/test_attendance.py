@@ -40,6 +40,7 @@ async def _login_as_position(
 
     resp = await client.post("/auth/login", json={
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
+        "school_code": school.school_code,
     })
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}, staff_id
@@ -62,8 +63,8 @@ async def _other_school_auth(client: AsyncClient, db_session: AsyncSession) -> d
     )
     db_session.add(user)
     await db_session.flush()
-    resp = await client.post("/auth/login", json={
-        "login_type": "EMAIL", "identifier": "other-admin@test.gh", "password": "pw",
+    resp = await client.post("/auth/superadmin-login", json={
+        "identifier": "other-admin@test.gh", "password": "pw",
     })
     assert resp.status_code == 200
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}

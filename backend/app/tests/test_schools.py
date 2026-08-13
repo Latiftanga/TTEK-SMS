@@ -37,6 +37,7 @@ async def _login_as_head(client: AsyncClient, auth: dict, db_session: AsyncSessi
     await db_session.flush()
     resp = await client.post("/auth/login", json={
         "login_type": "EMAIL", "identifier": "head@presec-test.edu.gh", "password": "Whatever123!",
+        "school_code": school.school_code,
     })
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
@@ -217,3 +218,102 @@ async def test_sms_config_by_id_rejects_non_superadmin(
         "provider": "ARKESEL", "api_key": "hijacked-key",
     }, headers=head_auth)
     assert resp.status_code == 403
+
+
+# ── Auto-generated subdomain on creation ───────────────────────────────────────
+# Every school should get a branded <slug>.ttek-sms.com sign-in page by
+# default, with zero admin action required — see services/school.py::
+# _generate_unique_subdomain. A blank subdomain used to be left null forever.
+
+async def _region_district(db_session: AsyncSession) -> tuple:
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    return region, district
+
+
+@pytest.mark.asyncio
+async def test_create_school_auto_generates_subdomain_when_blank(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    region, district = await _region_district(db_session)
+    resp = await client.post("/schools", json={
+        "name": "Achimota School", "school_code": "AUTOSLUG01", "school_type": "SHS",
+        "region_id": str(region.id), "district_id": str(district.id),
+    }, headers=auth)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["subdomain"] == "achimota-school"
+
+
+@pytest.mark.asyncio
+async def test_create_school_dedupes_subdomain_on_collision(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    region, district = await _region_district(db_session)
+    first = await client.post("/schools", json={
+        "name": "Slug Collision School", "school_code": "COLL01", "school_type": "SHS",
+        "region_id": str(region.id), "district_id": str(district.id),
+    }, headers=auth)
+    second = await client.post("/schools", json={
+        "name": "Slug Collision School", "school_code": "COLL02", "school_type": "SHS",
+        "region_id": str(region.id), "district_id": str(district.id),
+    }, headers=auth)
+    assert first.status_code == 201 and second.status_code == 201
+    assert first.json()["subdomain"] == "slug-collision-school"
+    assert second.json()["subdomain"] == "slug-collision-school-2"
+
+
+@pytest.mark.asyncio
+async def test_create_school_respects_explicit_subdomain(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    region, district = await _region_district(db_session)
+    resp = await client.post("/schools", json={
+        "name": "Some Long School Name", "school_code": "EXPLICIT01", "school_type": "SHS",
+        "region_id": str(region.id), "district_id": str(district.id),
+        "subdomain": "custom-slug",
+    }, headers=auth)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["subdomain"] == "custom-slug"
+
+
+@pytest.mark.asyncio
+async def test_create_school_auto_slug_avoids_reserved_word(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    """A school literally named "API" or "Admin" must not silently claim a
+    reserved platform subdomain (frontend/src/lib/stores/subdomain.ts's
+    RESERVED set) — it would collide with the platform's own routes."""
+    region, district = await _region_district(db_session)
+    resp = await client.post("/schools", json={
+        "name": "Admin", "school_code": "RESERVED01", "school_type": "SHS",
+        "region_id": str(region.id), "district_id": str(district.id),
+    }, headers=auth)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["subdomain"] != "admin"
+    assert resp.json()["subdomain"] == "admin-school"
+
+
+# ── EMAIL login always requires school_code — no school directory ─────────────
+# The "Find my school" search endpoint (and the global-lookup-when-omitted
+# behavior in find_user_by_identifier) was removed outright: a searchable
+# school directory lets anyone see which schools use the platform, directly
+# undermining "this app was built specifically for us." Every school is
+# reached only via its own subdomain/custom domain, which resolves
+# school_code automatically before the request is ever sent — see
+# services/auth.py::superadmin_login for the one legitimate exception
+# (platform-admin, a fully separate endpoint) and test_auth.py for the
+# full regular-vs-superadmin login coverage.
+
+@pytest.mark.asyncio
+async def test_email_login_requires_school_code(
+    client: AsyncClient, db_session: AsyncSession, school: School,
+):
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email="noschoolcode@presec-test.edu.gh",
+        password_hash=hash_password("Whatever123!"), is_active=True,
+    ))
+    await db_session.flush()
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": "noschoolcode@presec-test.edu.gh", "password": "Whatever123!",
+    })
+    assert resp.status_code == 422, resp.text

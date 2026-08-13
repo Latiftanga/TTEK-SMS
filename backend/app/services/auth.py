@@ -49,7 +49,7 @@ from app.core.auth import (
 from app.core.config import settings
 from app.models.auth import LoginType, User, UserSession
 from app.models.school import School
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.auth import LoginRequest, SuperadminLoginRequest, TokenResponse
 from app.services.auth_lookup import find_user_by_identifier
 
 
@@ -65,13 +65,16 @@ async def login(
     ip: str | None = None,
 ) -> TokenResponse:
     """
-    Authenticate a user and return a new token pair.
+    Authenticate a school user (staff/guardian/student — never a
+    superadmin, see superadmin_login) and return a new token pair.
 
     The login identifier depends on login_type:
       EMAIL        → req.identifier is the user's email (case-insensitive)
       PHONE        → req.identifier is the user's phone number
-      ADMISSION_ID → req.identifier is the student's admission number;
-                     req.school_code is required to scope the lookup to a school
+      ADMISSION_ID → req.identifier is the student's admission number
+
+    req.school_code is always required (schema-enforced) and scopes every
+    login_type's lookup to that one school — see find_user_by_identifier.
 
     Side effects:
       - Creates a new UserSession row (stores hashed refresh token + IP).
@@ -81,15 +84,60 @@ async def login(
         TokenResponse with access_token, refresh_token, and expires_in seconds.
 
     Raises:
-        400  ADMISSION_ID login attempted without providing school_code
+        404  school_code does not resolve to any school
         401  Credentials are wrong (same error whether user exists or not)
         403  User account exists but has been deactivated
     """
     user = await find_user_by_identifier(req, db)
+    return await _complete_login(user, req.password, req.remember_me, db, ip)
 
+
+async def superadmin_login(
+    req: SuperadminLoginRequest,
+    db: AsyncSession,
+    ip: str | None = None,
+) -> TokenResponse:
+    """
+    Authenticate the platform-admin account and return a new token pair.
+
+    Deliberately separate from login() rather than a variant of it — a
+    superadmin has school_id=None (scripts/create_superadmin.py) and is
+    never reached via any school's subdomain/custom domain, so there is no
+    school_code to resolve, ever. This function never calls
+    find_user_by_identifier and never touches school_code at all, so
+    "which case is this" is never inferred from whether a field happens to
+    be present — the two flows simply don't share a lookup path.
+
+    Raises:
+        401  Credentials are wrong, OR the account is not a superadmin
+             (same error either way — a regular staff/guardian/student
+             account exists but isn't a match for *this* endpoint, which
+             must not be distinguishable from "wrong password").
+        403  Account exists and is a superadmin but has been deactivated.
+    """
+    user = await db.scalar(
+        select(User).where(
+            User.email == req.identifier.lower().strip(),
+            User.is_superadmin.is_(True),
+        )
+    )
+    return await _complete_login(user, req.password, req.remember_me, db, ip)
+
+
+async def _complete_login(
+    user: User | None,
+    password: str,
+    remember_me: bool,
+    db: AsyncSession,
+    ip: str | None,
+) -> TokenResponse:
+    """Shared tail of login()/superadmin_login() once a candidate user (or
+    None) has been resolved — password verification, session creation, and
+    token issuance are identical for both flows; only how the user is
+    looked up differs."""
     # Intentionally combine "user not found" and "wrong password" into one error.
     # This prevents an attacker from enumerating which identifiers are registered.
-    if not user or not verify_password(req.password, user.password_hash):
+    if not user or not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials.",
@@ -105,7 +153,7 @@ async def login(
 
     raw_refresh, refresh_hash = create_refresh_token()
     expires_at = (
-        _utcnow() + timedelta(days=30) if req.remember_me
+        _utcnow() + timedelta(days=30) if remember_me
         else refresh_token_expiry()
     )
     session = UserSession(

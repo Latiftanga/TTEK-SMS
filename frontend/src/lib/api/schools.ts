@@ -17,6 +17,8 @@ export interface SchoolRead {
   school_code: string;
   school_type: 'BASIC' | 'SHS' | 'TECHNICAL' | 'VOCATIONAL' | 'PRIVATE';
   ownership: 'PUBLIC' | 'PRIVATE';
+  region_id: string;
+  district_id: string;
   phone: string | null;
   email: string | null;
   address: string | null;
@@ -41,12 +43,60 @@ export interface SchoolUpdatePayload {
   established_year?: number;
   has_boarding?: boolean;
   brand_color?: string;
+  subdomain?: string;
 }
 
 /** Extends SchoolBranding with routing identifiers returned for custom domain resolution. */
 export interface SchoolByDomainResult extends SchoolBranding {
   school_code: string;
   subdomain: string | null;
+}
+
+export interface RegionRead {
+  id: string;
+  name: string;
+  code: string;
+}
+
+export interface DistrictRead {
+  id: string;
+  name: string;
+  code: string;
+  region_id: string;
+}
+
+/** POST /schools payload — superadmin only. subdomain left blank auto-generates
+ * one from `name` (services/school.py::create_school). */
+export interface SchoolCreatePayload {
+  name: string;
+  short_name?: string;
+  school_code: string;
+  school_type: 'BASIC' | 'SHS';
+  region_id: string;
+  district_id: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  motto?: string;
+  established_year?: number;
+  subdomain?: string;
+  has_boarding?: boolean;
+}
+
+/** PATCH /schools/{id} payload — superadmin only. school_code/school_type
+ * are immutable after creation (not accepted by the backend at all). */
+export interface SchoolAdminUpdatePayload {
+  name?: string;
+  short_name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  motto?: string;
+  established_year?: number;
+  has_boarding?: boolean;
+  subdomain?: string;
+  custom_domain?: string;
+  is_active?: boolean;
 }
 
 /** Public endpoint — no auth required. */
@@ -94,12 +144,65 @@ export async function uploadMyLogo(file: File): Promise<SchoolRead> {
   return data;
 }
 
-/** Apply the school's brand color as CSS custom properties on <html>. */
+// ── Superadmin — school onboarding ──────────────────────────────────────────
+
+/** List every school on the platform. Superadmin only. */
+export async function listSchools(params?: { active_only?: boolean }): Promise<SchoolRead[]> {
+  const { data } = await client.get<SchoolRead[]>('/schools', {
+    params: { limit: 500, ...params },
+  });
+  return data;
+}
+
+/** Register a new school. Superadmin only — Tagnatek provisions each school. */
+export async function createSchool(payload: SchoolCreatePayload): Promise<SchoolRead> {
+  const { data } = await client.post<SchoolRead>('/schools', payload);
+  return data;
+}
+
+/** Update any school's profile — including is_active, which is what
+ * actually blocks sign-in (services/auth_lookup.py::resolve_school_id
+ * excludes deactivated schools from every login/reset lookup). Superadmin only. */
+export async function updateSchool(id: string, payload: SchoolAdminUpdatePayload): Promise<SchoolRead> {
+  const { data } = await client.patch<SchoolRead>(`/schools/${id}`, payload);
+  return data;
+}
+
+/** Public reference data — no auth required (also usable pre-login). */
+export async function listRegions(): Promise<RegionRead[]> {
+  const { data } = await client.get<RegionRead[]>('/schools/regions');
+  return data;
+}
+
+export async function listDistricts(regionId?: string): Promise<DistrictRead[]> {
+  const { data } = await client.get<DistrictRead[]>('/schools/districts', {
+    params: regionId ? { region_id: regionId } : undefined,
+  });
+  return data;
+}
+
+const DEFAULT_FAVICON = '/favicon.svg';
+
+/**
+ * Apply the school's brand color as CSS custom properties on <html>, and
+ * swap the browser-tab favicon to the school's own logo — the one piece of
+ * "this feels like ours" branding that was still a static platform-wide
+ * file (app.html's #app-favicon) even though title/logo/motto/color were
+ * already dynamic everywhere this function is called (login, portal,
+ * forgot-password, the live Setup preview). Falls back to the default
+ * favicon when a school has no logo, rather than leaving a stale one from
+ * whatever branding was applied previously (matters for ProfileTab's live
+ * preview and for navigating between schools on the login screen).
+ */
 export function applyBranding(branding: SchoolBranding) {
   const root = document.documentElement;
   const hex = branding.brand_color;
   root.style.setProperty('--brand', hex);
   root.style.setProperty('--brand-light', hexTint(hex, 0.9));
+
+  const favicon = document.getElementById('app-favicon') as HTMLLinkElement | null;
+  if (favicon) favicon.href = branding.logo_url ?? DEFAULT_FAVICON;
+
   // RGB triplet for rgba(var(--brand-rgb), 0.1) usage in components
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);

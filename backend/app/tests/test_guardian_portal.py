@@ -41,9 +41,10 @@ async def _make_guardian_user(db: AsyncSession, school: School, guardian: Guardi
     return user
 
 
-async def _guardian_login(client: AsyncClient, guardian: Guardian, password: str = "portal1234") -> dict:
+async def _guardian_login(client: AsyncClient, guardian: Guardian, school: School, password: str = "portal1234") -> dict:
     resp = await client.post("/auth/login", json={
         "login_type": "PHONE", "identifier": guardian.phone, "password": password,
+        "school_code": school.school_code,
     })
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
@@ -140,7 +141,7 @@ async def test_guardian_can_login_via_phone(
 ):
     guardian = await _add_guardian(db_session, school, student)
     await _make_guardian_user(db_session, school, guardian)
-    portal_auth = await _guardian_login(client, guardian)
+    portal_auth = await _guardian_login(client, guardian, school)
 
     resp = await client.get("/auth/me", headers=portal_auth)
     assert resp.status_code == 200
@@ -170,7 +171,7 @@ async def test_portal_children_lists_linked_students(
     await _make_guardian_user(db_session, school, guardian)
     await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
     await _make_enrollment(db_session, school, other, school_class, academic_term, school_admin)
-    portal_auth = await _guardian_login(client, guardian)
+    portal_auth = await _guardian_login(client, guardian, school)
 
     resp = await client.get("/portal/children", headers=portal_auth)
     assert resp.status_code == 200
@@ -196,7 +197,7 @@ async def test_portal_term_enrollments_requires_student_id_for_guardian(
 ):
     guardian = await _add_guardian(db_session, school, student)
     await _make_guardian_user(db_session, school, guardian)
-    portal_auth = await _guardian_login(client, guardian)
+    portal_auth = await _guardian_login(client, guardian, school)
 
     resp = await client.get("/portal/term-enrollments", headers=portal_auth)
     assert resp.status_code == 400
@@ -212,7 +213,7 @@ async def test_portal_term_enrollments_rejects_non_child(
 
     guardian = await _add_guardian(db_session, school, student)
     await _make_guardian_user(db_session, school, guardian)
-    portal_auth = await _guardian_login(client, guardian)
+    portal_auth = await _guardian_login(client, guardian, school)
 
     resp = await client.get("/portal/term-enrollments", params={"student_id": str(unrelated.id)}, headers=portal_auth)
     assert resp.status_code == 403
@@ -226,7 +227,7 @@ async def test_portal_term_enrollments_for_own_child(
     guardian = await _add_guardian(db_session, school, student)
     await _make_guardian_user(db_session, school, guardian)
     te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
-    portal_auth = await _guardian_login(client, guardian)
+    portal_auth = await _guardian_login(client, guardian, school)
 
     resp = await client.get("/portal/term-enrollments", params={"student_id": str(student.id)}, headers=portal_auth)
     assert resp.status_code == 200
@@ -244,7 +245,7 @@ async def test_portal_report_card_for_child(
     await _make_guardian_user(db_session, school, guardian)
     te = await _make_enrollment(db_session, school, student, school_class, academic_term, school_admin)
     await _publish_assessment(db_session, school, school_class, academic_term)
-    portal_auth = await _guardian_login(client, guardian)
+    portal_auth = await _guardian_login(client, guardian, school)
 
     resp = await client.get(
         f"/portal/report-cards/{te.id}", params={"student_id": str(student.id)}, headers=portal_auth,

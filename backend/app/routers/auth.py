@@ -11,7 +11,10 @@ All access control lives in core/dependencies.py.
 
 ENDPOINTS
 ---------
-POST /auth/login            Authenticate and receive a token pair
+POST /auth/login              Authenticate a school user (staff/guardian/student)
+POST /auth/superadmin-login   Authenticate the platform-admin account — a fully
+                               separate flow, never shares a code path with
+                               /auth/login (see services/auth.py::superadmin_login)
 POST /auth/refresh          Rotate the refresh token
 POST /auth/logout           Revoke the refresh token
 GET  /auth/me               Return the current user's profile
@@ -40,6 +43,7 @@ from app.schemas.auth import (
     LogoutRequest,
     RefreshRequest,
     ResetPasswordRequest,
+    SuperadminLoginRequest,
     TokenResponse,
     UpdateProfileRequest,
     UserRead,
@@ -66,6 +70,22 @@ async def login(
     """
     ip = request.client.host if request.client else None
     return await auth_svc.login(req, db, ip=ip)
+
+
+@router.post("/superadmin-login", response_model=TokenResponse)
+async def superadmin_login(
+    req: SuperadminLoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Authenticate the platform-admin account.
+
+    Deliberately a separate endpoint from /auth/login, not a variant of
+    it — see services/auth.py::superadmin_login for why.
+    """
+    ip = request.client.host if request.client else None
+    return await auth_svc.superadmin_login(req, db, ip=ip)
 
 
 @router.post("/refresh", response_model=TokenResponse)

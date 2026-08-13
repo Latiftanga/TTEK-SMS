@@ -53,6 +53,13 @@ app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # *.localhost is always loopback in every modern browser (RFC 6761) — a
+    # real client on the public internet can never present this Origin, so
+    # it's safe to allow unconditionally. This is what lets subdomain-based
+    # multi-tenancy (branded school login pages) be tested locally via
+    # e.g. http://amass.localhost:5173 with no /etc/hosts edit, no DNS, and
+    # no wildcard TLS setup — see CLAUDE.md's local-testing note.
+    allow_origin_regex=r"^http://[a-z0-9-]+\.localhost(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

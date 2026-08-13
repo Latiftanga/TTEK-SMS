@@ -29,6 +29,7 @@ from app.core.config import settings
 # Endpoints that need a tighter limit than the global default.
 _TIGHT_LIMITS: dict[str, int] = {
     "/auth/login": 10,
+    "/auth/superadmin-login": 10,
     "/auth/refresh": 30,
     "/auth/accept-invite": 10,
 }

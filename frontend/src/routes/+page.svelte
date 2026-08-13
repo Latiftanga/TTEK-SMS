@@ -1,17 +1,24 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
-  import { auth, isAuthenticated } from '$lib/stores/auth';
-  import { login, getMe } from '$lib/api/auth';
-  import { get } from 'svelte/store';
+  import { auth, currentUser } from '$lib/stores/auth';
+  import { superadminLogin, getMe } from '$lib/api/auth';
 
   let email = $state('');
   let password = $state('');
   let error = $state('');
   let loading = $state(false);
 
-  onMount(() => {
-    if (get(isAuthenticated)) goto('/dashboard');
+  // Reacts to the *one* canonical currentUser (populated by the root
+  // +layout.svelte's own getMe() call) rather than making a second,
+  // independent getMe() call here — two separate calls racing each other
+  // was exactly what caused a visible flash of /dashboard (this component's
+  // own call landing first, sometimes with a stale/inconsistent result)
+  // before the (app) layout's superadmin guard caught it and bounced back
+  // to /superadmin a moment later. currentUser starts null until the root
+  // layout's call resolves, so there's nothing to react to (and nothing
+  // wrong to render) until the real answer is in.
+  $effect(() => {
+    if ($currentUser) goto($currentUser.is_superadmin ? '/superadmin' : '/dashboard');
   });
 
   async function handleLogin() {
@@ -19,15 +26,16 @@
     error = '';
     loading = true;
     try {
-      const tokens = await login({
-        login_type: 'EMAIL',
+      const tokens = await superadminLogin({
         identifier: email.trim(),
         password,
       });
       auth.setToken(tokens.access_token);
       const user = await getMe();
       auth.setAuth(user, tokens.access_token, tokens.refresh_token);
-      goto(user.is_superadmin ? '/superadmin' : '/dashboard');
+      // No explicit goto() here — setAuth() populates currentUser, which
+      // the $effect above reacts to and navigates from. One place decides
+      // "where does this user belong," not two.
     } catch (e: any) {
       error = e?.response?.data?.detail ?? 'Login failed. Check your credentials.';
     } finally {

@@ -5,18 +5,22 @@
   import { school } from '$lib/stores/school';
   import { subdomain, customDomain } from '$lib/stores/subdomain';
   import { detectLoginType, forgotPassword } from '$lib/api/auth';
-  import { getSchoolByDomain, applyBranding } from '$lib/api/schools';
+  import { getSchoolBranding, getSchoolByDomain, applyBranding } from '$lib/api/schools';
   import OtpStep from './OtpStep.svelte';
   import NewPasswordStep from './NewPasswordStep.svelte';
 
   type Step = 'identifier' | 'otp' | 'password' | 'done';
   let step = $state<Step>('identifier');
 
-  // School context — always resolved before the form is usable.
-  // On subdomain: set immediately from store. On custom domain: resolved via API on mount.
-  let schoolCode  = $state(get(school)?.schoolCode ?? get(subdomain) ?? '');
-  let schoolName  = $state(get(school)?.name ?? '');
-  let schoolReady = $state(!!schoolCode);
+  // Same rule as the login page: this page only works from a school's own
+  // subdomain/custom domain, resolved from the actual URL — never from a
+  // cached session on the bare domain, since identity is tied to the URL,
+  // not to browser storage.
+  const isSubdomain = get(subdomain) !== null || get(customDomain) !== null;
+
+  let schoolCode  = $state('');
+  let schoolName  = $state('');
+  let schoolReady = $state(false);
 
   // Step 1 state
   let identifier  = $state('');
@@ -30,25 +34,58 @@
   let resetToken      = $state('');
 
   onMount(async () => {
-    const cd = get(customDomain);
-    if (cd && !schoolCode) {
+    if (!isSubdomain) {
+      schoolReady = true;
+      return;
+    }
+
+    // Paint instantly from a cached session while confirming from the URL
+    // below — pure UX, never the reason the form is shown.
+    const stored = get(school);
+    if (stored?.schoolCode) {
+      schoolCode = stored.schoolCode;
+      schoolName = stored.name;
+    }
+
+    const sub = get(subdomain);
+    if (sub) {
       try {
-        const result = await getSchoolByDomain(cd);
-        schoolCode = result.school_code;
-        schoolName = result.school_name;
-        applyBranding(result);
+        const data = await getSchoolBranding(sub);
+        schoolCode = data.school_code;
+        schoolName = data.school_name;
+        applyBranding(data);
         school.set({
-          name: result.school_name,
-          shortName: result.short_name ?? result.school_name,
-          subdomain: result.subdomain ?? '',
-          schoolCode: result.school_code,
-          schoolType: result.school_type,
-          brandColor: result.brand_color,
-          logoUrl: result.logo_url,
-          motto: result.motto,
+          name: data.school_name, shortName: data.short_name ?? data.school_name,
+          subdomain: sub, schoolCode: data.school_code,
+          schoolType: data.school_type, brandColor: data.brand_color,
+          logoUrl: data.logo_url, motto: data.motto,
         });
       } catch {
-        sendError = 'Could not load school information. Check your connection and try again.';
+        schoolCode = '';
+        schoolName = '';
+      }
+    } else {
+      const cd = get(customDomain);
+      if (cd) {
+        try {
+          const result = await getSchoolByDomain(cd);
+          schoolCode = result.school_code;
+          schoolName = result.school_name;
+          applyBranding(result);
+          school.set({
+            name: result.school_name,
+            shortName: result.short_name ?? result.school_name,
+            subdomain: result.subdomain ?? '',
+            schoolCode: result.school_code,
+            schoolType: result.school_type,
+            brandColor: result.brand_color,
+            logoUrl: result.logo_url,
+            motto: result.motto,
+          });
+        } catch {
+          schoolCode = '';
+          schoolName = '';
+        }
       }
     }
     schoolReady = true;
@@ -57,19 +94,16 @@
   async function handleSend() {
     sendError = '';
     const trimmed = identifier.trim();
-    if (!trimmed) { sendError = 'Enter your email or phone number.'; return; }
-    if (!schoolCode) {
-      sendError = 'School not detected. Please open this page from your school\'s URL.';
-      return;
-    }
+    if (!trimmed) { sendError = 'Enter your email, phone number, or student ID.'; return; }
+    const loginType = detectLoginType(trimmed);
     sendPending = true;
     try {
       const res = await forgotPassword({
-        login_type: detectLoginType(trimmed),
+        login_type: loginType,
         identifier: trimmed,
         school_code: schoolCode,
       });
-      loginTypeState  = detectLoginType(trimmed);
+      loginTypeState  = loginType;
       identifierState = trimmed;
       devOtp          = res.dev_otp ?? '';
       step = 'otp';
@@ -167,7 +201,16 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
               </svg>
-              Loading school…
+              Loading…
+            </div>
+          {:else if !schoolCode}
+            <div class="py-2 text-center">
+              <p class="text-sm text-[var(--fg-muted)]">
+                This page is specific to your school. Please use your school's own sign-in link, then choose "Forgot password?" from there.
+              </p>
+              <p class="mt-4 text-xs">
+                <a href="/login" class="text-[var(--fg-muted)] hover:text-[var(--fg)] hover:underline transition">← Back to sign in</a>
+              </p>
             </div>
           {:else}
             <div class="space-y-4">
@@ -181,10 +224,10 @@
               {/if}
 
               <div>
-                <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5">Email or phone number</label>
-                <input type="text" bind:value={identifier}
+                <label class="block text-[0.8125rem] font-semibold text-[var(--fg)] mb-1.5" for="reset-identifier">Email / Phone / Student ID</label>
+                <input id="reset-identifier" type="text" bind:value={identifier}
                   onkeydown={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder="you@school.com or 024…" autocomplete="username"
+                  placeholder="you@school.com, 024…, or student ID" autocomplete="username"
                   class="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--input-bg)]
                          px-4 py-3 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)]
                          focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 focus:border-[var(--brand)] transition" />

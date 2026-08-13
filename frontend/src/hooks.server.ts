@@ -1,5 +1,4 @@
-import { redirect } from '@sveltejs/kit';
-import type { Handle } from '@sveltejs/kit';
+import { redirect, type Handle } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
 // Reserved subdomains that belong to the platform, not schools
@@ -54,8 +53,26 @@ export const handle: Handle = async ({ event, resolve }) => {
   event.locals.subdomain = subdomain;
   event.locals.customDomain = customDomain;
 
-  // Platform admin login is only reachable from the root domain
-  if ((subdomain || customDomain) && event.url.pathname === '/') {
+  // A recognized school subdomain (matched above via the explicit
+  // `.localhost` / `.{PLATFORM_DOMAIN}` suffix rule — a deliberate, known
+  // convention, not a guess) landing on the bare root belongs on that
+  // school's own login (/login), not the platform-admin login every other
+  // hostname shows at `/` — the sign-in link every school is actually given
+  // (see admin/staff invite modal, superadmin school list) is exactly
+  // `https://<subdomain>.<platform domain>`, the bare root, so without this
+  // that link lands on the wrong page.
+  //
+  // Deliberately NOT applied to `customDomain`: that branch is parseHost()'s
+  // catch-all for "any hostname that matched nothing else" — a LAN IP, a
+  // WSL-forwarded address, a typo — completely unverified against the DB.
+  // Forcing this same redirect off *that* guess is exactly what made `/`
+  // (the platform-admin login) unreachable for a real platform admin on a
+  // non-canonical hostname, with no way back (12bg). Real custom-domain
+  // schools landing on platform-admin at their own root instead of /login
+  // is a known, accepted gap until Phase C's domain-verification pipeline
+  // exists (see CLAUDE.md 12ba) — customDomain has no DB check to redirect
+  // on safely yet.
+  if (subdomain && event.url.pathname === '/') {
     throw redirect(302, '/login');
   }
 

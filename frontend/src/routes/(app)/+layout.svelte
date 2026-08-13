@@ -24,6 +24,16 @@
   $effect(() => {
     if ($currentUser && isPortalUser($currentUser)) goto('/portal');
   });
+
+  // Same reasoning, the other direction: a superadmin has no school_id and
+  // no real business rendering a school-scoped dashboard — without this,
+  // navigating here directly (not via /'s own redirect, which only fires
+  // on first landing on /) rendered whatever school happened to be
+  // available/cached, not an error, which read as "a school I never
+  // created."
+  $effect(() => {
+    if ($currentUser?.is_superadmin) goto('/superadmin');
+  });
 </script>
 
 <svelte:head><title>{$documentTitle}</title></svelte:head>

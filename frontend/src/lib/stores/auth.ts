@@ -45,6 +45,12 @@ function createAuth() {
       localStorage.setItem('access_token', accessToken);
       localStorage.setItem('refresh_token', refreshToken);
       localStorage.setItem('offline_session_started_at', offlineSessionStartedAt);
+      // Persisted (not just kept on the in-memory `user` object) so
+      // lib/api/client.ts can tell a superadmin session apart from a
+      // regular one synchronously on a fresh page load — `user` itself
+      // isn't populated until /auth/me resolves in +layout.svelte's
+      // onMount, which is too late if a token-refresh failure fires first.
+      localStorage.setItem('is_superadmin', user.is_superadmin ? '1' : '0');
     },
 
     /** Called after silent access-token refresh — no new user object needed. */
@@ -65,6 +71,7 @@ function createAuth() {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('offline_session_started_at');
+      localStorage.removeItem('is_superadmin');
     },
 
     /** Restore access token from memory (set by server-side or prior session). */
