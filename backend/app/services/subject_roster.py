@@ -176,6 +176,7 @@ async def list_my_subjects(
             .outerjoin(SHSProgramme, Class.programme_id == SHSProgramme.id)
             .where(
                 Class.school_id == school_id,
+                Class.is_active.is_(True),
                 ClassSubject.school_id == school_id,
                 ClassSubject.is_active.is_(True),
             )
@@ -199,7 +200,7 @@ async def list_my_subjects(
     class_rows = await db.execute(
         select(Class, SHSProgramme.name.label("prog_name"))
         .outerjoin(SHSProgramme, Class.programme_id == SHSProgramme.id)
-        .where(Class.id.in_(class_ids), Class.school_id == school_id)
+        .where(Class.id.in_(class_ids), Class.school_id == school_id, Class.is_active.is_(True))
     )
     classes_by_id = {
         cls.id: _class_display_name(cls.level, cls.year_group, prog_name, cls.stream)

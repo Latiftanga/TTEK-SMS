@@ -28,6 +28,13 @@ weaker permission than assessments.approve_scores), so the override itself
 still requires the caller to hold assessments.approve_scores, same shape as
 submit_scores in scoring.py.
 
+A student's class itself must also be active (Class.is_active) — registering
+a subject against a retired class makes no more sense than doing it on a
+locked term, so register_subjects checks it via
+academic_class.py::get_active_class() before anything else. Not applied to
+delete_subject_registration — removing a registration is cleanup and should
+stay possible even after the class it was recorded against is retired.
+
 CURRENT TERM ONLY
 -----------------
 Registering or removing a subject against a term that isn't the one
@@ -64,6 +71,7 @@ from app.models.students import (
     TermEnrollment,
 )
 from app.schemas.students import SubjectRegistrationItem, SubjectRegistrationRead
+from app.services.academic_class import get_active_class
 from app.services.subject_roster import class_subject_exists, subject_teacher_assigned
 
 
@@ -119,6 +127,7 @@ async def register_subjects(
             status_code=422,
             detail="Student has no class assignment for this academic year — cannot register subjects.",
         )
+    await get_active_class(sca.class_id, school_id, db)
     await _assert_can_register(
         sca.class_id, [item.subject_id for item in items], term.academic_year_id, user_id, db,
     )

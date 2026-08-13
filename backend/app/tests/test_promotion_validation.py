@@ -466,6 +466,28 @@ async def test_cross_school_target_class_404s(
 
 
 @pytest.mark.asyncio
+async def test_retired_target_class_404s(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear, next_year: AcademicYear,
+):
+    """A target class that's been retired (Class.is_active=False) must be
+    excluded the same way a nonexistent one is — promoting a student into a
+    class no longer offered makes no sense."""
+    source = await _make_class(db_session, school, "SHS", 2, "A")
+    target = await _make_class(db_session, school, "SHS", 3, "A")
+    target.is_active = False
+    await db_session.flush()
+    sid = await _create_student(client, auth, "RETIRED01")
+    await _assign_class(client, auth, sid, source, academic_year)
+
+    resp = await client.post(
+        "/students/promotions/bulk",
+        json=_promote_payload(next_year, sid, target, "PROMOTED"), headers=auth,
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
 async def test_cross_school_source_student_404s_without_leaking_class_info(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
     academic_year: AcademicYear, next_year: AcademicYear,

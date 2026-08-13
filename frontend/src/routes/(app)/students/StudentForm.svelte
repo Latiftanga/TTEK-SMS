@@ -226,7 +226,7 @@
             <label for="sf-class" class={LABEL}>Class <span class="font-normal text-[var(--fg-subtle)]">(optional)</span></label>
             <select id="sf-class" bind:value={classId} class={INPUT}>
               <option value="">Not yet assigned</option>
-              {#each $classesQ.data ?? [] as c}<option value={c.id}>{c.display_name}</option>{/each}
+              {#each ($classesQ.data ?? []).filter(c => c.is_active) as c}<option value={c.id}>{c.display_name}</option>{/each}
             </select>
             {#if classId}
               <p class="mt-1 text-[10px] text-[var(--fg-subtle)]">

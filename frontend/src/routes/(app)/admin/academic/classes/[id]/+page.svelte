@@ -204,9 +204,9 @@
 
   <!-- Tab panels -->
   {#if activeTab === 'students'}
-    <StudentsTab {classId} capacity={c.capacity} />
+    <StudentsTab {classId} capacity={c.capacity} classActive={c.is_active} />
   {:else if activeTab === 'subjects'}
-    <SubjectsTab {classId} />
+    <SubjectsTab {classId} classActive={c.is_active} />
   {:else}
     <PromoteSection {classId} classData={c} />
   {/if}

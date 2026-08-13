@@ -23,8 +23,14 @@
   let showAll = $state(false);
   $effect(() => { void fromClass; void mode; showAll = false; });
 
-  const compatible = $derived(compatibleClasses(fromClass, classes, mode));
-  const suggested  = $derived(suggestTargetClass(fromClass, classes, mode));
+  // Retired classes can never be a valid promotion target — the backend
+  // rejects them outright (Class.is_active gate on class_progression.py's
+  // target lookup), so they're excluded here too rather than offered and
+  // then bounced with a 404.
+  const activeClasses = $derived(classes.filter(c => c.is_active));
+
+  const compatible = $derived(compatibleClasses(fromClass, activeClasses, mode));
+  const suggested  = $derived(suggestTargetClass(fromClass, activeClasses, mode));
 
   // Nothing matches (e.g. the next class hasn't been created yet) — fall
   // back to the full list rather than presenting a dead-end empty dropdown.
@@ -36,7 +42,7 @@
   $effect(() => { if (!value && suggested) onChange(suggested.id); });
 
   const listed = $derived.by(() => {
-    const base = showAll ? classes : compatible;
+    const base = showAll ? activeClasses : compatible;
     return excludeClassId ? base.filter(c => c.id !== excludeClassId) : base;
   });
 

@@ -148,7 +148,7 @@
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Class *</label>
             <select bind:value={selClass} class={sel}>
               <option value="">Select class…</option>
-              {#each $classesQ.data ?? [] as c (c.id)}<option value={c.id}>{c.display_name}</option>{/each}
+              {#each ($classesQ.data ?? []).filter(c => c.is_active) as c (c.id)}<option value={c.id}>{c.display_name}</option>{/each}
             </select>
           </div>
           <div>

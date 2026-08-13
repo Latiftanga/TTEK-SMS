@@ -29,6 +29,10 @@ student_subject_registration.py's "validate every item up front" precedent):
   - Overridable mismatches (programme, stream) are blocked by default (423)
     unless the caller supplies a non-blank override_reason on the request,
     mirroring core/permissions.py::check_term_lock_override()'s shape.
+
+A retired target class (Class.is_active=False) is excluded from
+target_by_id entirely, so it 404s the same as a nonexistent one — promoting
+a student into a class that's no longer offered makes no sense.
 """
 from __future__ import annotations
 import uuid
@@ -145,7 +149,9 @@ async def validate_promotion_batch(
 
     target_ids = {r.class_id for r in to_validate}
     target_by_id = {c.id: c for c in (await db.scalars(
-        select(Class).where(Class.id.in_(target_ids), Class.school_id == school_id)
+        select(Class).where(
+            Class.id.in_(target_ids), Class.school_id == school_id, Class.is_active.is_(True),
+        )
     )).all()}
     if target_ids - target_by_id.keys():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Class not found.")

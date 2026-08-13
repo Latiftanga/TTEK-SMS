@@ -352,6 +352,25 @@ async def test_mark_attendance_rejects_cross_school_student(
     assert other_student_id in resp.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_mark_attendance_rejects_inactive_class(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+):
+    """A retired class (Class.is_active=False) shouldn't accept new
+    attendance marks any more than a locked term does."""
+    school_class.is_active = False
+    await db_session.commit()
+
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
 # ── Rate consistency after a day is reclassified ──────────────────────────────
 
 @pytest.mark.asyncio

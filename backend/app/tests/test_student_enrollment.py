@@ -406,6 +406,63 @@ async def test_register_subjects_rejects_deactivated_term_enrollment(
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_register_subjects_rejected_when_class_deactivated(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School,
+):
+    """A class retired (Class.is_active=False) after a student was already
+    assigned to it must stop accepting new subject registrations — same
+    reasoning as a locked term, just for the class itself rather than the
+    term (services/academic_class.py::get_active_class)."""
+    from app.models.academic import ClassSubject, Subject
+    sub = Subject(school_id=school.id, code="INACT01", name="Inactive Class Test Subject", is_active=True)
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=sub.id, is_active=True))
+    await db_session.flush()
+    await _assign_subject_teacher(db_session, school, school_class.id, sub.id, academic_term.academic_year_id, "INACT01")
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+    te_id = (await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=auth)).json()["id"]
+
+    resp = await client.patch(f"/academic/classes/{school_class.id}", json={"is_active": False}, headers=auth)
+    assert resp.status_code == 200
+
+    resp = await client.post(f"/students/term-enrollments/{te_id}/subjects", json={"items": [
+        {"subject_id": str(sub.id), "registration_type": "CORE"},
+    ]}, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_class_assignment_rejected_on_inactive_class(
+    client: AsyncClient, auth: dict,
+    school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession,
+):
+    """A retired class shouldn't gain new members either — the failure this
+    session started from (assigning subjects to an inactive class) had the
+    same root gap one step earlier, at class assignment itself."""
+    resp = await client.patch(f"/academic/classes/{school_class.id}", json={"is_active": False}, headers=auth)
+    assert resp.status_code == 200
+
+    sid = await _create_student(client, auth)
+    resp = await client.post("/students/class-assignments", json={
+        "student_id": sid,
+        "class_id": str(school_class.id),
+        "academic_year_id": str(academic_term.academic_year_id),
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
 # ── Category B scoping (class teacher OR the specific subject's teacher) ──────
 
 @pytest.mark.asyncio

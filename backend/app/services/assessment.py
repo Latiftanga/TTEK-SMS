@@ -40,6 +40,7 @@ from app.core.teacher_scope import (
 from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score
 from app.schemas.assessments import AssessmentCreate, AssessmentRead, AssessmentUpdate
+from app.services.academic_class import get_active_class
 from app.services.subject_roster import class_subject_exists
 
 
@@ -84,6 +85,8 @@ async def create_assessment(
     )
     if not term:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Academic term not found.")
+
+    await get_active_class(req.class_id, school_id, db)
 
     # Creating an assessment is the subject teacher's own job, not the
     # administrator's — scoped the same way submit_scores/list_assessments

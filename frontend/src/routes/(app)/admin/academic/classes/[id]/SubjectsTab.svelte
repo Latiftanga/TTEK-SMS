@@ -14,8 +14,8 @@
   import AddClassSubjectForm from './AddClassSubjectForm.svelte';
   import SubjectRosterPanel from './SubjectRosterPanel.svelte';
 
-  interface Props { classId: string; }
-  const { classId }: Props = $props();
+  interface Props { classId: string; classActive: boolean; }
+  const { classId, classActive }: Props = $props();
 
   // Elective subjects are an SHS-programme concept (e.g. French vs
   // Literature-in-French) — Basic schools follow a fixed GES curriculum with
@@ -137,9 +137,13 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
       </svg>
       <p class="text-sm font-medium text-[var(--fg-muted)]">No subjects assigned yet.</p>
-      <button onclick={() => showAdd = true}
-        class="mt-3 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-        style="background: var(--brand)">Add first subject</button>
+      {#if classActive}
+        <button onclick={() => showAdd = true}
+          class="mt-3 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+          style="background: var(--brand)">Add first subject</button>
+      {:else}
+        <p class="mt-3 text-xs text-[var(--fg-subtle)]">This class is inactive — reactivate it before adding subjects.</p>
+      {/if}
     </div>
 
   {:else}
@@ -156,7 +160,7 @@
             </span>
           {/if}
         </div>
-        <BulkRegisterCoreSubjectsButton {classId} />
+        {#if classActive}<BulkRegisterCoreSubjectsButton {classId} />{/if}
         <!-- Year selector (compact, inline) -->
         <div class="relative shrink-0">
           <select bind:value={yearId} class={selSm}>
@@ -169,13 +173,17 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
           </svg>
         </div>
-        <button onclick={() => showAdd = !showAdd}
-          class="flex shrink-0 items-center gap-1 text-xs font-semibold transition hover:opacity-70" style="color:var(--brand)">
-          <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-          </svg>
-          Add
-        </button>
+        {#if classActive}
+          <button onclick={() => showAdd = !showAdd}
+            class="flex shrink-0 items-center gap-1 text-xs font-semibold transition hover:opacity-70" style="color:var(--brand)">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add
+          </button>
+        {:else}
+          <span class="shrink-0 text-[10px] font-semibold text-[var(--fg-subtle)]">Class inactive</span>
+        {/if}
       </div>
 
       <!-- Subject rows -->
@@ -230,7 +238,7 @@
               class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
               Enroll students
             </button>
-            {#if yearId && !editing}
+            {#if classActive && yearId && !editing}
               <button onclick={() => startChange(cs.subject_id)}
                 class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
                 {teacher ? 'Change' : 'Assign'}
@@ -274,7 +282,7 @@
   {/if}
 
   <!-- Add subject + teacher form -->
-  {#if showAdd}
+  {#if showAdd && classActive}
     <AddClassSubjectForm {classId} {yearId} {unassignedSubjs} {teachingStaff} onClose={() => showAdd = false} />
   {/if}
 </div>

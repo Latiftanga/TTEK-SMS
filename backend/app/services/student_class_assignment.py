@@ -21,6 +21,7 @@ from app.schemas.students import (
     StudentClassAssignmentCreate,
     StudentClassAssignmentRead,
 )
+from app.services.academic_class import get_active_class
 from app.services.student_display import _class_display_name
 
 
@@ -57,9 +58,7 @@ async def create_class_assignment(
     if not student or student.school_id != school_id:
         raise HTTPException(status_code=404, detail="Student not found.")
 
-    cls = await db.get(Class, req.class_id)
-    if not cls or cls.school_id != school_id:
-        raise HTTPException(status_code=404, detail="Class not found.")
+    await get_active_class(req.class_id, school_id, db)
 
     year = await db.get(AcademicYear, req.academic_year_id)
     if not year or year.school_id != school_id:

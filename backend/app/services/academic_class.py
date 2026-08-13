@@ -98,6 +98,21 @@ async def create_class(
     return _to_class_read(cls, programme.name if programme else None)
 
 
+async def get_active_class(class_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> Class:
+    """Fetch a class this school owns, rejecting a retired one — assigning
+    subjects/teachers/students/assessments/attendance to a class marked
+    is_active=False is nonsensical, the same way a locked term blocks new
+    writes elsewhere in this codebase. Read-only endpoints (get_class,
+    list_class_subjects, ...) deliberately don't call this — only mutations
+    that would grow a retired class's data need to be blocked."""
+    cls = await db.get(Class, class_id)
+    if not cls or cls.school_id != school_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Class not found.")
+    if not cls.is_active:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="This class is inactive.")
+    return cls
+
+
 def _classes_query(where_clauses: list):
     return (
         select(Class, SHSProgramme.name.label("prog_name"))
@@ -186,9 +201,7 @@ async def assign_subjects(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[ClassSubject]:
-    cls = await db.get(Class, class_id)
-    if not cls or cls.school_id != school_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Class not found.")
+    await get_active_class(class_id, school_id, db)
 
     existing_rows = await db.scalars(
         select(ClassSubject).where(ClassSubject.class_id == class_id)

@@ -571,6 +571,27 @@ async def test_create_assessment_rejects_deactivated_type(
 
 
 @pytest.mark.asyncio
+async def test_create_assessment_rejects_inactive_class(
+    db_session: AsyncSession, client: AsyncClient, auth: dict,
+    school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,
+):
+    """A retired class (Class.is_active=False) shouldn't grow new
+    assessments any more than a deactivated AssessmentType should."""
+    school_class.is_active = False
+    await db_session.commit()
+
+    resp = await client.post("/assessments", json={
+        "class_id": str(school_class.id),
+        "subject_id": str(subject.id),
+        "assessment_type_id": str(assessment_type.id),
+        "academic_term_id": str(academic_term.id),
+        "max_score": "100.00",
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_duplicate_category_same_day_rejected(
     client: AsyncClient, auth: dict,
     school_class: Class, subject, assessment_type: AssessmentType, academic_term: AcademicTerm,

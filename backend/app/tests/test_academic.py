@@ -436,6 +436,66 @@ async def test_assign_subject_rejects_other_schools_subject(
     assert resp.status_code == 404
 
 
+# ── Inactive class blocks new structural writes ─────────────────────────────────
+# A class marked is_active=False is a retired class group — attaching new
+# curriculum/teacher assignments to it makes no more sense than editing a
+# locked term. Read/list endpoints stay unaffected; only mutations that would
+# grow a retired class's data are blocked (get_active_class, academic_class.py).
+
+async def _deactivate(client: AsyncClient, auth: dict, class_id: str) -> None:
+    resp = await client.patch(f"/academic/classes/{class_id}", json={"is_active": False}, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["is_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_assign_subjects_rejected_on_inactive_class(client: AsyncClient, auth: dict):
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)).json()["id"]
+    subject_id = (await client.post("/academic/subjects", json={
+        "code": "ENG", "name": "English",
+    }, headers=auth)).json()["id"]
+    await _deactivate(client, auth, class_id)
+
+    resp = await client.post(f"/academic/classes/{class_id}/subjects", json={
+        "subject_ids": [subject_id],
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_assign_class_teacher_rejected_on_inactive_class(
+    client: AsyncClient, auth: dict, staff_member, academic_year,
+):
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 2, "stream": "A",
+    }, headers=auth)).json()["id"]
+    await _deactivate(client, auth, class_id)
+
+    resp = await client.post(f"/academic/classes/{class_id}/class-teacher", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_assign_subject_teacher_rejected_on_inactive_class(
+    client: AsyncClient, auth: dict, staff_member, academic_year,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+    await _deactivate(client, auth, class_id)
+
+    resp = await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "inactive" in resp.json()["detail"].lower()
+
+
 # ── Subject teachers ──────────────────────────────────────────────────────────
 # SubjectTeacher is scoped to academic_year_id, matching ClassTeacher — one
 # assignment per class+subject+year, not re-done every term.

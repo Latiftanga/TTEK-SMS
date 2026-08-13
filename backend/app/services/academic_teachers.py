@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import ClassTeacher, SubjectTeacher
 from app.schemas.academic import ClassTeacherAssign, SubjectTeacherAssign
+from app.services.academic_class import get_active_class
 
 
 async def assign_class_teacher(
@@ -14,6 +15,8 @@ async def assign_class_teacher(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> ClassTeacher:
+    await get_active_class(class_id, school_id, db)
+
     existing = await db.scalar(
         select(ClassTeacher).where(
             ClassTeacher.class_id == class_id,
@@ -44,6 +47,8 @@ async def assign_subject_teacher(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> SubjectTeacher:
+    await get_active_class(class_id, school_id, db)
+
     existing = await db.scalar(
         select(SubjectTeacher).where(
             SubjectTeacher.class_id == class_id,
