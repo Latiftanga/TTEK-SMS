@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # Base URL of the frontend app — used in invitation SMS links.
     # Override in production: FRONTEND_BASE_URL=https://app.ttek-sms.com
     frontend_base_url: str = "http://localhost:5173"
+    # The platform's own root domain for per-school subdomains
+    # (<school_code>.<platform_domain>). Empty until a real domain is
+    # purchased and mapped — notification text that would otherwise build a
+    # link off this omits that clause entirely rather than pointing at an
+    # unowned placeholder domain. Set via PLATFORM_DOMAIN once available.
+    platform_domain: str = ""
 
     # ── Database ─────────────────────────────────────────────────────────────
     postgres_host: str = "db"

@@ -29,10 +29,14 @@ function parseHost(host: string): { subdomain: string | null; customDomain: stri
     return { subdomain: sub, customDomain: null };
   }
 
-  const platformDomain = env.PLATFORM_DOMAIN ?? 'ttek-sms.com';
+  // No hardcoded fallback: the platform domain isn't purchased yet, so an
+  // unset PLATFORM_DOMAIN means this branch simply never matches — every
+  // non-localhost hostname falls through to the customDomain catch-all
+  // below, exactly as it already does for any other unrecognized hostname.
+  const platformDomain = env.PLATFORM_DOMAIN;
 
-  // Platform subdomain: presec.ttek-sms.com
-  if (hostname === platformDomain || hostname.endsWith(`.${platformDomain}`)) {
+  // Platform subdomain: presec.ttek-sms.com (once PLATFORM_DOMAIN is set)
+  if (platformDomain && (hostname === platformDomain || hostname.endsWith(`.${platformDomain}`))) {
     if (hostname === platformDomain) return { subdomain: null, customDomain: null };
     const sub = hostname.slice(0, hostname.length - platformDomain.length - 1);
     if (RESERVED.has(sub)) return { subdomain: null, customDomain: null };

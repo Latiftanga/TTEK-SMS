@@ -19,9 +19,12 @@ function detect(): { subdomain: string | null; customDomain: string | null } {
     return { subdomain: sub, customDomain: null };
   }
 
-  const platformDomain = env.PUBLIC_PLATFORM_DOMAIN ?? 'ttek-sms.com';
+  // No hardcoded fallback: unset PUBLIC_PLATFORM_DOMAIN means this branch
+  // never matches, falling through to the customDomain catch-all below —
+  // same as any other unrecognized hostname (see platformDomain.ts).
+  const platformDomain = env.PUBLIC_PLATFORM_DOMAIN;
 
-  if (hostname === platformDomain || hostname.endsWith(`.${platformDomain}`)) {
+  if (platformDomain && (hostname === platformDomain || hostname.endsWith(`.${platformDomain}`))) {
     if (hostname === platformDomain) return { subdomain: null, customDomain: null };
     const sub = hostname.slice(0, hostname.length - platformDomain.length - 1);
     if (RESERVED.has(sub)) return { subdomain: null, customDomain: null };

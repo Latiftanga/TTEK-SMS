@@ -35,6 +35,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.school import SmsConfig, SmsLog, SmsStatus
 from app.models.students import Guardian, Student, StudentGuardian
 from app.services.sms_driver import SmsDriver, SmsResult, build_driver, _normalize_phone
@@ -185,9 +186,14 @@ async def notify_report_published(
             return
         student = await db.get(Student, student_id)
         name = f"{student.first_name} {student.last_name}" if student else "Your ward"
+        login_clause = (
+            f"Log in to view at {school_code.lower()}.{settings.platform_domain}. "
+            if settings.platform_domain
+            else "Check with your school for how to view it. "
+        )
         msg = (
             f"{name}'s {term_name} report is ready. "
-            f"Log in to view at {school_code.lower()}.ttek-sms.com. -{school_short}"
+            f"{login_clause}-{school_short}"
         )
         await _deliver(driver, phone, msg[:160], school_id, "REPORT_CARD", entity_id, db)
     except Exception:
