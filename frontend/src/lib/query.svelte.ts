@@ -12,6 +12,7 @@ interface ReactiveOpts<T> {
   enabled?:             boolean;
   staleTime?:           number;
   refetchOnWindowFocus?: boolean;
+  retry?:               boolean | number;
 }
 
 /**

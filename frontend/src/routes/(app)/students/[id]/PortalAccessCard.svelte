@@ -2,6 +2,7 @@
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { toast } from '$lib/stores/toast';
   import { grantPortalAccess, revokePortalAccess, type StudentDetail } from '$lib/api/students';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
   const { student, studentId }: Props = $props();
@@ -61,32 +62,11 @@
       <span class="font-mono font-semibold text-[var(--fg)]">{student.admission_number}</span>.
     </p>
 
-    {#if !confirmRevoke}
-      <button
-        onclick={() => confirmRevoke = true}
-        class="mt-3 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30">
-        Revoke access
-      </button>
-    {:else}
-      <div class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/20">
-        <p class="text-xs font-medium text-red-700 dark:text-red-400">
-          This will immediately block {student.first_name} from logging in. Are you sure?
-        </p>
-        <div class="mt-2 flex gap-2">
-          <button
-            onclick={() => $revokeMut.mutate()}
-            disabled={$revokeMut.isPending}
-            class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-50">
-            {$revokeMut.isPending ? 'Revoking…' : 'Yes, revoke'}
-          </button>
-          <button
-            onclick={() => confirmRevoke = false}
-            class="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-            Cancel
-          </button>
-        </div>
-      </div>
-    {/if}
+    <button
+      onclick={() => confirmRevoke = true}
+      class="mt-3 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30">
+      Revoke access
+    </button>
 
   {:else}
     <p class="text-sm text-[var(--fg-muted)]">
@@ -115,3 +95,13 @@
     </button>
   {/if}
 </div>
+
+<ConfirmModal
+  open={confirmRevoke}
+  title="Revoke portal access?"
+  message="This will immediately block {student.first_name} from logging in."
+  confirmLabel="Revoke"
+  isPending={$revokeMut.isPending}
+  onConfirm={() => $revokeMut.mutate()}
+  onCancel={() => confirmRevoke = false}
+/>

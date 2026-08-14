@@ -4,103 +4,64 @@
     addGuardian, updateGuardian, removeGuardian,
     type StudentDetail, type Guardian, type GuardianCreate, type GuardianUpdate,
   } from '$lib/api/students';
+  import { detailOf } from '$lib/apiError';
   import { toast } from '$lib/stores/toast';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import PortalAccessCard from './PortalAccessCard.svelte';
   import GuardianPortalAccessButton from './GuardianPortalAccessButton.svelte';
+  import GuardianForm, { type GuardianFormData } from './GuardianForm.svelte';
 
   interface Props { student: StudentDetail; studentId: string; }
   const { student, studentId }: Props = $props();
 
   const qc = useQueryClient();
-  const RELATIONS = ['Parent', 'Mother', 'Father', 'Guardian', 'Sibling', 'Uncle', 'Aunt', 'Grandparent', 'Other'];
-
-  // ── Add form ──────────────────────────────────────────────────────────────────
-  let showForm  = $state(false);
-  let formError = $state('');
-  let form = $state<GuardianCreate>({
+  const EMPTY_FORM: GuardianFormData = {
     first_name: '', last_name: '', phone: '', email: '',
     occupation: '', address: '', relation_type: 'Parent', is_primary: false,
-  });
+  };
+
+  // Create/update take slightly different shapes for an unset optional field
+  // (undefined vs. explicit null) — the form itself is shape-agnostic and
+  // just hands back trimmed strings; each mutation maps to what its schema
+  // actually wants.
+  function toCreate(data: GuardianFormData): GuardianCreate {
+    return { ...data, email: data.email || undefined, occupation: data.occupation || undefined, address: data.address || undefined };
+  }
+  function toUpdate(data: GuardianFormData): GuardianUpdate {
+    return { ...data, email: data.email || null, occupation: data.occupation || null, address: data.address || null };
+  }
+
+  // ── Add ───────────────────────────────────────────────────────────────────────
+  let showForm  = $state(false);
+  let formError = $state('');
 
   const addMut = createMutation({
-    mutationFn: (data: GuardianCreate) => addGuardian(studentId, data),
+    mutationFn: (data: GuardianFormData) => addGuardian(studentId, toCreate(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['student', studentId] });
       showForm = false; formError = '';
-      form = { first_name: '', last_name: '', phone: '', email: '',
-               occupation: '', address: '', relation_type: 'Parent', is_primary: false };
       toast.success('Guardian added.');
     },
-    onError: (e: unknown) => {
-      formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not add guardian.';
-    },
+    onError: (e: unknown) => { formError = detailOf(e) ?? 'Could not add guardian.'; },
   });
 
-  function handleAdd() {
-    formError = '';
-    if (!form.first_name.trim()) { formError = 'First name is required.'; return; }
-    if (!form.last_name.trim())  { formError = 'Last name is required.'; return; }
-    if (!form.phone.trim())      { formError = 'Phone number is required.'; return; }
-    $addMut.mutate({ ...form, email: form.email?.trim() || undefined, occupation: form.occupation?.trim() || undefined });
-  }
+  // ── Edit ──────────────────────────────────────────────────────────────────────
+  let editingId = $state<string | null>(null);
+  let editError = $state('');
 
-  // ── Edit form ─────────────────────────────────────────────────────────────────
-  let editingId  = $state<string | null>(null);
-  let editForm   = $state<GuardianUpdate & { first_name: string; last_name: string; phone: string }>({
-    first_name: '', last_name: '', phone: '', email: '',
-    occupation: '', address: '', relation_type: 'Parent', is_primary: false,
-  });
-  let editError  = $state('');
-
-  function startEdit(g: Guardian) {
-    editingId = g.guardian_id;
-    editForm = {
-      first_name:   g.first_name,
-      last_name:    g.last_name,
-      phone:        g.phone,
-      email:        g.email ?? '',
-      occupation:   g.occupation ?? '',
-      address:      g.address ?? '',
-      relation_type: g.relation_type,
-      is_primary:   g.is_primary,
-    };
-    editError = '';
-  }
+  function startEdit(g: Guardian) { editingId = g.guardian_id; editError = ''; }
   function cancelEdit() { editingId = null; editError = ''; }
 
   const updateMut = createMutation({
-    mutationFn: ({ gid, data }: { gid: string; data: GuardianUpdate }) =>
-      updateGuardian(studentId, gid, data),
+    mutationFn: ({ gid, data }: { gid: string; data: GuardianFormData }) =>
+      updateGuardian(studentId, gid, toUpdate(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['student', studentId] });
       editingId = null; editError = '';
       toast.success('Guardian updated.');
     },
-    onError: (e: unknown) => {
-      editError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Could not update guardian.';
-    },
+    onError: (e: unknown) => { editError = detailOf(e) ?? 'Could not update guardian.'; },
   });
-
-  function handleEdit(gid: string) {
-    editError = '';
-    if (!editForm.first_name?.trim()) { editError = 'First name is required.'; return; }
-    if (!editForm.last_name?.trim())  { editError = 'Last name is required.'; return; }
-    if (!editForm.phone?.trim())      { editError = 'Phone is required.'; return; }
-    $updateMut.mutate({
-      gid,
-      data: {
-        first_name:    editForm.first_name.trim(),
-        last_name:     editForm.last_name.trim(),
-        phone:         editForm.phone.trim(),
-        email:         editForm.email?.trim() || null,
-        occupation:    editForm.occupation?.trim() || null,
-        address:       editForm.address?.trim() || null,
-        relation_type: editForm.relation_type,
-        is_primary:    editForm.is_primary,
-      },
-    });
-  }
 
   // ── Remove ────────────────────────────────────────────────────────────────────
   let confirmRemoveGid = $state<string | null>(null);
@@ -131,35 +92,12 @@
   {#if showForm && student.can_edit}
     <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
       <h3 class="mb-3 text-sm font-semibold text-[var(--fg)]">New guardian</h3>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div><label for="gt-first" class="label">First name <span class="text-red-500">*</span></label><input id="gt-first" bind:value={form.first_name} placeholder="Kofi" class="input" /></div>
-        <div><label for="gt-last" class="label">Last name <span class="text-red-500">*</span></label><input id="gt-last" bind:value={form.last_name} placeholder="Mensah" class="input" /></div>
-        <div><label for="gt-phone" class="label">Phone <span class="text-red-500">*</span></label><input id="gt-phone" bind:value={form.phone} placeholder="024XXXXXXX" class="input" /></div>
-        <div><label for="gt-email" class="label">Email</label><input id="gt-email" type="email" bind:value={form.email} placeholder="Optional" class="input" /></div>
-        <div>
-          <label for="gt-relation" class="label">Relation</label>
-          <select id="gt-relation" bind:value={form.relation_type} class="input">
-            {#each RELATIONS as r}<option value={r}>{r}</option>{/each}
-          </select>
-        </div>
-        <div><label for="gt-occ" class="label">Occupation</label><input id="gt-occ" bind:value={form.occupation} placeholder="Optional" class="input" /></div>
-        <div class="sm:col-span-2"><label for="gt-addr" class="label">Address</label><input id="gt-addr" bind:value={form.address} placeholder="Optional" class="input" /></div>
-        <div class="sm:col-span-2 flex items-center gap-2">
-          <input type="checkbox" id="is_primary" bind:checked={form.is_primary} class="accent-[var(--brand)]" />
-          <label for="is_primary" class="text-sm text-[var(--fg)]">Primary contact (receives SMS notifications)</label>
-        </div>
-      </div>
-      {#if formError}<p class="mt-2 text-xs text-red-500">{formError}</p>{/if}
-      <div class="mt-3 flex gap-2">
-        <button onclick={handleAdd} disabled={$addMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
-          {$addMut.isPending ? 'Adding…' : 'Add guardian'}
-        </button>
-        <button onclick={() => { showForm = false; formError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-          Cancel
-        </button>
-      </div>
+      <GuardianForm
+        idPrefix="gt" initial={EMPTY_FORM} submitLabel="Add guardian"
+        pending={$addMut.isPending} serverError={formError}
+        onSubmit={(d) => { formError = ''; $addMut.mutate(d); }}
+        onCancel={() => { showForm = false; formError = ''; }}
+      />
     </div>
   {/if}
 
@@ -214,35 +152,17 @@
           <!-- Inline edit form -->
           {#if editingId === g.guardian_id && student.can_edit}
             <div class="border-t border-[var(--border)] px-4 pb-4 pt-3">
-              <div class="grid gap-3 sm:grid-cols-2">
-                <div><label for="et-first-{g.guardian_id}" class="label">First name <span class="text-red-500">*</span></label><input id="et-first-{g.guardian_id}" bind:value={editForm.first_name} class="input" /></div>
-                <div><label for="et-last-{g.guardian_id}" class="label">Last name <span class="text-red-500">*</span></label><input id="et-last-{g.guardian_id}" bind:value={editForm.last_name} class="input" /></div>
-                <div><label for="et-phone-{g.guardian_id}" class="label">Phone <span class="text-red-500">*</span></label><input id="et-phone-{g.guardian_id}" bind:value={editForm.phone} class="input" /></div>
-                <div><label for="et-email-{g.guardian_id}" class="label">Email</label><input id="et-email-{g.guardian_id}" type="email" bind:value={editForm.email} class="input" /></div>
-                <div>
-                  <label for="et-rel-{g.guardian_id}" class="label">Relation</label>
-                  <select id="et-rel-{g.guardian_id}" bind:value={editForm.relation_type} class="input">
-                    {#each RELATIONS as r}<option value={r}>{r}</option>{/each}
-                  </select>
-                </div>
-                <div><label for="et-occ-{g.guardian_id}" class="label">Occupation</label><input id="et-occ-{g.guardian_id}" bind:value={editForm.occupation} class="input" /></div>
-                <div class="sm:col-span-2"><label for="et-addr-{g.guardian_id}" class="label">Address</label><input id="et-addr-{g.guardian_id}" bind:value={editForm.address} class="input" /></div>
-                <div class="sm:col-span-2 flex items-center gap-2">
-                  <input type="checkbox" id="et-primary-{g.guardian_id}" bind:checked={editForm.is_primary} class="accent-[var(--brand)]" />
-                  <label for="et-primary-{g.guardian_id}" class="text-sm text-[var(--fg)]">Primary contact</label>
-                </div>
-              </div>
-              {#if editError}<p class="mt-2 text-xs text-red-500">{editError}</p>{/if}
-              <div class="mt-3 flex gap-2">
-                <button onclick={() => handleEdit(g.guardian_id)} disabled={$updateMut.isPending}
-                  class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
-                  {$updateMut.isPending ? 'Saving…' : 'Save changes'}
-                </button>
-                <button onclick={cancelEdit}
-                  class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
-                  Cancel
-                </button>
-              </div>
+              <GuardianForm
+                idPrefix="et-{g.guardian_id}" submitLabel="Save changes"
+                initial={{
+                  first_name: g.first_name, last_name: g.last_name, phone: g.phone,
+                  email: g.email ?? '', occupation: g.occupation ?? '', address: g.address ?? '',
+                  relation_type: g.relation_type, is_primary: g.is_primary,
+                }}
+                pending={$updateMut.isPending} serverError={editError}
+                onSubmit={(d) => { editError = ''; $updateMut.mutate({ gid: g.guardian_id, data: d }); }}
+                onCancel={cancelEdit}
+              />
             </div>
           {/if}
 
@@ -265,9 +185,3 @@
   onConfirm={() => { $removeMut.mutate({ gid: confirmRemoveGid! }); confirmRemoveGid = null; }}
   onCancel={() => confirmRemoveGid = null}
 />
-
-<style>
-  @reference "tailwindcss";
-  .label { @apply block text-xs font-medium text-[var(--fg-muted)] mb-1; }
-  .input  { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition; }
-</style>

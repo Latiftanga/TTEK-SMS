@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { reactiveQuery } from '$lib/query.svelte';
   import {
     listSubjectRegistrations, registerSubjects, removeSubjectRegistration,
     type TermEnrollmentRead,
@@ -72,25 +72,12 @@
   const allTermsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
   const yearId = $derived(($allTermsQ.data ?? []).find(t => t.id === enrollment.academic_term_id)?.academic_year_id ?? '');
 
-  // Writable store pattern — keeps queryFn/enabled reactive to yearId (which
-  // starts empty until allTermsQ resolves), mirroring SubjectsTab.svelte's
-  // subjTeachersOpts / SubjectRosterPanel.svelte's rosterOpts.
-  const subjTeachersOpts = writable({
-    queryKey: ['subject-teachers', enrollment.class_id, ''] as (string | null)[],
-    queryFn: () => listSubjectTeachers(enrollment.class_id!, ''),
-    enabled: false,
+  const subjTeachersQ = reactiveQuery(() => ({
+    queryKey: ['subject-teachers', enrollment.class_id, yearId] as const,
+    queryFn: () => listSubjectTeachers(enrollment.class_id!, yearId),
+    enabled: !!enrollment.class_id && !!yearId,
     staleTime: 60_000,
-  });
-  $effect(() => {
-    const y = yearId;
-    subjTeachersOpts.set({
-      queryKey: ['subject-teachers', enrollment.class_id, y],
-      queryFn: () => listSubjectTeachers(enrollment.class_id!, y),
-      enabled: !!enrollment.class_id && !!y,
-      staleTime: 60_000,
-    });
-  });
-  const subjTeachersQ = createQuery(subjTeachersOpts);
+  }));
   const subjectsWithTeacher = $derived(new Set(($subjTeachersQ.data ?? []).map(st => st.subject_id)));
 
   const registeredIds = $derived(new Set(($subjectRegsQ.data ?? []).map(r => r.subject_id)));

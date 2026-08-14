@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
-  import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
+  import { useTermSelector } from '$lib/termSelector.svelte';
   import {
     listBehaviourRecords, createBehaviourRecord, deleteBehaviourRecord,
     SEVERITY_LABELS, type BehaviourRecord, type Severity,
@@ -22,22 +22,17 @@
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver' || canEdit);
   const today = new Date().toISOString().slice(0, 10);
 
-  const termsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
-  const terms  = $derived<AcademicTerm[]>([...($termsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date)));
-  let termId = $state('');
-  $effect(() => {
-    if (!termId && terms.length) termId = terms.find(t => t.is_current)?.id ?? terms[0]?.id ?? '';
-  });
-  const selectedTerm = $derived(terms.find(t => t.id === termId));
+  const term = useTermSelector();
+  const selectedTerm = $derived(term.terms.find(t => t.id === term.termId));
 
   const recordsQ = reactiveQuery(() => ({
-    queryKey: ['behaviour-records', studentId, termId] as const,
-    queryFn: () => listBehaviourRecords(studentId, termId),
-    enabled: !!termId,
+    queryKey: ['behaviour-records', studentId, term.termId] as const,
+    queryFn: () => listBehaviourRecords(studentId, term.termId),
+    enabled: !!term.termId,
     staleTime: 30_000,
   }));
   function invalidateRecords() {
-    qc.invalidateQueries({ queryKey: ['behaviour-records', studentId, termId] });
+    qc.invalidateQueries({ queryKey: ['behaviour-records', studentId, term.termId] });
   }
 
   function detailOf(e: unknown): string | undefined {
@@ -66,7 +61,7 @@
 
   const createMut = createMutation({
     mutationFn: (overrideReason: string | undefined) => createBehaviourRecord({
-      student_id: studentId, academic_term_id: termId,
+      student_id: studentId, academic_term_id: term.termId,
       incident_type: cf.incident_type.trim(), description: cf.description.trim(),
       severity: cf.severity, action_taken: cf.action_taken.trim() || undefined,
       incident_date: cf.incident_date, override_reason: overrideReason,
@@ -111,8 +106,8 @@
 <!-- Term selector -->
 <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
   <div class="flex items-center gap-2">
-    <select bind:value={termId} class="sel">
-      {#each terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
+    <select bind:value={term.termId} class="sel">
+      {#each term.terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
     </select>
     {#if selectedTerm?.results_locked}
       <span class="rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-950/30 dark:text-red-400">
@@ -120,7 +115,7 @@
       </span>
     {/if}
   </div>
-  {#if canManage && termId}
+  {#if canManage && term.termId}
     <button onclick={() => { showCreate = !showCreate; resetCreate(); }}
       class="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
       style="background: var(--brand)">

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { updateStudent, type StudentDetail, type StudentUpdate, type Gender, type OrphanStatus } from '$lib/api/students';
   import { listYears } from '$lib/api/academic';
   import {
@@ -36,12 +36,12 @@
   });
   const houseMap = $derived(new Map(($housesQ.data ?? []).map(h => [h.id, h])));
 
-  const assignmentOpts = writable({ queryKey: ['student-assignment', studentId, currentYearId] as const, queryFn: () => getStudentAssignment(studentId, currentYearId), enabled: !!currentYearId && student.is_boarding, staleTime: 60_000 });
-  $effect(() => {
-    const yid = currentYearId;
-    assignmentOpts.set({ queryKey: ['student-assignment', studentId, yid] as const, queryFn: () => getStudentAssignment(studentId, yid), enabled: !!yid && student.is_boarding, staleTime: 60_000 });
-  });
-  const assignmentQ = createQuery(assignmentOpts);
+  const assignmentQ = reactiveQuery(() => ({
+    queryKey: ['student-assignment', studentId, currentYearId] as const,
+    queryFn: () => getStudentAssignment(studentId, currentYearId),
+    enabled: !!currentYearId && student.is_boarding,
+    staleTime: 60_000,
+  }));
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const mut = createMutation({

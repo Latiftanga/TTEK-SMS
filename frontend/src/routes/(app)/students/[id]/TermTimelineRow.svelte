@@ -11,21 +11,13 @@
     enrollment: TermEnrollmentRead | null;
     isRegistering?: boolean;
     registerError?: string;
-    isBlocked?: boolean;
-    blockedMessage?: string;
-    waiverReason?: string;
-    waiverError?: string;
     onRegister?: () => void;
-    onWaiverReasonChange?: (v: string) => void;
-    onWaive?: () => void;
-    onCancelWaiver?: () => void;
     canEdit?: boolean;
   }
   const {
     term, classDisplayName, assignmentActive, enrollment,
-    isRegistering = false, registerError = '', isBlocked = false, blockedMessage = '',
-    waiverReason = '', waiverError = '',
-    onRegister, onWaiverReasonChange, onWaive, onCancelWaiver,
+    isRegistering = false, registerError = '',
+    onRegister,
     canEdit = true,
   }: Props = $props();
 
@@ -107,26 +99,6 @@
   {#if enrollment && enrollment.is_active && expanded}
     <div class="border-t border-[var(--border)] px-4 pb-3 pt-2.5">
       <SubjectRegistrationPanel {enrollment} compact={true} />
-    </div>
-  {/if}
-
-  {#if isBlocked}
-    <div class="border-t border-amber-200 bg-amber-50 p-2.5 dark:border-amber-800 dark:bg-amber-950/20">
-      <p class="text-xs text-amber-800 dark:text-amber-300">{blockedMessage}</p>
-      <div class="mt-2 flex items-center gap-2">
-        <input value={waiverReason} oninput={(e) => onWaiverReasonChange?.(e.currentTarget.value)}
-          placeholder="Waiver reason (requires fees.manage)"
-          class="flex-1 rounded-lg border border-amber-300 bg-white/70 px-2 py-1 text-xs text-amber-900 placeholder:text-amber-500/70 focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100" />
-        <button onclick={onWaive}
-          class="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50">
-          Push through
-        </button>
-        <button onclick={onCancelWaiver}
-          class="shrink-0 text-xs text-amber-700 transition hover:text-amber-900 dark:text-amber-400">
-          Cancel
-        </button>
-      </div>
-      {#if waiverError}<p class="mt-1 text-[10px] text-red-600">{waiverError}</p>{/if}
     </div>
   {/if}
 </div>

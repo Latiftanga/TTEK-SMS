@@ -6,6 +6,8 @@
   } from '$lib/api/students';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
+  import { detailOf } from '$lib/apiError';
+  import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
   import TermTimelineRow from './TermTimelineRow.svelte';
   import ClassActionPanel   from './ClassActionPanel.svelte';
 
@@ -23,7 +25,10 @@
   // ── Derived ───────────────────────────────────────────────────────────────────
   const yearMap    = $derived(new Map(($yearsQ.data ?? []).map(y => [y.id, y])));
   const termRegMap = $derived(new Map(($termRegsQ.data ?? []).map(te => [te.academic_term_id, te])));
-  const classes    = $derived<SchoolClass[]>($classesQ.data ?? []);
+  // Retired classes are never a valid target — same convention as
+  // TargetClassPicker/StudentForm/ResponsibilitiesTab, and the backend
+  // 422s an assignment into one anyway (services/academic_class.py::get_active_class).
+  const classes    = $derived<SchoolClass[]>(($classesQ.data ?? []).filter(c => c.is_active));
   const years      = $derived<AcademicYear[]>($yearsQ.data ?? []);
 
   const sortedAssignments = $derived(
@@ -40,12 +45,13 @@
   // ── Term registration (shared across every "Not registered" row) ─────────────
   // A 422 here means the term's fee gate blocked this student (the other 422
   // case — no class assignment — can't happen from this button, since we're
-  // already inside an assigned class's term list). Offer an inline waiver
-  // input instead of just showing the error; the waive attempt is only
-  // actually honoured server-side if the caller has fees.manage.
+  // already inside an assigned class's term list). Reuses the same
+  // OverrideReasonModal every other "action blocked, supply a reason, retry"
+  // flow in this app already uses (behaviour/scoring/subject-registration
+  // term locks) instead of a bespoke inline waiver box — the waive attempt
+  // is only actually honoured server-side if the caller has fees.manage.
   let regError = $state('');
   let blocked = $state<{ termId: string; message: string } | null>(null);
-  let waiverReason = $state('');
   let waiverError = $state('');
 
   const registerMut = createMutation({
@@ -55,10 +61,10 @@
       regError = ''; blocked = null; toast.success('Registered for term.');
     },
     onError: (e: unknown, termId) => {
-      const err = e as { response?: { status?: number; data?: { detail?: string } } };
-      const detail = err?.response?.data?.detail ?? 'Could not register.';
+      const err = e as { response?: { status?: number } };
+      const detail = detailOf(e) ?? 'Could not register.';
       if (err?.response?.status === 422) {
-        blocked = { termId, message: detail }; waiverReason = ''; waiverError = '';
+        blocked = { termId, message: detail }; waiverError = '';
       } else {
         regError = detail;
       }
@@ -66,15 +72,14 @@
   });
 
   const waiveMut = createMutation({
-    mutationFn: (termId: string) => enrollStudent({ student_id: studentId, academic_term_id: termId, fee_waiver_reason: waiverReason }),
+    mutationFn: (reason: string) => enrollStudent({ student_id: studentId, academic_term_id: blocked!.termId, fee_waiver_reason: reason }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['student-term-enrollments', studentId] });
-      blocked = null; waiverReason = ''; waiverError = '';
+      blocked = null; waiverError = '';
       toast.success('Registered for term — fee gate waived.');
     },
     onError: (e: unknown) => {
-      waiverError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        ?? 'Could not push through — you may not have permission to waive the fee gate.';
+      waiverError = detailOf(e) ?? 'Could not push through — you may not have permission to waive the fee gate.';
     },
   });
 
@@ -164,14 +169,7 @@
                 enrollment={termRegMap.get(term.id) ?? null}
                 isRegistering={$registerMut.isPending && $registerMut.variables === term.id}
                 registerError={regError && $registerMut.variables === term.id ? regError : ''}
-                isBlocked={blocked?.termId === term.id}
-                blockedMessage={blocked?.termId === term.id ? blocked.message : ''}
-                {waiverReason}
-                waiverError={blocked?.termId === term.id ? waiverError : ''}
                 onRegister={() => { regError = ''; $registerMut.mutate(term.id); }}
-                onWaiverReasonChange={(v) => waiverReason = v}
-                onWaive={() => { waiverError = ''; if (!waiverReason.trim()) { waiverError = 'Reason required.'; return; } $waiveMut.mutate(term.id); }}
-                onCancelWaiver={() => blocked = null}
                 {canEdit}
               />
             {/each}
@@ -204,6 +202,17 @@
     {/if}
   </div>
 {/if}
+
+<OverrideReasonModal
+  open={!!blocked}
+  title="Fee balance outstanding"
+  message={blocked?.message ?? ''}
+  submitLabel="Register anyway"
+  errorMessage={waiverError}
+  isPending={$waiveMut.isPending}
+  onSubmit={(reason) => $waiveMut.mutate(reason)}
+  onCancel={() => { blocked = null; waiverError = ''; }}
+/>
 
 <style>
   @reference "tailwindcss";

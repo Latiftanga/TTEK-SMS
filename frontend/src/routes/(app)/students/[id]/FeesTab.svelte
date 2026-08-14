@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
-  import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
+  import { useQueryClient } from '@tanstack/svelte-query';
+  import { reactiveQuery } from '$lib/query.svelte';
+  import { useTermSelector } from '$lib/termSelector.svelte';
   import {
     listStudentFeeRecords, getFeeSummary, listPayments,
     ghs, PAYMENT_METHOD_LABELS,
@@ -16,26 +16,27 @@
 
   const qc = useQueryClient();
 
-  const termsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
-  const terms  = $derived<AcademicTerm[]>([...($termsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date)));
-  let termId = $state('');
-  $effect(() => {
-    if (!termId && terms.length) termId = terms.find(t => t.is_current)?.id ?? terms[0]?.id ?? '';
-  });
+  const term = useTermSelector();
 
-  // Three reactive queries — swap queryKey when termId changes; TanStack Query handles caching & dedup
-  const recordsOpts  = writable({ queryKey: ['student-fee-records',  studentId, termId] as const, queryFn: () => listStudentFeeRecords(studentId, termId), enabled: !!termId, staleTime: 60_000 });
-  const paymentsOpts = writable({ queryKey: ['student-payments',      studentId, termId] as const, queryFn: () => listPayments(studentId, termId),          enabled: !!termId, staleTime: 60_000 });
-  const summaryOpts  = writable({ queryKey: ['student-fee-summary',   studentId, termId] as const, queryFn: () => getFeeSummary(studentId, termId),         enabled: !!termId, staleTime: 60_000, retry: false });
-  $effect(() => {
-    const sid = studentId, tid = termId;
-    recordsOpts.set({  queryKey: ['student-fee-records',  sid, tid] as const, queryFn: () => listStudentFeeRecords(sid, tid), enabled: !!tid, staleTime: 60_000 });
-    paymentsOpts.set({ queryKey: ['student-payments',      sid, tid] as const, queryFn: () => listPayments(sid, tid),          enabled: !!tid, staleTime: 60_000 });
-    summaryOpts.set({  queryKey: ['student-fee-summary',   sid, tid] as const, queryFn: () => getFeeSummary(sid, tid),         enabled: !!tid, staleTime: 60_000, retry: false });
-  });
-  const recordsQ  = createQuery(recordsOpts);
-  const paymentsQ = createQuery(paymentsOpts);
-  const summaryQ  = createQuery(summaryOpts);
+  const recordsQ = reactiveQuery(() => ({
+    queryKey: ['student-fee-records', studentId, term.termId] as const,
+    queryFn:  () => listStudentFeeRecords(studentId, term.termId),
+    enabled:  !!term.termId,
+    staleTime: 60_000,
+  }));
+  const paymentsQ = reactiveQuery(() => ({
+    queryKey: ['student-payments', studentId, term.termId] as const,
+    queryFn:  () => listPayments(studentId, term.termId),
+    enabled:  !!term.termId,
+    staleTime: 60_000,
+  }));
+  const summaryQ = reactiveQuery(() => ({
+    queryKey: ['student-fee-summary', studentId, term.termId] as const,
+    queryFn:  () => getFeeSummary(studentId, term.termId),
+    enabled:  !!term.termId,
+    staleTime: 60_000,
+    retry: false,
+  }));
 
   const paidByRecord = $derived.by(() => {
     const m = new Map<string, number>();
@@ -44,9 +45,9 @@
   });
 
   function invalidateFees() {
-    qc.invalidateQueries({ queryKey: ['student-fee-records',  studentId, termId] });
-    qc.invalidateQueries({ queryKey: ['student-payments',      studentId, termId] });
-    qc.invalidateQueries({ queryKey: ['student-fee-summary',   studentId, termId] });
+    qc.invalidateQueries({ queryKey: ['student-fee-records',  studentId, term.termId] });
+    qc.invalidateQueries({ queryKey: ['student-payments',      studentId, term.termId] });
+    qc.invalidateQueries({ queryKey: ['student-fee-summary',   studentId, term.termId] });
   }
 
   // Payment/Discount modals are the shared fees/PaymentModal.svelte and
@@ -66,8 +67,8 @@
 
 <!-- Term selector -->
 <div class="mb-4 flex justify-end">
-  <select bind:value={termId} class="sel">
-    {#each terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
+  <select bind:value={term.termId} class="sel">
+    {#each term.terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
   </select>
 </div>
 
@@ -154,7 +155,7 @@
 <!-- Payment / Discount / Instalment modals -->
 {#if payRecord}
   <PaymentModal
-    record={payRecord} {termId}
+    record={payRecord} termId={term.termId}
     remainingBalance={remainingFor(payRecord)}
     onClose={() => payRecord = null}
     onSuccess={() => { payRecord = null; invalidateFees(); }}
@@ -162,7 +163,7 @@
 {/if}
 {#if discRecord}
   <DiscountModal
-    record={discRecord} {termId}
+    record={discRecord} termId={term.termId}
     onClose={() => discRecord = null}
     onSuccess={() => { discRecord = null; invalidateFees(); }}
   />
