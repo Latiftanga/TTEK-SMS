@@ -9,6 +9,7 @@
   import { get } from 'svelte/store';
   import { portal } from '$lib/actions/portal';
   import ChangePasswordForm from '$lib/components/ChangePasswordForm.svelte';
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import SchoolForm from './SchoolForm.svelte';
 
   onMount(() => {
@@ -77,6 +78,7 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <ThemeToggle />
         <button onclick={openCreate}
           class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           style="background-color: var(--brand, #111827)">
