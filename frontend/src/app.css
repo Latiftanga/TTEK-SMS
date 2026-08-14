@@ -59,9 +59,12 @@
 
   /* Surface alias */
   --surface: var(--bg);
+
+  color-scheme: light;
 }
 
 :root.dark {
+  color-scheme: dark;
   --bg:           #0F1117;
   --bg-elevated:  #171923;
   --card:         #171923;
@@ -94,7 +97,6 @@ html, body {
   font-family: theme(--font-sans);
   background-color: var(--bg);
   color: var(--fg);
-  color-scheme: light dark;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
