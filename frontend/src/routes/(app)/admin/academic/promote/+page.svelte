@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { page } from '$app/stores';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
   import { listStudents, listGraduationRecords, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { writable } from 'svelte/store';
@@ -19,7 +20,12 @@
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
   // ── Selections ────────────────────────────────────────────────────────────────
-  let fromClassId = $state('');
+  // Deep-linked from a class's own detail page (Promote/Transfer tab) with
+  // ?class=<id> so an admin already viewing a class doesn't have to re-pick
+  // it here — a one-time seed, not a live binding, so picking a different
+  // class afterward doesn't fight the URL.
+  const initialClassId = $page.url.searchParams.get('class') ?? '';
+  let fromClassId = $state(initialClassId);
   let toClassId   = $state('');
   let toYearId    = $state('');
   let alsoEnroll  = $state(true); // also register in first term of target year

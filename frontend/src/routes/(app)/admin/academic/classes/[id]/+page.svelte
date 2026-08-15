@@ -9,7 +9,6 @@
   import { setPageTitle } from '$lib/stores/title';
   import StudentsTab from './StudentsTab.svelte';
   import SubjectsTab from './SubjectsTab.svelte';
-  import PromoteSection from './PromoteSection.svelte';
 
   const qc      = useQueryClient();
   const classId = $derived($page.params.id!);
@@ -230,7 +229,23 @@
   {:else if activeTab === 'subjects'}
     <SubjectsTab {classId} classActive={c.is_active} />
   {:else}
-    <PromoteSection {classId} classData={c} />
+    <!-- Bulk promote/transfer/repeat is one action, one place: the dedicated
+         Promotions page (nav: Students > Promotions) — this used to be a full
+         second copy of that same form, scoped to this class. Deep-linking with
+         the class pre-selected keeps the in-context convenience without the
+         duplicate ~250 lines of logic. -->
+    <div class="rounded-2xl border border-dashed border-[var(--border)] px-6 py-14 text-center">
+      <svg class="mx-auto mb-3 h-10 w-10 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18"/>
+      </svg>
+      <p class="text-sm font-medium text-[var(--fg-muted)]">Promote, repeat, or demote students from this class</p>
+      <p class="mt-1 text-xs text-[var(--fg-subtle)]">Handled from the Promotions page, with this class pre-selected.</p>
+      <a href="/admin/academic/promote?class={classId}"
+        class="mt-4 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+        style="background: var(--brand)">
+        Go to Promotions →
+      </a>
+    </div>
   {/if}
 {/if}
 
