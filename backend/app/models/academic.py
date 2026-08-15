@@ -26,7 +26,10 @@ from __future__ import annotations
 import uuid
 import enum
 from datetime import date, datetime
-from sqlalchemy import String, Boolean, DateTime, Integer, Date, ForeignKey, UniqueConstraint, Text
+from sqlalchemy import (
+    String, Boolean, DateTime, Integer, Date, ForeignKey, UniqueConstraint, Text,
+    CheckConstraint, Index, text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -47,6 +50,11 @@ class AcademicYear(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "academic_year"
     __table_args__ = (
         UniqueConstraint("school_id", "name", name="uq_academic_year_school_name"),
+        CheckConstraint("end_date > start_date", name="ck_academic_year_date_order"),
+        Index(
+            "uq_academic_year_one_current_per_school", "school_id",
+            unique=True, postgresql_where=text("is_current"),
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -61,6 +69,11 @@ class AcademicTerm(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "academic_term"
     __table_args__ = (
         UniqueConstraint("school_id", "academic_year_id", "term_number", name="uq_term_year_number"),
+        CheckConstraint("end_date > start_date", name="ck_academic_term_date_order"),
+        Index(
+            "uq_academic_term_one_current_per_school", "school_id",
+            unique=True, postgresql_where=text("is_current"),
+        ),
     )
 
     academic_year_id: Mapped[uuid.UUID] = mapped_column(

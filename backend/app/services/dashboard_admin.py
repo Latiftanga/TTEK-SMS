@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import AcademicTerm, Class, SHSProgramme
+from app.models.academic import Class, SHSProgramme
 from app.models.assessments import Assessment, Score
 from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.fees import FeePayment, StudentFeeSummary
@@ -17,20 +17,12 @@ from app.schemas.dashboard import (
     ClassAttendanceLine,
     FinanceDashboard,
 )
+from app.services.academic_year import get_current_term
 from app.services.student_display import _class_display_name
 
 
 def _class_label(cls: Class, prog_name: str | None) -> str:
     return _class_display_name(cls.level, cls.year_group, prog_name, cls.stream)
-
-
-async def _current_term(school_id: uuid.UUID, db: AsyncSession) -> AcademicTerm | None:
-    return await db.scalar(
-        select(AcademicTerm).where(
-            AcademicTerm.school_id == school_id,
-            AcademicTerm.is_current.is_(True),
-        )
-    )
 
 
 async def finance_view(
@@ -39,7 +31,7 @@ async def finance_view(
     db: AsyncSession,
 ) -> FinanceDashboard:
     zero = Decimal("0.00")
-    term = await _current_term(school_id, db)
+    term = await get_current_term(school_id, db)
     if not term:
         return FinanceDashboard(
             greeting_name=greeting_name,
@@ -85,7 +77,7 @@ async def admin_view(
 ) -> AdminDashboard:
     zero = Decimal("0.00")
     school = await db.get(School, school_id)
-    term = await _current_term(school_id, db)
+    term = await get_current_term(school_id, db)
 
     if not term:
         return AdminDashboard(

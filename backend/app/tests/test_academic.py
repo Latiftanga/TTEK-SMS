@@ -9,11 +9,14 @@ from datetime import date
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.auth import LoginType, User
-from app.models.academic import SchoolLevel, SHSProgramme, SubjectCatalogue, SubjectType
+from app.models.academic import (
+    AcademicTerm, AcademicYear, SchoolLevel, SHSProgramme, SubjectCatalogue, SubjectType,
+)
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 
 
@@ -121,6 +124,205 @@ async def test_set_current_term_only_one_current(client: AsyncClient, auth: dict
     current = [t for t in terms if t["is_current"]]
     assert len(current) == 1
     assert current[0]["id"] == t2
+
+
+@pytest.mark.asyncio
+async def test_set_current_term_in_noncurrent_year_cascades_year(client: AsyncClient, auth: dict):
+    """The exact drift shape this codebase's own CLAUDE.md documented but
+    never root-caused: setting a term current in a year that isn't itself
+    current must flip the year too, atomically — not silently leave the
+    real current year pointing at nothing."""
+    year_a = (await client.post("/academic/years", json={
+        "name": "2023/2024", "start_date": "2023-09-04", "end_date": "2024-07-31",
+    }, headers=auth)).json()["id"]
+    a1 = (await client.post(f"/academic/years/{year_a}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2023-09-04", "end_date": "2023-12-15",
+    }, headers=auth)).json()["id"]
+    await client.post(f"/academic/years/{year_a}/set-current", headers=auth)
+    await client.post(f"/academic/terms/{a1}/set-current", headers=auth)
+
+    year_b = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+    b1 = (await client.post(f"/academic/years/{year_b}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2024-09-02", "end_date": "2024-12-13",
+    }, headers=auth)).json()["id"]
+
+    # year_b is not current at this point — set-current on its term b1 must
+    # still cascade to make year_b current, and cleanly unset year_a/a1.
+    resp = await client.post(f"/academic/terms/{b1}/set-current", headers=auth)
+    assert resp.status_code == 200
+
+    years = (await client.get("/academic/years", headers=auth)).json()
+    current_years = [y for y in years if y["is_current"]]
+    assert len(current_years) == 1
+    assert current_years[0]["id"] == year_b
+
+    a_terms = (await client.get(f"/academic/years/{year_a}/terms", headers=auth)).json()
+    assert all(not t["is_current"] for t in a_terms)
+    b_terms = (await client.get(f"/academic/years/{year_b}/terms", headers=auth)).json()
+    current_terms = [t for t in b_terms if t["is_current"]]
+    assert len(current_terms) == 1
+    assert current_terms[0]["id"] == b1
+
+
+@pytest.mark.asyncio
+async def test_set_current_year_unsets_stray_current_term_without_picking_one(
+    client: AsyncClient, auth: dict,
+):
+    """Symmetric case: setting a year current must unset any current term
+    that belongs to a different year, but must NOT auto-pick a new current
+    term for the newly-current year — a year can legitimately be current
+    with zero current term chosen yet."""
+    year_a = (await client.post("/academic/years", json={
+        "name": "2023/2024", "start_date": "2023-09-04", "end_date": "2024-07-31",
+    }, headers=auth)).json()["id"]
+    a1 = (await client.post(f"/academic/years/{year_a}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2023-09-04", "end_date": "2023-12-15",
+    }, headers=auth)).json()["id"]
+    await client.post(f"/academic/years/{year_a}/set-current", headers=auth)
+    await client.post(f"/academic/terms/{a1}/set-current", headers=auth)
+
+    year_b = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/academic/years/{year_b}/set-current", headers=auth)
+    assert resp.status_code == 200
+
+    a_terms = (await client.get(f"/academic/years/{year_a}/terms", headers=auth)).json()
+    assert all(not t["is_current"] for t in a_terms)   # stray term unset
+
+    current_term = (await client.get("/academic/terms/current", headers=auth)).json()
+    assert current_term is None   # not auto-picked for year_b
+
+    years = (await client.get("/academic/years", headers=auth)).json()
+    current_years = [y for y in years if y["is_current"]]
+    assert len(current_years) == 1
+    assert current_years[0]["id"] == year_b
+
+
+@pytest.mark.asyncio
+async def test_duplicate_current_year_rejected_at_db_level(
+    db_session: AsyncSession, school: School,
+):
+    """Proves the partial unique index itself holds, independent of the
+    service layer's own unset-first logic — bypasses the service entirely."""
+    db_session.add(AcademicYear(
+        school_id=school.id, name="Year A",
+        start_date=date(2023, 9, 4), end_date=date(2024, 7, 31), is_current=True,
+    ))
+    await db_session.flush()
+
+    db_session.add(AcademicYear(
+        school_id=school.id, name="Year B",
+        start_date=date(2024, 9, 2), end_date=date(2025, 7, 31), is_current=True,
+    ))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_current_term_rejected_at_db_level(
+    db_session: AsyncSession, school: School, academic_year: AcademicYear,
+):
+    """Same proof for AcademicTerm — two terms in the SAME year, both
+    is_current=True, must be rejected by the DB, not just the service."""
+    db_session.add(AcademicTerm(
+        school_id=school.id, academic_year_id=academic_year.id,
+        term_number=1, name="First Term",
+        start_date=date(2024, 9, 2), end_date=date(2024, 12, 13), is_current=True,
+    ))
+    await db_session.flush()
+
+    db_session.add(AcademicTerm(
+        school_id=school.id, academic_year_id=academic_year.id,
+        term_number=2, name="Second Term",
+        start_date=date(2025, 1, 13), end_date=date(2025, 4, 11), is_current=True,
+    ))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+# ── Date validation ───────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_year_end_before_start_rejected(client: AsyncClient, auth: dict):
+    resp = await client.post("/academic/years", json={
+        "name": "Bad Year", "start_date": "2024-09-02", "end_date": "2024-08-01",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_year_end_before_start_rejected(client: AsyncClient, auth: dict):
+    year_id = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+    resp = await client.patch(f"/academic/years/{year_id}", json={
+        "end_date": "2024-01-01",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_term_end_before_start_rejected(client: AsyncClient, auth: dict):
+    year_id = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+    resp = await client.post(f"/academic/years/{year_id}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2024-12-13", "end_date": "2024-09-02",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_term_outside_year_bounds_rejected(client: AsyncClient, auth: dict):
+    year_id = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+    resp = await client.post(f"/academic/years/{year_id}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2024-08-01", "end_date": "2024-12-13",   # starts before the year
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "range" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_term_overlapping_sibling_rejected(client: AsyncClient, auth: dict):
+    year_id = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+    await client.post(f"/academic/years/{year_id}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2024-09-02", "end_date": "2024-12-13",
+    }, headers=auth)
+    resp = await client.post(f"/academic/years/{year_id}/terms", json={
+        "term_number": 2, "name": "Second Term",
+        "start_date": "2024-11-01", "end_date": "2025-01-31",   # overlaps First Term
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "overlap" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_term_outside_year_bounds_rejected(client: AsyncClient, auth: dict):
+    year_id = (await client.post("/academic/years", json={
+        "name": "2024/2025", "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)).json()["id"]
+    term_id = (await client.post(f"/academic/years/{year_id}/terms", json={
+        "term_number": 1, "name": "First Term",
+        "start_date": "2024-09-02", "end_date": "2024-12-13",
+    }, headers=auth)).json()["id"]
+    resp = await client.patch(f"/academic/terms/{term_id}", json={
+        "end_date": "2025-08-15",   # past the year's own end_date
+    }, headers=auth)
+    assert resp.status_code == 422
 
 
 # ── Classes ───────────────────────────────────────────────────────────────────

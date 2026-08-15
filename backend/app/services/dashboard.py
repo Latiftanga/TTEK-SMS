@@ -9,7 +9,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import resolve_permissions
-from app.models.academic import AcademicTerm
 from app.models.assessments import Assessment, Score
 from app.models.auth import User
 from app.models.staff import StaffMember
@@ -18,18 +17,10 @@ from app.schemas.dashboard import (
     DashboardData,
     TeacherDashboard,
 )
+from app.services.academic_year import get_current_term
 from app.services.dashboard_admin import admin_view, finance_view
 from app.services.dashboard_housemaster import housemaster_view
 from app.services.dashboard_teacher import teacher_view
-
-
-async def _current_term(school_id: uuid.UUID, db: AsyncSession) -> AcademicTerm | None:
-    return await db.scalar(
-        select(AcademicTerm).where(
-            AcademicTerm.school_id == school_id,
-            AcademicTerm.is_current.is_(True),
-        )
-    )
 
 
 async def _approver_view(
@@ -37,7 +28,7 @@ async def _approver_view(
     greeting_name: str,
     db: AsyncSession,
 ) -> ApproverDashboard:
-    term = await _current_term(school_id, db)
+    term = await get_current_term(school_id, db)
     pending = 0
     total_assessments = 0
     if term:

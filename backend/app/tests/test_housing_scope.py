@@ -53,6 +53,30 @@ async def _make_housemaster_staff(
     return staff, user
 
 
+async def _make_head_staff(db_session: AsyncSession, school: School, suffix: str) -> StaffMember:
+    """A real (non-superadmin) admin who holds housing.manage but is never a
+    HouseMaster appointee — for pinning down the no-current-year "fail
+    closed" behaviour against a genuine admin, not just a housemaster."""
+    pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == "HEAD"))
+    assert pos is not None, "Run seed_reference_data.py first"
+
+    staff = StaffMember(school_id=school.id, staff_number=f"HEADSCOPE-{suffix}", first_name="Head", last_name=suffix)
+    db_session.add(staff)
+    await db_session.flush()
+
+    from app.models.staff import staff_member_positions
+    await db_session.execute(
+        staff_member_positions.insert().values(staff_member_id=staff.id, position_id=pos.id)
+    )
+    user = User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=f"headscope-{suffix.lower()}@presec-test.edu.gh",
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff.id,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return staff
+
+
 async def _login(client: AsyncClient, email: str, school: School) -> dict:
     resp = await client.post("/auth/login", json={
         "login_type": "EMAIL", "identifier": email, "password": "Whatever123!",
@@ -80,12 +104,15 @@ async def test_staff_with_no_housemaster_row_is_unrestricted(
 
 
 @pytest.mark.asyncio
-async def test_no_academic_year_is_unrestricted(
+async def test_no_academic_year_denies(
     db_session: AsyncSession, school: School,
 ):
+    """No current academic year means "is this caller a housemaster" can't
+    be resolved at all — must fail closed (deny, zero houses), never fall
+    back to unrestricted, for a real (non-superadmin) staff member."""
     _staff, user = await _make_housemaster_staff(db_session, school, "NOYEAR")
     scope = await resolve_house_scope(user.id, school.id, None, db_session)
-    assert scope is None
+    assert scope == set()
 
 
 @pytest.mark.asyncio
@@ -272,6 +299,55 @@ async def test_create_house_403_for_scoped_housemaster(
         "name": "Rogue Hall", "code": "ROGUE1", "gender": "MALE",
     }, headers=hm_auth)
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_houses_empty_with_no_current_year(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """No AcademicYear is is_current for this school at all (a year row
+    exists so a HouseMaster row can reference it, but it's never set
+    current) — a real housemaster must see zero houses, not every house."""
+    house = await _make_house_api(client, auth, "INTNOYR")
+    noncurrent_year = AcademicYear(
+        school_id=school.id, name="Not Current",
+        start_date=date(2030, 9, 1), end_date=date(2031, 7, 31), is_current=False,
+    )
+    db_session.add(noncurrent_year)
+    await db_session.flush()
+
+    staff, _user = await _make_housemaster_staff(db_session, school, "NOCURYR")
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house["id"], staff_member_id=staff.id,
+        academic_year_id=noncurrent_year.id, is_active=True,
+    ))
+    await db_session.flush()
+    hm_auth = await _login(client, "hmscope-nocuryr@presec-test.edu.gh", school)
+
+    resp = await client.get("/housing/houses", headers=hm_auth)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_house_403_for_real_admin_with_no_current_year(
+    client: AsyncClient, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """Flagged, intentional collateral effect of the fail-closed fix: a
+    genuine (non-superadmin) admin can't create the school's first house
+    if no academic year is current yet — housing_scope.py has no way to
+    tell "real admin" from "real housemaster" apart without a year to
+    check HouseMaster rows against, so it locks down non-superadmin
+    housing actions entirely until a year exists, the conservative
+    posture. Superadmin (the `auth` fixture elsewhere in this file) is
+    unaffected, confirmed by every other test here still passing."""
+    await _make_head_staff(db_session, school, "NOCURYR")
+    head_auth = await _login(client, "headscope-nocuryr@presec-test.edu.gh", school)
+
+    resp = await client.post("/housing/houses", json={
+        "name": "First Hall", "code": "FIRSTHALL", "gender": "MALE",
+    }, headers=head_auth)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

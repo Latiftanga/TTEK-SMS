@@ -46,16 +46,20 @@ async def resolve_house_scope(
     academic_year_id: uuid.UUID | None,
     db: AsyncSession,
 ) -> set[uuid.UUID] | None:
-    """None = unrestricted (superadmin, non-staff login, no academic year to
-    resolve a HouseMaster row against, or zero active HouseMaster rows this
-    year). Otherwise the exact set of house_ids the caller is an active
-    HouseMaster of this year — never empty, since zero rows is exactly the
-    unrestricted case above."""
-    if academic_year_id is None:
-        return None
+    """None = unrestricted (superadmin, non-staff login, or zero active
+    HouseMaster rows this year — see BYPASS RULE above). Empty set = deny
+    (zero houses) — this is the `academic_year_id is None` case only (no
+    current academic year exists for this school, so "is this caller a
+    housemaster" can't even be resolved). SECURITY: fail closed here
+    instead of granting unrestricted access, since "no current year" is a
+    broken/incomplete setup state, not a green light for every staff
+    member to see every house. Checked after the superadmin/non-staff
+    bypass so that bypass is never affected by year state."""
     staff_id = await _staff_member_id_for(user_id, db)
     if staff_id is None:
         return None
+    if academic_year_id is None:
+        return set()
     rows = await db.scalars(
         select(HouseMaster.house_id).where(
             HouseMaster.staff_member_id == staff_id,
@@ -102,9 +106,9 @@ async def current_year_id(school_id: uuid.UUID, db: AsyncSession) -> uuid.UUID |
     """Most housing endpoints (house/room CRUD, roll calls, exeats) have no
     natural year context of their own — House/Room are permanent structures,
     not per-year rows — so "which house(s) do I currently manage" resolves
-    against whichever academic year is presently current. Falls back to
-    unrestricted (via resolve_house_scope's academic_year_id=None branch) if
-    no year is set up yet, rather than erroring."""
+    against whichever academic year is presently current. Returns None if
+    no year is set up yet — resolve_house_scope treats that as deny (empty
+    scope), not unrestricted; see its own docstring."""
     from app.services.academic_year import get_current_year
 
     year = await get_current_year(school_id, db)

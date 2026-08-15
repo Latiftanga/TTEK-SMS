@@ -17,20 +17,12 @@ from app.models.assessments import Assessment
 from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.students import Student, StudentClassAssignment
 from app.schemas.dashboard import AbsentStudent, ClassSnapshot, TeacherDashboard
+from app.services.academic_year import get_current_term
 from app.services.student_display import _class_display_name
 
 
 def _class_label(cls: Class, prog_name: str | None) -> str:
     return _class_display_name(cls.level, cls.year_group, prog_name, cls.stream)
-
-
-async def _current_term(school_id: uuid.UUID, db: AsyncSession) -> AcademicTerm | None:
-    return await db.scalar(
-        select(AcademicTerm).where(
-            AcademicTerm.school_id == school_id,
-            AcademicTerm.is_current.is_(True),
-        )
-    )
 
 
 async def _class_snapshot(
@@ -111,7 +103,7 @@ async def teacher_view(
     db: AsyncSession,
 ) -> TeacherDashboard:
     today_iso = date.today().isoformat()
-    term = await _current_term(school_id, db)
+    term = await get_current_term(school_id, db)
     if not term:
         return TeacherDashboard(
             greeting_name=greeting_name, today_iso=today_iso,
