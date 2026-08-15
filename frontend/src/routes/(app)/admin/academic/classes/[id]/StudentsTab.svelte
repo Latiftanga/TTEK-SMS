@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
-  import { listStudents } from '$lib/api/students';
+  import { getCurrentYear } from '$lib/api/academic';
+  import { listStudents, bulkEnrollStudents } from '$lib/api/students';
+  import { apiError } from '$lib/utils';
+  import { toast } from '$lib/stores/toast';
   import AssignStudentsPanel from './AssignStudentsPanel.svelte';
 
   interface Props { classId: string; capacity: number | null; classActive: boolean; }
@@ -19,6 +22,36 @@
   const assignedIds  = $derived(new Set(students.map(s => s.id)));
   const occupancy    = $derived(capacity != null ? Math.round((students.length / capacity) * 100) : null);
   const overCapacity = $derived(capacity != null && students.length > capacity);
+
+  // ── Term registration status ─────────────────────────────────────────────────
+  // Folds what used to be a separate "Term Registration" tab into this one —
+  // it's fundamentally just a status of the same class roster shown here.
+  const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
+  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current) ?? null);
+
+  const termRosterQ = createQuery({
+    queryKey: ['students', 'class', classId, 'term', currentTerm?.id ?? ''],
+    queryFn:  () => listStudents({ class_id: classId, active_only: true, term_id: currentTerm!.id }),
+    enabled:  !!currentTerm,
+    staleTime: 30_000,
+  });
+  const registeredIds = $derived(new Set(($termRosterQ.data ?? []).map(s => s.id)));
+  const notRegistered = $derived(currentTerm ? students.filter(s => !registeredIds.has(s.id)) : []);
+
+  // One-click, no selection UI — matches BulkRegisterCoreSubjectsButton's
+  // pattern on the sibling Subjects tab. Registering for a non-current term,
+  // or with a fee-waiver-reason override, stays available per-student via
+  // TermTimelineRow's "Register" button on the student's own Enrollment tab.
+  const registerTermMut = createMutation({
+    mutationFn: () => bulkEnrollStudents(
+      notRegistered.map(s => ({ student_id: s.id, academic_term_id: currentTerm!.id }))
+    ),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['students', 'class', classId] });
+      toast.success(`${res.enrolled} registered for ${currentTerm?.name}. Skipped: ${res.skipped}.`);
+    },
+    onError: (e) => toast.error(apiError(e, 'Failed to register students for the term.')),
+  });
 
   let showAssign = $state(false);
 
@@ -56,6 +89,16 @@
             </div>
           {/if}
         </div>
+        {#if currentTerm && notRegistered.length > 0}
+          <span class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+            {notRegistered.length} not registered for {currentTerm.name}
+          </span>
+          <button onclick={() => $registerTermMut.mutate()} disabled={$registerTermMut.isPending}
+            class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)]
+                   transition hover:bg-[var(--hover)] hover:text-[var(--fg)] disabled:opacity-40">
+            {$registerTermMut.isPending ? 'Registering…' : `Register ${notRegistered.length} for ${currentTerm.name}`}
+          </button>
+        {/if}
         {#if classActive}
           <button onclick={() => showAssign = !showAssign}
             class="flex shrink-0 items-center gap-1 text-xs font-semibold transition hover:opacity-70" style="color:var(--brand)">
@@ -74,6 +117,7 @@
         <thead>
           <tr class="border-b border-[var(--border)] bg-[var(--hover)]/30 text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
             <th class="px-4 py-2.5">Student</th>
+            <th class="px-4 py-2.5">Term</th>
             <th class="hidden px-4 py-2.5 sm:table-cell">Admission #</th>
             <th class="hidden px-4 py-2.5 sm:table-cell">Gender</th>
             <th class="hidden px-4 py-2.5 md:table-cell">Boarding</th>
@@ -91,6 +135,15 @@
                     <p class="font-mono text-[10px] text-[var(--fg-subtle)] sm:hidden">{s.admission_number}</p>
                   </div>
                 </div>
+              </td>
+              <td class="px-4 py-2.5">
+                {#if !currentTerm}
+                  <span class="text-xs text-[var(--fg-subtle)]">—</span>
+                {:else if registeredIds.has(s.id)}
+                  <span class="text-xs font-medium text-green-600 dark:text-green-400">✓ Registered</span>
+                {:else}
+                  <span class="text-xs text-[var(--fg-subtle)]">Not registered</span>
+                {/if}
               </td>
               <td class="hidden px-4 py-2.5 font-mono text-xs text-[var(--fg-muted)] sm:table-cell">{s.admission_number}</td>
               <td class="hidden px-4 py-2.5 sm:table-cell">

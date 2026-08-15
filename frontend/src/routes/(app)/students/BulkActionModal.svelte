@@ -1,9 +1,11 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { bulkAssignStudentsToClass, bulkEnrollStudents } from '$lib/api/students';
+  import { bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { listAllTerms, type SchoolClass, type AcademicTerm } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
   import { portal } from '$lib/actions/portal';
+  import { detailOf, isLocked } from '$lib/apiError';
+  import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
   interface Props {
     selected: Set<string>;
@@ -31,42 +33,46 @@
     repeat:  { title: 'Repeat',  desc: 'Re-enrol in the same or another class for the next term.' },
     demote:  { title: 'Demote',  desc: 'Assign to a lower class and enrol for a new term.' },
   };
+  const ACTION_TO_TYPE: Record<NonNullable<typeof action>, PromotionRecordCreate['graduation_type']> = {
+    promote: 'PROMOTED', repeat: 'REPEATED', demote: 'DEMOTED',
+  };
+
+  let overrideNeeded = $state(false);
+  let overrideError  = $state('');
 
   const bulkMut = createMutation({
-    mutationFn: async () => {
+    mutationFn: (overrideReason?: string) => {
       if (!selectedTerm) throw new Error('No term selected.');
-      await bulkAssignStudentsToClass(
-        [...selected].map(sid => ({ student_id: sid, class_id: targetClassId, academic_year_id: selectedTerm.academic_year_id }))
-      );
-      return bulkEnrollStudents(
-        [...selected].map(sid => ({ student_id: sid, academic_term_id: targetTermId }))
-      );
+      const records: PromotionRecordCreate[] = [...selected].map(sid => ({
+        student_id: sid, class_id: targetClassId, graduation_type: ACTION_TO_TYPE[action!],
+      }));
+      return bulkPromoteStudents({
+        academic_year_id: selectedTerm.academic_year_id,
+        academic_term_id: targetTermId,
+        records,
+        override_reason: overrideReason,
+      });
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['students'] });
-      const r = res as { enrolled?: number; skipped?: number };
-      const enrolled = r.enrolled ?? count;
-      const skipped = r.skipped ?? 0;
-      if (skipped > 0) {
-        toast.success(`${enrolled} enrolled, ${skipped} skipped (already enrolled, or blocked by an outstanding fee balance).`);
-      } else {
-        toast.success(`${enrolled} student${enrolled !== 1 ? 's' : ''} updated.`);
-      }
+      overrideNeeded = false; overrideError = '';
+      toast.success(`${res.processed} student(s) updated. Skipped: ${res.skipped} (already processed for this year).`);
       closeModal(); onClear();
     },
     onError: (e: unknown) => {
-      error = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Something went wrong.';
+      if (isLocked(e)) { overrideNeeded = true; overrideError = detailOf(e) ?? 'This mismatch needs a reason.'; return; }
+      error = detailOf(e) ?? 'Something went wrong.';
     },
   });
 
   function openAction(a: typeof action) { action = a; targetClassId = ''; targetTermId = ''; error = ''; }
-  function closeModal() { action = null; targetClassId = ''; targetTermId = ''; error = ''; }
+  function closeModal() { action = null; targetClassId = ''; targetTermId = ''; error = ''; overrideNeeded = false; overrideError = ''; }
 
   function confirm() {
     error = '';
     if (!targetClassId) { error = 'Select a target class.'; return; }
     if (!targetTermId)  { error = 'Select a target term.'; return; }
-    $bulkMut.mutate();
+    $bulkMut.mutate(undefined);
   }
 </script>
 
@@ -129,6 +135,15 @@
     </div>
   </div>
 {/if}
+
+<OverrideReasonModal
+  open={overrideNeeded}
+  title="Class mismatch"
+  errorMessage={overrideError}
+  isPending={$bulkMut.isPending}
+  onSubmit={(reason) => $bulkMut.mutate(reason)}
+  onCancel={() => { overrideNeeded = false; overrideError = ''; }}
+/>
 
 <style>
   @reference "tailwindcss";

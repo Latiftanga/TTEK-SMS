@@ -3,7 +3,7 @@
   import { writable } from 'svelte/store';
   import {
     listClassSubjects, listSubjects, removeClassSubject, updateClassSubject,
-    listYears, listSubjectTeachers, assignSubjectTeacher,
+    listYears, listSubjectTeachers, type ClassSubject,
   } from '$lib/api/academic';
   import { listStaff } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
@@ -12,7 +12,7 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import BulkRegisterCoreSubjectsButton from './BulkRegisterCoreSubjectsButton.svelte';
   import AddClassSubjectForm from './AddClassSubjectForm.svelte';
-  import SubjectRosterPanel from './SubjectRosterPanel.svelte';
+  import SubjectClassManagementPanel from './SubjectClassManagementPanel.svelte';
 
   interface Props { classId: string; classActive: boolean; }
   const { classId, classActive }: Props = $props();
@@ -40,6 +40,14 @@
     const cur = ($yearsQ.data ?? []).find(y => y.is_current);
     if (cur) yearId = cur.id;
   });
+  // Passed to SubjectClassManagementPanel purely so it can invalidate the
+  // catalogue page's ['subject-summary', subjectId, termId] cache when a
+  // roster changes here — '' (no current term) is harmless, it just won't
+  // match any cached key.
+  const currentTermId = $derived(($yearsQ.data ?? []).flatMap(y => y.terms).find(t => t.is_current)?.id ?? '');
+
+  // Which subject row is expanded for inline teacher + roster management.
+  let expandedSubjectId = $state<string | null>(null);
 
   // Writable store pattern — avoids TanStack's queryKey validation on mount
   const subjTeachersOpts = writable({ queryKey: ['subject-teachers', classId, ''] as string[], queryFn: () => listSubjectTeachers(classId, ''), enabled: false, staleTime: 60_000 });
@@ -53,40 +61,17 @@
   const classSubjects    = $derived($clsSubjQ.data ?? []);
   const subjectMap       = $derived(new Map(($allSubjQ.data ?? []).map(s => [s.id, s])));
   const staffMap         = $derived(new Map(($staffQ.data ?? []).map(s => [s.id, s])));
-  // Only teaching staff can be assigned to teach a subject — StaffCategory.staff_type
-  // exists specifically for this. staffMap above stays unfiltered so a legacy/edge-case
-  // assignment to a non-teaching staff member still displays their name correctly.
-  const teachingStaff    = $derived(($staffQ.data ?? []).filter(s => s.staff_type === 'TEACHING'));
   const teacherBySubject = $derived(new Map(($subjTeachersQ.data ?? []).map(st => [st.subject_id, st.staff_member_id])));
   const unassignedSubjs  = $derived(($allSubjQ.data ?? []).filter(s => s.is_active && !classSubjects.some(cs => cs.subject_id === s.id)));
   const unassignedCount  = $derived(classSubjects.filter(cs => yearId && !teacherBySubject.has(cs.subject_id)).length);
+  // Grouping for the Core/Elective sections below — the whole-class bulk
+  // register button lives with the core group (it never touches electives),
+  // electives are managed one subject at a time via their own row.
+  const coreSubjects     = $derived(classSubjects.filter(cs => !cs.is_elective));
+  const electiveSubjects = $derived(classSubjects.filter(cs => cs.is_elective));
 
-  // ── Add subject + teacher ─────────────────────────────────────────────────────
+  // ── Add subject ───────────────────────────────────────────────────────────────
   let showAdd = $state(false);
-
-  // ── Enroll students (per-subject roster) ──────────────────────────────────────
-  let expandedRosterId = $state('');
-
-  // ── Change / assign teacher ───────────────────────────────────────────────────
-  let changingId    = $state('');
-  let changeStaffId = $state('');
-  let changeError   = $state('');
-
-  function startChange(subjectId: string) {
-    changingId    = subjectId;
-    changeStaffId = teacherBySubject.get(subjectId) ?? '';
-    changeError   = '';
-  }
-
-  const changeMut = createMutation({
-    mutationFn: () => assignSubjectTeacher(classId, { subject_id: changingId, staff_member_id: changeStaffId, academic_year_id: yearId }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
-      changingId = ''; changeStaffId = ''; changeError = '';
-      toast.success('Teacher updated.');
-    },
-    onError: (e) => { changeError = apiError(e, 'Failed to assign teacher.'); },
-  });
 
   // ── Remove subject ────────────────────────────────────────────────────────────
   let confirmRemoveId = $state<string | null>(null);
@@ -123,7 +108,6 @@
     return (p[0][0] + (p[1]?.[0] ?? '')).toUpperCase();
   }
 
-  const sel = 'w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition';
   const selSm = 'rounded-xl border border-[var(--border)] bg-[var(--bg)] py-1.5 pl-2.5 pr-7 text-xs text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition appearance-none';
 </script>
 
@@ -160,7 +144,6 @@
             </span>
           {/if}
         </div>
-        {#if classActive}<BulkRegisterCoreSubjectsButton {classId} />{/if}
         <!-- Year selector (compact, inline) -->
         <div class="relative shrink-0">
           <select bind:value={yearId} class={selSm}>
@@ -186,12 +169,11 @@
         {/if}
       </div>
 
-      <!-- Subject rows -->
-      {#each classSubjects as cs (cs.subject_id)}
+      <!-- Subject row -->
+      {#snippet subjectRow(cs: ClassSubject)}
         {@const subj    = subjectMap.get(cs.subject_id)}
         {@const staffId = teacherBySubject.get(cs.subject_id)}
         {@const teacher = staffId ? staffMap.get(staffId) : null}
-        {@const editing = changingId === cs.subject_id}
 
         <div class="border-b border-[var(--border)] last:border-0">
           <div class="flex items-center gap-3 px-4 py-3">
@@ -234,56 +216,52 @@
             {/if}
 
             <!-- Actions -->
-            <button onclick={() => expandedRosterId = expandedRosterId === cs.subject_id ? '' : cs.subject_id}
+            <button onclick={() => expandedSubjectId = expandedSubjectId === cs.subject_id ? null : cs.subject_id}
               class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
-              Enroll students
+              {expandedSubjectId === cs.subject_id ? 'Hide' : 'Manage teacher & students'}
             </button>
-            {#if classActive && yearId && !editing}
-              <button onclick={() => startChange(cs.subject_id)}
-                class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
-                {teacher ? 'Change' : 'Assign'}
-              </button>
-            {/if}
             <button onclick={() => confirmRemoveId = cs.subject_id} disabled={$removeMut.isPending}
               class="shrink-0 text-xs text-[var(--fg-subtle)] transition hover:text-red-500 disabled:opacity-40">
               Remove
             </button>
           </div>
-
-          <!-- Enroll students (per-subject roster) -->
-          {#if expandedRosterId === cs.subject_id}
-            <SubjectRosterPanel {classId} subjectId={cs.subject_id} />
-          {/if}
-
-          <!-- Inline teacher change form -->
-          {#if editing}
-            <div class="border-t border-[var(--border)] bg-[var(--hover)]/40 px-4 py-3 space-y-2">
-              <p class="text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
-                Assign teacher for {subj?.name ?? 'subject'}
-              </p>
-              <select bind:value={changeStaffId} class={sel}>
-                <option value="">Select teacher…</option>
-                {#each teachingStaff as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
-              </select>
-              {#if changeError}<p class="text-xs text-red-500">{changeError}</p>{/if}
-              <div class="flex gap-2">
-                <button onclick={() => { changeError = ''; if (!changeStaffId) { changeError = 'Select a teacher.'; return; } $changeMut.mutate(); }}
-                  disabled={$changeMut.isPending}
-                  class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                  style="background:var(--brand)">{$changeMut.isPending ? 'Saving…' : 'Confirm'}</button>
-                <button onclick={() => { changingId = ''; changeError = ''; }}
-                  class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">Cancel</button>
-              </div>
-            </div>
+          {#if expandedSubjectId === cs.subject_id}
+            <SubjectClassManagementPanel subjectId={cs.subject_id} {classId} {yearId} termId={currentTermId} />
           {/if}
         </div>
-      {/each}
+      {/snippet}
+
+      <!-- Grouped by core/elective — SHS only, since Basic has no elective
+           concept exposed anywhere else in this tab either (see
+           showElectiveToggle above). -->
+      {#if showElectiveToggle}
+        {#if coreSubjects.length > 0}
+          <div class="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--hover)]/20 px-4 py-2">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Core subjects</p>
+            {#if classActive}<BulkRegisterCoreSubjectsButton {classId} />{/if}
+          </div>
+          {#each coreSubjects as cs (cs.subject_id)}{@render subjectRow(cs)}{/each}
+        {/if}
+        {#if electiveSubjects.length > 0}
+          <div class="border-b border-[var(--border)] bg-[var(--hover)]/20 px-4 py-2">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Elective subjects</p>
+          </div>
+          {#each electiveSubjects as cs (cs.subject_id)}{@render subjectRow(cs)}{/each}
+        {/if}
+      {:else}
+        {#if classActive && classSubjects.length > 0}
+          <div class="border-b border-[var(--border)] bg-[var(--hover)]/20 px-4 py-2">
+            <BulkRegisterCoreSubjectsButton {classId} />
+          </div>
+        {/if}
+        {#each classSubjects as cs (cs.subject_id)}{@render subjectRow(cs)}{/each}
+      {/if}
     </div>
   {/if}
 
-  <!-- Add subject + teacher form -->
+  <!-- Add subject form -->
   {#if showAdd && classActive}
-    <AddClassSubjectForm {classId} {yearId} {unassignedSubjs} {teachingStaff} onClose={() => showAdd = false} />
+    <AddClassSubjectForm {classId} {unassignedSubjs} onClose={() => showAdd = false} />
   {/if}
 </div>
 

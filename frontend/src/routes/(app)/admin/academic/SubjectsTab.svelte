@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { listSubjects, updateSubject, type Subject } from '$lib/api/academic';
+  import { listSubjects, updateSubject, listYears, type Subject } from '$lib/api/academic';
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -15,6 +15,19 @@
   const qc = useQueryClient();
 
   const subjectsQuery = createQuery({ queryKey: ['subjects'], queryFn: listSubjects, staleTime: 5 * 60_000 });
+
+  // ── Term selector — powers SubjectSummaryPanel's read-only per-class counts ──
+  const yearsQ = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
+  const allTerms = $derived(
+    ($yearsQ.data ?? [])
+      .flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name })))
+      .sort((a, b) => b.start_date.localeCompare(a.start_date))
+  );
+  let termId = $state('');
+  $effect(() => {
+    if (termId || allTerms.length === 0) return;
+    termId = allTerms.find(t => t.is_current)?.id ?? allTerms[0].id;
+  });
 
   // ── Filters ───────────────────────────────────────────────────────────────────
   let search       = $state('');
@@ -79,6 +92,11 @@
           <button onclick={() => { statusFilter = v; page = 1; }} class={PILL(statusFilter === v)}>{l}</button>
         {/each}
       </div>
+      <select bind:value={termId} class="h-9 rounded-xl border border-[var(--border)] bg-[var(--card)] px-2.5 text-xs text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
+        {#each allTerms as t (t.id)}
+          <option value={t.id}>{t.yearName} — {t.name}{t.is_current ? ' (current)' : ''}</option>
+        {/each}
+      </select>
     </div>
     <button onclick={() => { showForm = !showForm; }}
       class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style="background-color: var(--brand)">
@@ -171,7 +189,7 @@
               {#if expandedSummaryId === subj.id}
                 <tr>
                   <td colspan="4" class="p-0">
-                    <SubjectSummaryPanel subjectId={subj.id} />
+                    <SubjectSummaryPanel subjectId={subj.id} {termId} />
                   </td>
                 </tr>
               {/if}

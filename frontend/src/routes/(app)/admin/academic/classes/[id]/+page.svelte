@@ -2,8 +2,9 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { getClass, updateClass, listClassSubjects } from '$lib/api/academic';
+  import { getClass, updateClass, listClassSubjects, listYears } from '$lib/api/academic';
   import { listStudents } from '$lib/api/students';
+  import { reactiveQuery } from '$lib/query.svelte';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import StudentsTab from './StudentsTab.svelte';
@@ -21,6 +22,24 @@
 
   const studentCount = $derived($studentsQ.data?.length ?? null);
   const subjectCount = $derived($subjQ.data?.length ?? null);
+
+  // Current-term registration status — powers the attention badge on the
+  // Students tab (term registration is now folded into that tab, not its
+  // own separate tab). Shares the ['academic-years'] cache key used
+  // elsewhere (Promote tab, etc.).
+  const yearsQ = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
+  const currentTermId = $derived(($yearsQ.data ?? []).flatMap(y => y.terms).find(t => t.is_current)?.id ?? '');
+  const termRosterQ = reactiveQuery(() => ({
+    queryKey: ['students', 'class', classId, 'term', currentTermId] as const,
+    queryFn:  () => listStudents({ class_id: classId, active_only: true, term_id: currentTermId }),
+    enabled:  !!currentTermId,
+    staleTime: 30_000,
+  }));
+  const notRegisteredCount = $derived(
+    currentTermId && studentCount !== null && $termRosterQ.data !== undefined
+      ? Math.max(0, studentCount - $termRosterQ.data.length)
+      : null
+  );
 
   // ── Edit ──────────────────────────────────────────────────────────────────────
   let editing      = $state(false);
@@ -63,8 +82,9 @@
 
   // ── Tab navigation ────────────────────────────────────────────────────────────
   type Tab = 'students' | 'subjects' | 'promote';
+  const VALID_TABS: Tab[] = ['subjects', 'promote'];
   const initialTab = $page.url.searchParams.get('tab');
-  let activeTab = $state<Tab>(initialTab === 'subjects' || initialTab === 'promote' ? initialTab : 'students');
+  let activeTab = $state<Tab>(VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : 'students');
 </script>
 
 <!-- Back link -->
@@ -179,7 +199,9 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
       </svg>
       <span class="hidden sm:inline">Students</span>
-      {#if studentCount !== null}
+      {#if notRegisteredCount}
+        <span class="tab-badge tab-badge-attention {activeTab === 'students' ? 'tab-badge-active' : ''}">{notRegisteredCount}</span>
+      {:else if studentCount !== null}
         <span class="tab-badge {activeTab === 'students' ? 'tab-badge-active' : ''}">{studentCount}</span>
       {/if}
     </button>
@@ -226,6 +248,9 @@
   }
   .tab-badge {
     @apply rounded-full bg-[var(--hover)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--fg-subtle)];
+  }
+  .tab-badge-attention {
+    @apply bg-amber-500/15 text-amber-600 dark:text-amber-400;
   }
   .tab-badge-active {
     @apply bg-[var(--brand)]/12 text-[var(--brand)];

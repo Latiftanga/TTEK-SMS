@@ -65,10 +65,14 @@
   const isMarkable = $derived(!!calDay && MARKABLE.has(calDay.day_type));
 
   // ── Students for selected class ────────────────────────────────────────────────
+  // Scoped to students with an active TermEnrollment for the current term —
+  // a student merely assigned to the class this year but never registered
+  // ("physically reported") for the term isn't someone attendance should be
+  // tracking yet. See the class detail page's Students tab.
   const studentsQ = reactiveQuery(() => ({
-    queryKey: ['students-for-class', classId] as const,
-    queryFn:  () => listStudents({ class_id: classId }),
-    enabled:  !!classId,
+    queryKey: ['students-for-class', classId, currentTermId] as const,
+    queryFn:  () => listStudents({ class_id: classId, term_id: currentTermId }),
+    enabled:  !!classId && !!currentTermId,
     staleTime: 60_000,
   }));
 
@@ -236,7 +240,14 @@
   {#if $studentsQ.isPending}
     <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
   {:else if studentCount === 0}
-    <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">No students in this class.</div>
+    <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
+      No students registered for this term yet.
+      {#if canManage}
+        <br /><a href={`/admin/academic/classes/${classId}?tab=students`} class="underline font-semibold">Register students for the term</a> before marking attendance.
+      {:else}
+        <br />Ask an admin to register students for the term before marking attendance.
+      {/if}
+    </div>
   {:else}
     <!-- Legend — the row buttons are single-letter for space, spelled out once here
          rather than relying on a hover title (doesn't work on touch). -->

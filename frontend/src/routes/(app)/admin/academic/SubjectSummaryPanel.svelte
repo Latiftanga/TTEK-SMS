@@ -1,38 +1,21 @@
 <script lang="ts">
-  import { createQuery } from '@tanstack/svelte-query';
-  import { writable } from 'svelte/store';
-  import { getCurrentYear, getSubjectSummary } from '$lib/api/academic';
+  import { reactiveQuery } from '$lib/query.svelte';
+  import { getSubjectSummary, type SubjectSummary } from '$lib/api/academic';
 
-  interface Props { subjectId: string; }
-  const { subjectId }: Props = $props();
+  interface Props { subjectId: string; termId: string; }
+  const { subjectId, termId }: Props = $props();
 
-  const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
-  const termId = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current)?.id ?? '');
-
-  // Writable store pattern — keeps queryFn/enabled reactive to termId (which
-  // starts empty until getCurrentYear resolves), mirroring
-  // classes/[id]/SubjectRosterPanel.svelte's rosterOpts.
-  const summaryOpts = writable({
-    queryKey: ['subject-summary', subjectId, ''],
-    queryFn: () => getSubjectSummary(subjectId, ''),
-    enabled: false,
+  const summaryQ = reactiveQuery<SubjectSummary>(() => ({
+    queryKey: ['subject-summary', subjectId, termId] as const,
+    queryFn:  () => getSubjectSummary(subjectId, termId),
+    enabled:  !!termId,
     staleTime: 30_000,
-  });
-  $effect(() => {
-    const t = termId;
-    summaryOpts.set({
-      queryKey: ['subject-summary', subjectId, t],
-      queryFn: () => getSubjectSummary(subjectId, t),
-      enabled: !!t,
-      staleTime: 30_000,
-    });
-  });
-  const summaryQ = createQuery(summaryOpts);
+  }));
 </script>
 
 <div class="border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3 space-y-2.5">
   {#if !termId}
-    <p class="text-xs text-[var(--fg-muted)]">No current academic term.</p>
+    <p class="text-xs text-[var(--fg-muted)]">No academic term selected.</p>
   {:else if $summaryQ.isPending}
     <div class="h-6 animate-pulse rounded-lg bg-[var(--hover)]"></div>
   {:else if $summaryQ.data}
@@ -52,8 +35,7 @@
       </div>
       <div class="divide-y divide-[var(--border)] overflow-hidden rounded-lg border border-[var(--border)]">
         {#each s.classes as c (c.class_id)}
-          <a href="/admin/academic/classes/{c.class_id}?tab=subjects"
-            class="flex items-center justify-between gap-3 px-3 py-2 text-sm transition hover:bg-[var(--hover)]">
+          <div class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
             <span class="truncate font-medium text-[var(--fg)]">{c.display_name}</span>
             <span class="flex shrink-0 items-center gap-2">
               {#if c.teacher_name}
@@ -62,8 +44,10 @@
                 <span class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">No teacher</span>
               {/if}
               <span class="font-mono text-xs text-[var(--fg-subtle)]">{c.registered_count} registered</span>
+              <a href="/admin/academic/classes/{c.class_id}?tab=subjects"
+                class="text-xs font-medium underline transition hover:text-[var(--fg)]" style="color:var(--brand)">Open class →</a>
             </span>
-          </a>
+          </div>
         {/each}
       </div>
     {/if}

@@ -296,7 +296,14 @@ export const bulkRegisterCoreSubjects = (
     override_reason: overrideReason,
   }).then(r => r.data);
 
-export const bulkEnrollStudents = (items: { student_id: string; academic_term_id: string }[]) =>
+export interface BulkEnrollResult {
+  enrolled: number;
+  skipped: number;
+}
+
+export const bulkEnrollStudents = (
+  items: { student_id: string; academic_term_id: string; fee_waiver_reason?: string }[],
+): Promise<BulkEnrollResult> =>
   api.post('/students/bulk-term-enrollments', { items }).then(r => r.data);
 
 export interface SubjectRosterStudent {
