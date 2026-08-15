@@ -1,7 +1,9 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { goto } from '$app/navigation';
   import { reactiveQuery } from '$lib/query.svelte';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import { listStudents } from '$lib/api/students';
   import {
     listCalendar, listAttendanceRecords, markAttendance, getClassSummaries, listMyAttendanceClasses,
@@ -10,8 +12,10 @@
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import { userRole } from '$lib/stores/permissions';
+  import EmptyState from '$lib/components/EmptyState.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
   import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
+  import AttendanceSelectors from './AttendanceSelectors.svelte';
   import AttendanceStudentRow from './AttendanceStudentRow.svelte';
   setPageTitle('Attendance');
 
@@ -33,7 +37,7 @@
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
   const allTerms      = $derived(($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name }))));
-  const currentTermId = $derived(allTerms.find(t => t.is_current)?.id ?? '');
+  const currentTermId = $derived(findCurrentTerm(allTerms)?.id ?? '');
 
   // Scoped to the caller's own ClassTeacher assignment(s) unless they hold
   // attendance.approve — the backend decides, this page just renders whatever
@@ -165,38 +169,16 @@
   };
 </script>
 
-<!-- Selectors — stacked full-width on mobile (this pair is the first thing
-     a teacher touches every time they open the page), side by side from
-     sm: up where there's room for both without crowding. -->
-<div class="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
-  <div>
-    <label class="label" for="att-class">Class</label>
-    <select id="att-class" bind:value={classId} class="sel w-full">
-      <option value="">Select class…</option>
-      {#each $classesQ.data ?? [] as c (c.id)}
-        <option value={c.id}>{c.display_name}</option>
-      {/each}
-    </select>
-  </div>
-  <div>
-    <label class="label" for="att-date">Date</label>
-    <div class="flex flex-wrap items-center gap-1.5">
-      <input id="att-date" type="date" bind:value={selectedDate} max={today} class="sel min-w-0 flex-1" />
-      {#if selectedDate !== today}
-        <button onclick={() => selectedDate = today} title="Jump to today"
-          class="today-btn shrink-0">
-          Today
-        </button>
-      {/if}
-    </div>
-  </div>
-  {#if calDay}
-    <span class="w-fit rounded-full px-3 py-1 text-xs font-semibold sm:col-span-2 {dayTypeColor[calDay.day_type]}">
-      {calDay.day_type.replace(/_/g, ' ')}
-      {#if calDay.notes} · {calDay.notes}{/if}
-    </span>
-  {/if}
-</div>
+{#if !currentTermId}
+  <EmptyState compact title="No current academic term"
+    description="Set a term as current in Academic setup before marking attendance."
+    {...(canManage ? { action: () => goto('/admin/academic'), actionLabel: 'Go to setup' } : {})} />
+{:else}
+<AttendanceSelectors
+  {classId} classes={$classesQ.data ?? []} {today} {selectedDate} {calDay} {dayTypeColor}
+  onClassChange={(id) => classId = id}
+  onDateChange={(date) => selectedDate = date}
+/>
 
 {#if !classId}
   <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
@@ -286,6 +268,7 @@
     </div>
   {/if}
 {/if}
+{/if}
 
 <OverrideReasonModal
   open={markOverrideNeeded}
@@ -294,10 +277,3 @@
   onSubmit={(reason) => $markMut.mutate(reason)}
   onCancel={() => { markOverrideNeeded = false; markError = ''; }}
 />
-
-<style>
-  @reference "tailwindcss";
-  .label     { @apply block text-xs font-medium text-[var(--fg-muted)] mb-1; }
-  .sel       { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
-  .today-btn { @apply min-h-[44px] rounded-xl border border-[var(--border)] px-3 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]; }
-</style>

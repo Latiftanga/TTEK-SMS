@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { createStudent, assignStudentToClass, type StudentCreate, type Gender, type OrphanStatus } from '$lib/api/students';
   import { listClasses, listYears } from '$lib/api/academic';
+  import { resolveDefaultYear } from '$lib/academicPeriod';
   import { listHouses, createAssignment } from '$lib/api/housing';
   import { portal } from '$lib/actions/portal';
 
@@ -16,11 +17,11 @@
   const yearsQ   = createQuery({ queryKey: ['years'],   queryFn: listYears,   staleTime: 5 * 60_000 });
   const housesQ  = createQuery({ queryKey: ['houses'],  queryFn: listHouses,  staleTime: 5 * 60_000 });
 
-  // Current academic year — used silently when a class is chosen
-  const currentYearId = $derived(
-    ($yearsQ.data ?? []).find(y => y.is_current)?.id
-    ?? ($yearsQ.data ?? []).sort((a, b) => b.start_date.localeCompare(a.start_date))[0]?.id
-  );
+  // Current academic year — used silently when a class is chosen.
+  // resolveDefaultYear spreads before sorting — $yearsQ.data is the live
+  // TanStack cache array, and .sort() in place here used to corrupt every
+  // other consumer's ordering as a side effect of this one $derived.
+  const currentYearId = $derived(resolveDefaultYear($yearsQ.data ?? [])?.id);
 
   // ── Form state ────────────────────────────────────────────────────────────────
   const blankStudent = (): StudentCreate => ({

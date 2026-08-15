@@ -3,6 +3,7 @@
   import { reactiveQuery } from '$lib/query.svelte';
   import { updateStudent, type StudentDetail, type StudentUpdate, type Gender, type OrphanStatus } from '$lib/api/students';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentYear } from '$lib/academicPeriod';
   import {
     listHouses, getStudentAssignment, createAssignment, vacateAssignment,
   } from '$lib/api/housing';
@@ -26,7 +27,7 @@
     staleTime: 5 * 60_000,
     enabled: () => student.is_boarding || form.is_boarding,
   });
-  const currentYearId = $derived(($yearsQ.data ?? []).find(y => y.is_current)?.id ?? '');
+  const currentYearId = $derived(findCurrentYear($yearsQ.data ?? [])?.id ?? '');
 
   const housesQ = createQuery({
     queryKey: ['houses'],

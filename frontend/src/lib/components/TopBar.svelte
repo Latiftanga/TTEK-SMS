@@ -6,6 +6,7 @@
   import { currentUser } from '$lib/stores/auth';
   import { userRole } from '$lib/stores/permissions';
   import { getCurrentYear } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import { isOnline, isSyncing } from '$lib/offline/sync';
 
   const today = new Date().toLocaleDateString('en-GH', {
@@ -24,7 +25,7 @@
   const setupHref = '/admin/academic/years';
 
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
-  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
+  const currentTerm = $derived(findCurrentTerm($yearQ.data?.terms ?? []));
 
   const daysLeft = $derived(
     currentTerm

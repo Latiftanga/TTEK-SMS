@@ -4,6 +4,7 @@
     listClassAssignments, listGraduationRecords, bulkPromoteStudents, type PromotionRecordCreate,
   } from '$lib/api/students';
   import { type SchoolClass } from '$lib/api/academic';
+  import { findCurrentYear } from '$lib/academicPeriod';
   import { toast } from '$lib/stores/toast';
   import { detailOf, isLocked } from '$lib/apiError';
   import TargetClassPicker from '$lib/components/TargetClassPicker.svelte';
@@ -41,7 +42,7 @@
     enabled: canManage,
     staleTime: 30_000,
   });
-  const currentYear = $derived(years.find(y => y.is_current) ?? null);
+  const currentYear = $derived(findCurrentYear(years) ?? null);
   const currentYearRecord = $derived(
     currentYear ? ($graduationRecordsQ.data ?? []).find(r => r.academic_year_id === currentYear.id) ?? null : null
   );

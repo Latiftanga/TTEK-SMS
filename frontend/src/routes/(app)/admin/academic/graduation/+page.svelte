@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
   import { listYears, listClasses, type SchoolClass, type AcademicYear } from '$lib/api/academic';
+  import { resolveDefaultYear, sortYearsDesc } from '$lib/academicPeriod';
   import { listStudents, bulkGraduate, type StudentSummary, type GraduationRecordCreate } from '$lib/api/students';
   import { setPageTitle } from '$lib/stores/title';
   import { toast } from '$lib/stores/toast';
@@ -21,10 +22,12 @@
   let confirm  = $state(false);
   let result   = $state<{ processed: number; skipped: number } | null>(null);
 
-  // Auto-select current year
+  // resolveDefaultYear/sortYearsDesc, not $yearsQ.data[0] — API order isn't
+  // guaranteed newest-first, unlike promote/+page.svelte's own sorted list.
+  const years = $derived<AcademicYear[]>(sortYearsDesc($yearsQ.data ?? []));
   $effect(() => {
-    if (!yearId && $yearsQ.data?.length) {
-      yearId = $yearsQ.data.find(y => y.is_current)?.id ?? $yearsQ.data[0].id;
+    if (!yearId && years.length) {
+      yearId = resolveDefaultYear(years)?.id ?? '';
     }
   });
 
@@ -92,7 +95,7 @@
     <label class="block">
       <span class="lx">Academic Year</span>
       <select bind:value={yearId} class="sel mt-1">
-        {#each ($yearsQ.data ?? []) as y}
+        {#each years as y}
           <option value={y.id}>{y.name}{y.is_current ? ' (current)' : ''}</option>
         {/each}
       </select>

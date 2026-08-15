@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listYears, createYear, updateYear, setCurrentYear, type AcademicYear } from '$lib/api/academic';
+  import { findCurrentYear } from '$lib/academicPeriod';
   import TermsSection from './TermsSection.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -20,7 +21,7 @@
   let _autoExpanded = false;
   $effect(() => {
     if (!_autoExpanded && $yearsQuery.data) {
-      const cur = $yearsQuery.data.find(y => y.is_current);
+      const cur = findCurrentYear($yearsQuery.data);
       if (cur) { _autoExpanded = true; expandedYearId = cur.id; }
     }
   });

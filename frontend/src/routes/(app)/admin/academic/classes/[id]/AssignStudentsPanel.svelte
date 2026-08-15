@@ -3,6 +3,7 @@
   import { writable } from 'svelte/store';
   import { listStudents, assignStudentToClass } from '$lib/api/students';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentYear } from '$lib/academicPeriod';
   import { toast } from '$lib/stores/toast';
 
   interface Props {
@@ -37,7 +38,7 @@
 
   $effect(() => {
     if (assignYearId) return;
-    const cur = ($yearsQ.data ?? []).find(y => y.is_current);
+    const cur = findCurrentYear($yearsQ.data ?? []);
     if (cur) assignYearId = cur.id;
   });
 

@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { createQuery } from '@tanstack/svelte-query';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { listAllTerms, type AcademicTerm } from '$lib/api/academic';
+  import { useTermSelector } from '$lib/termSelector.svelte';
   import { isSchoolAdmin } from '$lib/stores/permissions';
   import { currentUser } from '$lib/stores/auth';
   import PaymentsTab from './PaymentsTab.svelte';
@@ -26,22 +25,16 @@
     goto(`?tab=${id}`, { replaceState: true, noScroll: true });
   }
 
-  const termsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
-  const terms  = $derived<AcademicTerm[]>([...($termsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date)));
-  let termId   = $state('');
-  $effect(() => {
-    if (!termId && terms.length) termId = terms.find(t => t.is_current)?.id ?? terms[0]?.id ?? '';
-  });
-
-  const termName = $derived(terms.find(t => t.id === termId)?.name ?? '');
+  const term = useTermSelector();
+  const termName = $derived(term.terms.find(t => t.id === term.termId)?.name ?? '');
 </script>
 
 
 <PageHeader title="Fees" description="Record payments, manage fee structures, and apply discounts.">
-  {#if terms.length}
-    <select bind:value={termId}
+  {#if term.terms.length}
+    <select bind:value={term.termId}
       class="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition max-w-xs">
-      {#each terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
+      {#each term.terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
     </select>
   {/if}
 </PageHeader>
@@ -52,11 +45,11 @@
   </div>
 {/if}
 
-{#if termId}
+{#if term.termId}
   {#if activeTab === 'payments' || !isAdmin}
-    <PaymentsTab {termId} {termName} {isAdmin} />
+    <PaymentsTab termId={term.termId} {termName} {isAdmin} />
   {:else}
-    <SetupTab {termId} {termName} />
+    <SetupTab termId={term.termId} {termName} />
   {/if}
 {:else}
   <div class="h-32 animate-pulse rounded-2xl bg-[var(--card)]"></div>

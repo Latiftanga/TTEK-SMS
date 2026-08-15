@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation } from '@tanstack/svelte-query';
   import { getCurrentYear } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import { bulkRegisterCoreSubjects } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
   import { school } from '$lib/stores/school';
@@ -10,7 +11,7 @@
   const { classId }: Props = $props();
 
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
-  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current));
+  const currentTerm = $derived(findCurrentTerm($yearQ.data?.terms ?? []));
 
   // Basic schools have no elective concept — every subject is already
   // non-elective by default, so this button really just means "register
@@ -32,9 +33,11 @@
     return (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
   }
 
+  // termId passed as a mutate variable, not closed over via currentTerm! —
+  // a current-term flip between render and click must not throw.
   const registerMut = createMutation({
-    mutationFn: (overrideReason: string | undefined) =>
-      bulkRegisterCoreSubjects(classId, currentTerm!.id, overrideReason),
+    mutationFn: (v: { termId: string; overrideReason?: string }) =>
+      bulkRegisterCoreSubjects(classId, v.termId, v.overrideReason),
     onSuccess: (result) => {
       overrideNeeded = false;
       errorMessage = '';
@@ -49,7 +52,7 @@
   });
 </script>
 
-<button onclick={() => $registerMut.mutate(undefined)}
+<button onclick={() => currentTerm && $registerMut.mutate({ termId: currentTerm.id })}
   disabled={!currentTerm || $registerMut.isPending}
   title={currentTerm ? tooltip : 'No current academic term'}
   class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)]
@@ -62,6 +65,6 @@
   errorMessage={errorMessage}
   isPending={$registerMut.isPending}
   message="This term's results are locked. Bulk-registering subjects this late requires a reason — it is written to the audit log."
-  onSubmit={(reason) => $registerMut.mutate(reason)}
+  onSubmit={(reason) => currentTerm && $registerMut.mutate({ termId: currentTerm.id, overrideReason: reason })}
   onCancel={() => overrideNeeded = false}
 />

@@ -2,6 +2,7 @@
   import { createQuery, createMutation } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import {
     listClassEnrollments, getReportCardBlob, queueBulkReport, downloadBulkReport, listMyReportClasses,
     type EnrollmentForReport,
@@ -23,7 +24,7 @@
   );
 
   $effect(() => {
-    const cur = allTerms.find(t => t.is_current);
+    const cur = findCurrentTerm(allTerms);
     if (cur && !termId) termId = cur.id;
   });
 

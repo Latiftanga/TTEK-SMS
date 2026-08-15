@@ -4,6 +4,7 @@
   import { listStudents } from '$lib/api/students';
   import { getHouse } from '$lib/api/housing';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentYear } from '$lib/academicPeriod';
   import { toast } from '$lib/stores/toast';
 
   interface Props { houseId: string; canManage: boolean; }
@@ -20,7 +21,10 @@
   const yearsQ    = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
   const studentsQ = createQuery({ queryKey: ['students-all'],   queryFn: () => listStudents({ active_only: true }), staleTime: 5 * 60_000 });
 
-  const currentYear = $derived(($yearsQ.data ?? []).find(y => y.is_current) ?? ($yearsQ.data ?? [])[0] ?? null);
+  // No fallback to an unsorted-order year here — this assigns a real
+  // record, same stance as AssignStudentsPanel.svelte; the guard in
+  // handleAssign() below is reachable now that this never guesses.
+  const currentYear = $derived(findCurrentYear($yearsQ.data ?? []) ?? null);
   const rooms       = $derived($houseQ.data?.rooms ?? []);
 
   // ── Assign ────────────────────────────────────────────────────────────────────
@@ -38,10 +42,10 @@
   );
 
   const assignMut = createMutation({
-    mutationFn: () => createAssignment({
+    mutationFn: (academicYearId: string) => createAssignment({
       student_id: af.student_id, house_id: houseId,
       room_id: af.room_id || undefined,
-      academic_year_id: currentYear!.id, assigned_at: af.assigned_at,
+      academic_year_id: academicYearId, assigned_at: af.assigned_at,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['house-students', houseId] });
@@ -59,7 +63,7 @@
     afErr = '';
     if (!af.student_id) { afErr = 'Select a student.'; return; }
     if (!currentYear)   { afErr = 'No current academic year found.'; return; }
-    $assignMut.mutate();
+    $assignMut.mutate(currentYear.id);
   }
 
   // ── Vacate ────────────────────────────────────────────────────────────────────

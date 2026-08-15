@@ -6,6 +6,7 @@
     listYears, listSubjectTeachers, type ClassSubject,
   } from '$lib/api/academic';
   import { listStaff } from '$lib/api/staff';
+  import { findCurrentYear, findCurrentTerm, flattenTerms } from '$lib/academicPeriod';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import { school } from '$lib/stores/school';
@@ -37,14 +38,14 @@
   let yearId = $state('');
   $effect(() => {
     if (yearId) return;
-    const cur = ($yearsQ.data ?? []).find(y => y.is_current);
+    const cur = findCurrentYear($yearsQ.data ?? []);
     if (cur) yearId = cur.id;
   });
   // Passed to SubjectClassManagementPanel purely so it can invalidate the
   // catalogue page's ['subject-summary', subjectId, termId] cache when a
   // roster changes here — '' (no current term) is harmless, it just won't
   // match any cached key.
-  const currentTermId = $derived(($yearsQ.data ?? []).flatMap(y => y.terms).find(t => t.is_current)?.id ?? '');
+  const currentTermId = $derived(findCurrentTerm(flattenTerms($yearsQ.data ?? []))?.id ?? '');
 
   // Which subject row is expanded for inline teacher + roster management.
   let expandedSubjectId = $state<string | null>(null);

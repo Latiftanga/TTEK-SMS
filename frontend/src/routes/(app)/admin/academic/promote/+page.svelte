@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { page } from '$app/stores';
   import { listClasses, listYears, type SchoolClass, type AcademicYear } from '$lib/api/academic';
+  import { sortYearsDesc } from '$lib/academicPeriod';
   import { listStudents, listGraduationRecords, bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { writable } from 'svelte/store';
   import { toast } from '$lib/stores/toast';
@@ -31,9 +32,7 @@
   let alsoEnroll  = $state(true); // also register in first term of target year
 
   const classes = $derived<SchoolClass[]>($classesQ.data ?? []);
-  const years   = $derived<AcademicYear[]>(
-    [...($yearsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date))
-  );
+  const years   = $derived<AcademicYear[]>(sortYearsDesc($yearsQ.data ?? []));
 
   const fromClass = $derived(classes.find(c => c.id === fromClassId) ?? null);
 

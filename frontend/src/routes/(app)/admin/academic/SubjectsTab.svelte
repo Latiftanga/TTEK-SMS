@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { listSubjects, updateSubject, listYears, type Subject } from '$lib/api/academic';
+  import { sortTermsDesc, resolveDefaultTerm } from '$lib/academicPeriod';
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -19,14 +20,12 @@
   // ── Term selector — powers SubjectSummaryPanel's read-only per-class counts ──
   const yearsQ = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
   const allTerms = $derived(
-    ($yearsQ.data ?? [])
-      .flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name })))
-      .sort((a, b) => b.start_date.localeCompare(a.start_date))
+    sortTermsDesc(($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name }))))
   );
   let termId = $state('');
   $effect(() => {
     if (termId || allTerms.length === 0) return;
-    termId = allTerms.find(t => t.is_current)?.id ?? allTerms[0].id;
+    termId = resolveDefaultTerm(allTerms)?.id ?? '';
   });
 
   // ── Filters ───────────────────────────────────────────────────────────────────

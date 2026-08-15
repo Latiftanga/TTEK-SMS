@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { getClass, updateClass, listClassSubjects, listYears } from '$lib/api/academic';
+  import { findCurrentTerm, flattenTerms } from '$lib/academicPeriod';
   import { listStudents } from '$lib/api/students';
   import { reactiveQuery } from '$lib/query.svelte';
   import { toast } from '$lib/stores/toast';
@@ -26,7 +27,7 @@
   // Students tab (term registration is now folded into that tab, not its
   // own separate tab).
   const yearsQ = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
-  const currentTermId = $derived(($yearsQ.data ?? []).flatMap(y => y.terms).find(t => t.is_current)?.id ?? '');
+  const currentTermId = $derived(findCurrentTerm(flattenTerms($yearsQ.data ?? []))?.id ?? '');
   const termRosterQ = reactiveQuery(() => ({
     queryKey: ['students', 'class', classId, 'term', currentTermId] as const,
     queryFn:  () => listStudents({ class_id: classId, active_only: true, term_id: currentTermId }),

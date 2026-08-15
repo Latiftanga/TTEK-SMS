@@ -3,6 +3,7 @@
   import { recordRollCall, listRollCalls, type RollCall } from '$lib/api/housing';
   import { listCalendar } from '$lib/api/attendance';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentTerm, flattenTerms } from '$lib/academicPeriod';
   import { toast } from '$lib/stores/toast';
 
   interface Props { houseId: string; canManage: boolean; }
@@ -13,13 +14,7 @@
   const yearsQ     = createQuery({ queryKey: ['academic-years'], queryFn: listYears,                          staleTime: 5 * 60_000 });
   const rollsQ     = createQuery({ queryKey: ['roll-calls', houseId], queryFn: () => listRollCalls(houseId), staleTime: 60_000 });
 
-  const currentTerm = $derived.by(() => {
-    for (const y of $yearsQ.data ?? []) {
-      const t = y.terms.find(t => t.is_current);
-      if (t) return t;
-    }
-    return null;
-  });
+  const currentTerm = $derived(findCurrentTerm(flattenTerms($yearsQ.data ?? [])) ?? null);
 
   const calendarQ = createQuery({
     queryKey: ['calendar', currentTerm?.id],

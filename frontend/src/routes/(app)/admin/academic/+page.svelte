@@ -2,14 +2,15 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { listYears, listClasses } from '$lib/api/academic';
   import { setPageTitle } from '$lib/stores/title';
+  import { findCurrentYear, findCurrentTerm } from '$lib/academicPeriod';
 
   setPageTitle('Academic');
 
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
   const classesQ = createQuery({ queryKey: ['classes'],        queryFn: listClasses, staleTime: 2 * 60_000 });
 
-  const currentYear   = $derived(($yearsQ.data ?? []).find(y => y.is_current) ?? null);
-  const currentTerm   = $derived(currentYear?.terms.find(t => t.is_current) ?? null);
+  const currentYear   = $derived(findCurrentYear($yearsQ.data ?? []) ?? null);
+  const currentTerm   = $derived(currentYear ? findCurrentTerm(currentYear.terms) ?? null : null);
   const totalYears    = $derived($yearsQ.data?.length ?? 0);
   const activeClasses = $derived(($classesQ.data ?? []).filter(c => c.is_active).length);
 

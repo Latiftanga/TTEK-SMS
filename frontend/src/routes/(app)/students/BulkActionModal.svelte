@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { bulkPromoteStudents, type PromotionRecordCreate } from '$lib/api/students';
   import { listAllTerms, type SchoolClass, type AcademicTerm } from '$lib/api/academic';
+  import { sortTermsDesc } from '$lib/academicPeriod';
   import { toast } from '$lib/stores/toast';
   import { portal } from '$lib/actions/portal';
   import { detailOf, isLocked } from '$lib/apiError';
@@ -22,9 +23,7 @@
   let error         = $state('');
 
   const termsQ = createQuery({ queryKey: ['all-terms'], queryFn: listAllTerms, staleTime: 5 * 60_000 });
-  const terms  = $derived<AcademicTerm[]>(
-    [...($termsQ.data ?? [])].sort((a, b) => b.start_date.localeCompare(a.start_date))
-  );
+  const terms  = $derived<AcademicTerm[]>(sortTermsDesc($termsQ.data ?? []));
   const selectedTerm = $derived(terms.find(t => t.id === targetTermId));
   const count        = $derived(selected.size);
 

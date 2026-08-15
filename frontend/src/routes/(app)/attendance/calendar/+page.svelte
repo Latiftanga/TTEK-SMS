@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
   import { listYears } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import {
     listCalendar, generateCalendar, overrideCalendarDay,
     type CalendarDay, type DayType,
@@ -23,7 +24,7 @@
   const allTerms = $derived(($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name }))));
 
   $effect(() => {
-    const cur = allTerms.find(t => t.is_current);
+    const cur = findCurrentTerm(allTerms);
     if (cur && !termId) termId = cur.id;
   });
 

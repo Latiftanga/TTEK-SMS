@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { writable } from 'svelte/store';
   import { getCurrentYear } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import { getSubjectRoster, setSubjectRoster, type SubjectRosterStudent } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
@@ -13,7 +14,7 @@
   const qc = useQueryClient();
 
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
-  const termId = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current)?.id ?? '');
+  const termId = $derived(findCurrentTerm($yearQ.data?.terms ?? [])?.id ?? '');
 
   // Writable store pattern — avoids TanStack's queryKey validation on mount
   // while keeping queryFn reactive to termId, mirroring SubjectsTab.svelte's

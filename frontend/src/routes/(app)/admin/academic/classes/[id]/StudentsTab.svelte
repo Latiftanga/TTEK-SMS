@@ -2,6 +2,7 @@
   import { createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
   import { getCurrentYear } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import { listStudents } from '$lib/api/students';
   import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
   import AssignStudentsPanel from './AssignStudentsPanel.svelte';
@@ -26,7 +27,7 @@
   // Folds what used to be a separate "Term Registration" tab into this one —
   // it's fundamentally just a status of the same class roster shown here.
   const yearQ = createQuery({ queryKey: ['current-year'], queryFn: getCurrentYear, staleTime: 5 * 60_000 });
-  const currentTerm = $derived(($yearQ.data?.terms ?? []).find(t => t.is_current) ?? null);
+  const currentTerm = $derived(findCurrentTerm($yearQ.data?.terms ?? []) ?? null);
 
   const termRosterQ = createQuery({
     queryKey: ['students', 'class', classId, 'term', currentTerm?.id ?? ''],

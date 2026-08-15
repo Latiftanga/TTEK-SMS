@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { listAssessments, listAssessmentTypes, listMySubjects, type Assessment } from '$lib/api/assessments';
   import { listYears, listClasses } from '$lib/api/academic';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import { userRole } from '$lib/stores/permissions';
   import { setPageTitle } from '$lib/stores/title';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -44,13 +45,11 @@
   const yearsQ   = createQuery({ queryKey: ['academic-years'],  queryFn: listYears,    staleTime: 5 * 60_000 });
   const typesQ   = createQuery({ queryKey: ['assessment-types'], queryFn: listAssessmentTypes, staleTime: 5 * 60_000 });
 
-  const allTerms = $derived(
-    ($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name })))
-  );
+  const allTerms = $derived(($yearsQ.data ?? []).flatMap(y => y.terms.map(t => ({ ...t, yearName: y.name }))));
   const selectedTerm = $derived(allTerms.find(t => t.id === termId));
 
   $effect(() => {
-    const cur = allTerms.find(t => t.is_current);
+    const cur = findCurrentTerm(allTerms);
     if (cur && !termId) setFilter('term', cur.id);
   });
 
