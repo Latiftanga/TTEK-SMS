@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Assessment, Score } from '$lib/api/assessments';
 
-  interface StudentRow { id: string; display_name: string; admission_number: string; }
+  interface StudentRow { id: string; display_name: string; admission_number: string; is_registered: boolean; }
 
   interface Props {
     assessment: Assessment;
@@ -170,6 +170,11 @@
           <td class="px-4 py-3 text-center">
             {#if outOfRange}
               <span class="inline-block rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600 dark:bg-red-950/30 dark:text-red-400">Range!</span>
+            {:else if !student.is_registered}
+              <span class="text-[10px] font-medium text-[var(--fg-subtle)]"
+                title="Not registered for this term — the score can be entered, but no report card can be generated for this student until they're registered">
+                Not registered
+              </span>
             {:else if !existing}
               <span class="text-[10px] text-[var(--fg-subtle)]">—</span>
             {:else if existing.is_approved}

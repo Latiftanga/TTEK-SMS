@@ -8,6 +8,9 @@ FLOW
    See student_class_assignment.py.
 3. Teacher creates TermEnrollment when the student physically reports for a term.
    Requires a StudentClassAssignment for the same academic year to exist first.
+   Any of the class's teachers may do this — the class teacher, or any staff
+   member with a SubjectTeacher assignment on that class this year — not just
+   the class teacher (see core/student_scope.py::resolve_term_enrollment_scope).
 4. Teacher registers subjects (SubjectRegistration) against the TermEnrollment —
    see student_subject_registration.py.
 
@@ -36,7 +39,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import resolve_permissions
-from app.core.student_scope import resolve_class_teacher_scope
+from app.core.student_scope import resolve_term_enrollment_scope
 from app.models.academic import AcademicTerm, Class, SHSProgramme
 from app.models.auth import User
 from app.models.fees import StudentFeeSummary
@@ -187,8 +190,12 @@ async def create_term_enrollment(
                    "Assign the student to a class before creating a term enrollment.",
         )
 
-    # Pastoral, class-teacher-scoped — see core/student_scope.py.
-    scope = await resolve_class_teacher_scope(user_id, term.academic_year_id, db)
+    # Class teacher OR any of the class's subject teachers this year — wider
+    # than the class-assignment scope above, since a subject teacher
+    # entering scores or a class teacher marking attendance both have a
+    # legitimate reason to register a present student. See
+    # core/student_scope.py::resolve_term_enrollment_scope.
+    scope = await resolve_term_enrollment_scope(user_id, term.academic_year_id, db)
     if scope is not None and sca.class_id not in scope:
         raise HTTPException(status_code=404, detail="Student not found.")
 

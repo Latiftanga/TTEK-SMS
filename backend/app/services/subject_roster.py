@@ -74,10 +74,14 @@ async def filter_eligible_for_subject(
     subject_id: uuid.UUID,
     school_id: uuid.UUID,
     db: AsyncSession,
-) -> set[uuid.UUID]:
-    """Batch form of the eligibility rule — avoids N+1 for a whole roster."""
+) -> tuple[set[uuid.UUID], dict[uuid.UUID, uuid.UUID]]:
+    """Batch form of the eligibility rule — avoids N+1 for a whole roster.
+    Returns (eligible_student_ids, term_enrollment_id_by_student) — the
+    second element is "who has an active TermEnrollment for this term at
+    all," which list_assessment_roster surfaces as is_registered without a
+    second query."""
     if not student_ids:
-        return set()
+        return set(), {}
 
     te_by_student: dict[uuid.UUID, uuid.UUID] = dict((await db.execute(
         select(TermEnrollment.student_id, TermEnrollment.id).where(
@@ -109,7 +113,7 @@ async def filter_eligible_for_subject(
         te_id = te_by_student.get(sid)
         if te_id is None or reg_counts.get(te_id, 0) == 0 or te_id in registered_for_subject:
             eligible.add(sid)
-    return eligible
+    return eligible, te_by_student
 
 
 async def list_assessment_roster(
@@ -134,7 +138,7 @@ async def list_assessment_roster(
             Student.is_active.is_(True),
         )
     )).all())
-    eligible_ids = await filter_eligible_for_subject(
+    eligible_ids, te_by_student = await filter_eligible_for_subject(
         all_ids, academic_term_id, subject_id, school_id, db,
     )
     if not eligible_ids:
@@ -150,6 +154,7 @@ async def list_assessment_roster(
             id=s.id,
             display_name=_display_name(s.first_name, s.middle_name, s.last_name),
             admission_number=s.admission_number,
+            is_registered=s.id in te_by_student,
         )
         for s in students
     ]

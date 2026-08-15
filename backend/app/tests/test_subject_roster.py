@@ -157,8 +157,34 @@ async def test_roster_includes_student_with_no_registration_recorded(
 
     resp = await client.get(f"/assessments/{french_assessment.id}/roster", headers=auth)
     assert resp.status_code == 200
-    ids = {row["id"] for row in resp.json()}
-    assert str(unregistered.id) in ids
+    rows = {row["id"]: row for row in resp.json()}
+    assert str(unregistered.id) in rows
+    # Has a TermEnrollment (just no SubjectRegistration rows) — registered
+    # for the term, distinct from being registered for this subject.
+    assert rows[str(unregistered.id)]["is_registered"] is True
+
+
+@pytest.mark.asyncio
+async def test_roster_flags_student_with_no_term_enrollment_as_not_registered(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school,
+    school_class: Class, academic_year: AcademicYear,
+    french_assessment: Assessment,
+):
+    """A student who's class-assigned but has never been term-enrolled at
+    all still appears on the roster (backward-compat eligibility fallback,
+    unchanged), but is_registered is False so the frontend can offer a
+    self-serve register action."""
+    never_reported = Student(school_id=school.id, admission_number="NOTREG001", first_name="Efua", last_name="Asante", is_active=True)
+    db_session.add(never_reported)
+    await db_session.flush()
+    await _assign_to_class(db_session, school, never_reported, school_class, academic_year)
+    # Deliberately no _enroll_for_term call — no TermEnrollment row at all.
+
+    resp = await client.get(f"/assessments/{french_assessment.id}/roster", headers=auth)
+    assert resp.status_code == 200
+    rows = {row["id"]: row for row in resp.json()}
+    assert str(never_reported.id) in rows
+    assert rows[str(never_reported.id)]["is_registered"] is False
 
 
 @pytest.mark.asyncio

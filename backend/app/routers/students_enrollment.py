@@ -4,11 +4,15 @@ students.py. See students.py's module docstring for the full file split.
 
 ACCESS CONTROL
 --------------
-Class-assignment and term-enrollment creation are Category A (pastoral,
-class-teacher-scoped); subject registration and per-subject roster
-read/write are Category B (class-teacher OR the specific subject's
-teacher) — both enforced inside the service layer via
-core/student_scope.py, on top of the flat permission below.
+Class-assignment creation is Category A (pastoral, class-teacher-scoped);
+subject registration and per-subject roster read/write are Category B
+(class-teacher OR the specific subject's teacher). Term-enrollment
+creation is wider than Category A — class-teacher OR any subject-teacher
+of the class this year, regardless of subject (resolve_term_enrollment_scope)
+— since a subject teacher entering scores or a class teacher marking
+attendance both have a legitimate reason to register a present student.
+All enforced inside the service layer via core/student_scope.py, on top of
+the flat permission below.
 
 POST /students/class-assignments                  students.edit (scoped)
 POST /students/class-assignments/bulk              students.edit (scoped)

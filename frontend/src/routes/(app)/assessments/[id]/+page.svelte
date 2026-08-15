@@ -18,6 +18,7 @@
   import AssessmentHeaderCard from './AssessmentHeaderCard.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
 
   const qc = useQueryClient();
   const assessmentId   = $derived($page.params.id!);
@@ -58,6 +59,9 @@
 
   const subjectName = (id: string) => ($subjectsQ.data ?? []).find(s => s.id === id)?.name ?? '—';
   const typeName    = (id: string) => ($typesQ.data    ?? []).find(t => t.id === id)?.name ?? '—';
+  const termName    = (id: string) => ($termsQ.data    ?? []).find(t => t.id === id)?.name ?? 'this term';
+
+  const notRegistered = $derived(($studentsQ.data ?? []).filter(s => !s.is_registered));
 
   // ── Score inputs ──────────────────────────────────────────────────────────────
   let scoreInputs    = $state<Record<string, string | number>>({});
@@ -288,6 +292,15 @@
       <p class="text-sm text-[var(--fg-muted)]">No students assigned to this class.</p>
     </div>
   {:else}
+    {#if canEnterScores && !a.is_published && notRegistered.length > 0}
+      <div class="mb-3">
+        <NotRegisteredBanner
+          items={notRegistered.map(s => ({ student_id: s.id, academic_term_id: a.academic_term_id }))}
+          termName={termName(a.academic_term_id)}
+          onRegistered={() => qc.invalidateQueries({ queryKey: ['assessment-roster', assessmentId] })}
+        />
+      </div>
+    {/if}
     <ScoreTable
       assessment={a}
       students={$studentsQ.data ?? []}

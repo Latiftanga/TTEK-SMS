@@ -19,6 +19,7 @@ from app.core.student_scope import (
     resolve_class_teacher_scope,
     resolve_student_view_scope,
     resolve_subject_teacher_scope,
+    resolve_term_enrollment_scope,
 )
 from app.models.academic import AcademicYear, Class, ClassTeacher, SubjectTeacher
 from app.models.auth import LoginType, StaffPosition, User
@@ -179,6 +180,103 @@ async def test_subject_teacher_scope_exact_pairs(
 
     scope = await resolve_subject_teacher_scope(user.id, academic_year.id, db_session)
     assert scope == {(school_class.id, subj.id)}
+
+
+# ── resolve_term_enrollment_scope ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_term_enrollment_scope_exact_set_for_class_teacher(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, redis_permissions: None,
+):
+    staff, user = await _make_staff_with_position(db_session, school, "CLASS_TEACHER", "TE1")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    scope = await resolve_term_enrollment_scope(user.id, academic_year.id, db_session)
+    assert scope == {school_class.id}
+
+
+@pytest.mark.asyncio
+async def test_term_enrollment_scope_exact_set_for_subject_teacher_only(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, redis_permissions: None,
+):
+    """Wider than resolve_class_teacher_scope — a subject teacher with no
+    ClassTeacher row of their own is still in scope, since they have a
+    legitimate reason (entering scores) to register a present student."""
+    from app.models.academic import SchoolLevel, Subject, SubjectCatalogue, SubjectType
+
+    staff, user = await _make_staff_with_position(db_session, school, "TEACHER", "TE2")
+    cat = SubjectCatalogue(name="Test Subject", code="TERM_SCOPE1", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="TERM_SCOPE1", name="Test Subject", is_active=True)
+    db_session.add(subj)
+    await db_session.flush()
+
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=school_class.id, subject_id=subj.id,
+        staff_member_id=staff.id, academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    scope = await resolve_term_enrollment_scope(user.id, academic_year.id, db_session)
+    assert scope == {school_class.id}
+
+
+@pytest.mark.asyncio
+async def test_term_enrollment_scope_union_when_both(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, redis_permissions: None,
+):
+    from app.models.academic import SchoolLevel, Subject, SubjectCatalogue, SubjectType
+
+    other_class = Class(school_id=school.id, level="SHS", year_group=1, stream="C", is_active=True)
+    db_session.add(other_class)
+    await db_session.flush()
+
+    staff, user = await _make_staff_with_position(db_session, school, "CLASS_TEACHER", "TE3")
+    cat = SubjectCatalogue(name="Test Subject", code="TERM_SCOPE2", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="TERM_SCOPE2", name="Test Subject", is_active=True)
+    db_session.add(subj)
+    await db_session.flush()
+
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=other_class.id, subject_id=subj.id,
+        staff_member_id=staff.id, academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    scope = await resolve_term_enrollment_scope(user.id, academic_year.id, db_session)
+    assert scope == {school_class.id, other_class.id}
+
+
+@pytest.mark.asyncio
+async def test_term_enrollment_scope_none_for_deputy_head(
+    db_session: AsyncSession, school: School, academic_year: AcademicYear, redis_permissions: None,
+):
+    _staff, user = await _make_staff_with_position(db_session, school, "DEPUTY_HEAD", "TE4")
+    scope = await resolve_term_enrollment_scope(user.id, academic_year.id, db_session)
+    assert scope is None
+
+
+@pytest.mark.asyncio
+async def test_term_enrollment_scope_empty_not_none_with_zero_assignments(
+    db_session: AsyncSession, school: School, academic_year: AcademicYear, redis_permissions: None,
+):
+    _staff, user = await _make_staff_with_position(db_session, school, "CLASS_TEACHER", "TE5")
+    scope = await resolve_term_enrollment_scope(user.id, academic_year.id, db_session)
+    assert scope == set()
 
 
 # ── can_write_student / current_class_assignment ───────────────────────────────

@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';
   import { getCurrentYear } from '$lib/api/academic';
-  import { listStudents, bulkEnrollStudents } from '$lib/api/students';
-  import { apiError } from '$lib/utils';
-  import { toast } from '$lib/stores/toast';
+  import { listStudents } from '$lib/api/students';
+  import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
   import AssignStudentsPanel from './AssignStudentsPanel.svelte';
 
   interface Props { classId: string; capacity: number | null; classActive: boolean; }
@@ -37,21 +36,6 @@
   });
   const registeredIds = $derived(new Set(($termRosterQ.data ?? []).map(s => s.id)));
   const notRegistered = $derived(currentTerm ? students.filter(s => !registeredIds.has(s.id)) : []);
-
-  // One-click, no selection UI — matches BulkRegisterCoreSubjectsButton's
-  // pattern on the sibling Subjects tab. Registering for a non-current term,
-  // or with a fee-waiver-reason override, stays available per-student via
-  // TermTimelineRow's "Register" button on the student's own Enrollment tab.
-  const registerTermMut = createMutation({
-    mutationFn: () => bulkEnrollStudents(
-      notRegistered.map(s => ({ student_id: s.id, academic_term_id: currentTerm!.id }))
-    ),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['students', 'class', classId] });
-      toast.success(`${res.enrolled} registered for ${currentTerm?.name}. Skipped: ${res.skipped}.`);
-    },
-    onError: (e) => toast.error(apiError(e, 'Failed to register students for the term.')),
-  });
 
   let showAssign = $state(false);
 
@@ -90,14 +74,11 @@
           {/if}
         </div>
         {#if currentTerm && notRegistered.length > 0}
-          <span class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-            {notRegistered.length} not registered for {currentTerm.name}
-          </span>
-          <button onclick={() => $registerTermMut.mutate()} disabled={$registerTermMut.isPending}
-            class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)]
-                   transition hover:bg-[var(--hover)] hover:text-[var(--fg)] disabled:opacity-40">
-            {$registerTermMut.isPending ? 'Registering…' : `Register ${notRegistered.length} for ${currentTerm.name}`}
-          </button>
+          <NotRegisteredBanner
+            items={notRegistered.map(s => ({ student_id: s.id, academic_term_id: currentTerm!.id }))}
+            termName={currentTerm.name}
+            onRegistered={() => qc.invalidateQueries({ queryKey: ['students', 'class', classId] })}
+          />
         {/if}
         {#if classActive}
           <button onclick={() => showAssign = !showAssign}

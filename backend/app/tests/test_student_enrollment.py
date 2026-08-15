@@ -200,6 +200,60 @@ async def test_list_term_enrollments(
 
 
 @pytest.mark.asyncio
+async def test_create_term_enrollment_allowed_for_subject_teacher_only(
+    client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """A subject teacher (SubjectTeacher row, no ClassTeacher row) can now
+    register a student for the term — wider than the class-assignment scope,
+    since they have a legitimate reason (entering scores) to do so. Was a
+    404 before resolve_term_enrollment_scope."""
+    from app.models.academic import Subject, SubjectTeacher
+
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+
+    subj = Subject(school_id=school.id, code="TERMSCOPE1", name="Term Scope Subject", is_active=True)
+    db_session.add(subj)
+    await db_session.flush()
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    teacher_user = await db_session.scalar(
+        select(User).where(User.email == "teacher@presec-test.edu.gh")
+    )
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=school_class.id, subject_id=subj.id,
+        staff_member_id=teacher_user.staff_member_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=teacher_auth)
+    assert resp.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_create_term_enrollment_404_for_unrelated_teacher(
+    client: AsyncClient, auth: dict, school_class: Class, academic_term: AcademicTerm,
+    db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """No ClassTeacher/SubjectTeacher assignment anywhere for this staff
+    member on this class — still 404."""
+    sid = await _create_student(client, auth)
+    await _assign_class(client, auth, sid, school_class, academic_term)
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.post("/students/term-enrollments", json={
+        "student_id": sid,
+        "academic_term_id": str(academic_term.id),
+    }, headers=teacher_auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_list_students_by_class(
     client: AsyncClient, auth: dict,
     school_class: Class, academic_term: AcademicTerm,

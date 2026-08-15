@@ -59,10 +59,16 @@ class AssessmentRead(BaseModel):
 
 class AssessmentRosterStudent(BaseModel):
     """A student eligible to be scored for this assessment's subject —
-    see services/subject_roster.py for what "eligible" means."""
+    see services/subject_roster.py for what "eligible" means.
+    is_registered: whether this student has an active TermEnrollment for
+    this term. Scoring an unregistered student is still permitted (backward
+    -compat, same rule as eligibility itself), but their score can't be
+    reached by a report card until they're registered — the frontend uses
+    this to surface a self-serve register action."""
     id: uuid.UUID
     display_name: str
     admission_number: str
+    is_registered: bool
 
 
 class BulkReportRequest(BaseModel):

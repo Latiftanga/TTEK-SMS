@@ -152,6 +152,45 @@ async def resolve_subject_teacher_scope(
     return {(r.class_id, r.subject_id) for r in rows}
 
 
+async def resolve_term_enrollment_scope(
+    user_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    db: AsyncSession,
+) -> set[uuid.UUID] | None:
+    """None = unrestricted (students.delete holder, superadmin, non-staff
+    login). Otherwise the set of class_ids the caller may register a
+    TermEnrollment against this year: classes they're ClassTeacher of, OR —
+    deliberately wider than resolve_class_teacher_scope — classes where they
+    hold any active SubjectTeacher assignment this year, regardless of
+    subject. Not narrowed to a specific (class, subject) pair like
+    resolve_subject_teacher_scope: a term enrollment is the pastoral
+    "physically reported" gate that attendance marking hangs off, and
+    attendance isn't subject-scoped, so any teacher with a legitimate
+    reason to touch this class this year (scoring OR attendance) may
+    register a student for the term. Same union shape as
+    resolve_student_view_scope's taught_class_ids, kept separate since that
+    one returns student_ids school-wide, not class_ids for one year."""
+    if await _is_unrestricted(user_id, db):
+        return None
+    staff_id = await _staff_member_id_for(user_id, db)
+    if staff_id is None:
+        return None
+    rows = await db.scalars(
+        select(ClassTeacher.class_id).where(
+            ClassTeacher.staff_member_id == staff_id,
+            ClassTeacher.academic_year_id == academic_year_id,
+            ClassTeacher.is_active.is_(True),
+        ).union(
+            select(SubjectTeacher.class_id).where(
+                SubjectTeacher.staff_member_id == staff_id,
+                SubjectTeacher.academic_year_id == academic_year_id,
+                SubjectTeacher.is_active.is_(True),
+            )
+        )
+    )
+    return set(rows)
+
+
 async def current_class_assignment(
     student_id: uuid.UUID,
     db: AsyncSession,

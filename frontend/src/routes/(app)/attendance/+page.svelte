@@ -11,6 +11,7 @@
   import { setPageTitle } from '$lib/stores/title';
   import { userRole } from '$lib/stores/permissions';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
+  import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
   import AttendanceStudentRow from './AttendanceStudentRow.svelte';
   setPageTitle('Attendance');
 
@@ -65,16 +66,28 @@
   const isMarkable = $derived(!!calDay && MARKABLE.has(calDay.day_type));
 
   // ── Students for selected class ────────────────────────────────────────────────
-  // Scoped to students with an active TermEnrollment for the current term —
-  // a student merely assigned to the class this year but never registered
-  // ("physically reported") for the term isn't someone attendance should be
-  // tracking yet. See the class detail page's Students tab.
-  const studentsQ = reactiveQuery(() => ({
+  // Two queries: every class-assigned student (so an unregistered-but-
+  // present student is still visible, not hidden), and the subset actually
+  // registered ("physically reported") for the current term — only the
+  // latter can be marked. A class teacher can self-serve register the rest
+  // right here via NotRegisteredBanner below, instead of being sent to the
+  // class detail page's Students tab.
+  const classStudentsQ = reactiveQuery(() => ({
+    queryKey: ['students-for-class', classId] as const,
+    queryFn:  () => listStudents({ class_id: classId }),
+    enabled:  !!classId,
+    staleTime: 60_000,
+  }));
+  const termRegisteredQ = reactiveQuery(() => ({
     queryKey: ['students-for-class', classId, currentTermId] as const,
     queryFn:  () => listStudents({ class_id: classId, term_id: currentTermId }),
     enabled:  !!classId && !!currentTermId,
     staleTime: 60_000,
   }));
+  const registeredIds      = $derived(new Set(($termRegisteredQ.data ?? []).map(s => s.id)));
+  const classStudents      = $derived($classStudentsQ.data ?? []);
+  const registeredStudents = $derived(classStudents.filter(s => registeredIds.has(s.id)));
+  const notRegistered      = $derived(classStudents.filter(s => !registeredIds.has(s.id)));
 
   // ── Existing records for this day + class ──────────────────────────────────────
   const recordsQ = reactiveQuery(() => ({
@@ -95,7 +108,7 @@
   // ── Derived counts ─────────────────────────────────────────────────────────────
   const summaryMap   = $derived(new Map<string, StudentAbsenceSummary>(($classSummariesQ.data ?? []).map(s => [s.student_id, s])));
   const recordCount  = $derived($recordsQ.data?.length ?? 0);
-  const studentCount = $derived($studentsQ.data?.length ?? 0);
+  const studentCount = $derived(registeredStudents.length);
 
   // ── Status inputs ─────────────────────────────────────────────────────────────
   // Exception-based: every student defaults to Present the moment the roster
@@ -107,10 +120,10 @@
 
   $effect(() => {
     const key = `${classId}-${calDay?.id ?? ''}`;
-    if ($recordsQ.data !== undefined && $studentsQ.data !== undefined && initializedFor !== key) {
+    if ($recordsQ.data !== undefined && $termRegisteredQ.data !== undefined && initializedFor !== key) {
       const init: Record<string, AttendanceStatus | ''> = {};
       for (const r of $recordsQ.data) init[r.student_id] = r.status;
-      for (const s of $studentsQ.data) if (!(s.id in init)) init[s.id] = 'PRESENT';
+      for (const s of registeredStudents) if (!(s.id in init)) init[s.id] = 'PRESENT';
       markInputs = init; initializedFor = key;
     }
   });
@@ -128,7 +141,7 @@
       // A toggled-off status (tapping an already-active button clears it back
       // to '') still counts as Present — blank means "no exception," not
       // "unrecorded," under the exception-based model above.
-      const records = ($studentsQ.data ?? [])
+      const records = registeredStudents
         .map(s => ({ student_id: s.id, status: (markInputs[s.id] || 'PRESENT') as string }));
       return markAttendance({ school_calendar_id: calDay!.id, class_id: classId, records, override_reason: overrideReason });
     },
@@ -237,18 +250,22 @@
   </div>
 
   <!-- Student list -->
-  {#if $studentsQ.isPending}
+  {#if $classStudentsQ.isPending || $termRegisteredQ.isPending}
     <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
-  {:else if studentCount === 0}
+  {:else if classStudents.length === 0}
     <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
-      No students registered for this term yet.
-      {#if canManage}
-        <br /><a href={`/admin/academic/classes/${classId}?tab=students`} class="underline font-semibold">Register students for the term</a> before marking attendance.
-      {:else}
-        <br />Ask an admin to register students for the term before marking attendance.
-      {/if}
+      No students assigned to this class yet.
     </div>
   {:else}
+    {#if notRegistered.length > 0}
+      <div class="mb-3">
+        <NotRegisteredBanner
+          items={notRegistered.map(s => ({ student_id: s.id, academic_term_id: currentTermId }))}
+          termName={allTerms.find(t => t.id === currentTermId)?.name ?? 'this term'}
+          onRegistered={() => qc.invalidateQueries({ queryKey: ['students-for-class', classId] })}
+        />
+      </div>
+    {/if}
     <!-- Legend — the row buttons are single-letter for space, spelled out once here
          rather than relying on a hover title (doesn't work on touch). -->
     <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-[var(--fg-muted)]">
@@ -258,10 +275,11 @@
       <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>E = Excused</span>
     </div>
     <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      {#each $studentsQ.data ?? [] as student, i (student.id)}
+      {#each classStudents as student, i (student.id)}
         {@const cur = markInputs[student.id] ?? ''}
         <AttendanceStudentRow
           {student} index={i} status={cur} summary={summaryMap.get(student.id)}
+          registered={registeredIds.has(student.id)}
           onToggle={(code) => markInputs[student.id] = cur === code ? '' : code}
         />
       {/each}

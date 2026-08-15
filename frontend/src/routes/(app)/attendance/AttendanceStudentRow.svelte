@@ -8,9 +8,10 @@
     index: number;
     status: AttendanceStatus | '';
     summary: StudentAbsenceSummary | undefined;
+    registered?: boolean;
     onToggle: (status: AttendanceStatus) => void;
   }
-  const { student, index, status, summary, onToggle }: Props = $props();
+  const { student, index, status, summary, registered = true, onToggle }: Props = $props();
 
   type StatusOption = { code: AttendanceStatus; label: string; active: string; idle: string };
   const STATUSES: StatusOption[] = [
@@ -27,21 +28,25 @@
     <p class="truncate text-sm font-medium text-[var(--fg)]">{student.display_name}</p>
     <div class="flex items-center gap-2">
       <p class="text-[10px] font-mono text-[var(--fg-subtle)]">{student.admission_number}</p>
-      {#if summary && summary.days_absent > 0}
+      {#if registered && summary && summary.days_absent > 0}
         <span class="text-[10px] font-semibold text-red-500" title="{summary.days_absent} absences this term">{summary.days_absent} abs</span>
       {/if}
-      {#if summary && summary.days_late > 0}
+      {#if registered && summary && summary.days_late > 0}
         <span class="text-[10px] font-semibold text-amber-500" title="{summary.days_late} lates this term">{summary.days_late} late</span>
       {/if}
     </div>
   </div>
-  <div class="flex gap-1.5">
-    {#each STATUSES as s}
-      <button onclick={() => onToggle(s.code)}
-        class="min-h-[44px] min-w-[44px] rounded-lg text-sm font-bold transition {status === s.code ? s.active : s.idle}"
-        title={s.code}>
-        {s.label}
-      </button>
-    {/each}
-  </div>
+  {#if registered}
+    <div class="flex gap-1.5">
+      {#each STATUSES as s}
+        <button onclick={() => onToggle(s.code)}
+          class="min-h-[44px] min-w-[44px] rounded-lg text-sm font-bold transition {status === s.code ? s.active : s.idle}"
+          title={s.code}>
+          {s.label}
+        </button>
+      {/each}
+    </div>
+  {:else}
+    <span class="shrink-0 text-xs text-[var(--fg-subtle)]">Not registered</span>
+  {/if}
 </div>

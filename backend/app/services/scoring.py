@@ -102,7 +102,7 @@ async def submit_scores(
     # see services/subject_roster.py for what "registered" means (falls back
     # to eligible when no registration data exists, so schools that never use
     # subject registration are unaffected).
-    eligible_ids = await filter_eligible_for_subject(
+    eligible_ids, _ = await filter_eligible_for_subject(
         student_ids, assessment.academic_term_id, assessment.subject_id, school_id, db,
     )
     ineligible_ids = [sid for sid in student_ids if sid not in eligible_ids]
