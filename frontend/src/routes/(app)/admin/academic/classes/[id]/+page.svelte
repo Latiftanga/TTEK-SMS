@@ -24,8 +24,7 @@
 
   // Current-term registration status — powers the attention badge on the
   // Students tab (term registration is now folded into that tab, not its
-  // own separate tab). Shares the ['academic-years'] cache key used
-  // elsewhere (Promote tab, etc.).
+  // own separate tab).
   const yearsQ = createQuery({ queryKey: ['academic-years'], queryFn: listYears, staleTime: 5 * 60_000 });
   const currentTermId = $derived(($yearsQ.data ?? []).flatMap(y => y.terms).find(t => t.is_current)?.id ?? '');
   const termRosterQ = reactiveQuery(() => ({
@@ -80,8 +79,8 @@
   $effect(() => setPageTitle($classQ.data?.display_name ?? 'Class'));
 
   // ── Tab navigation ────────────────────────────────────────────────────────────
-  type Tab = 'students' | 'subjects' | 'promote';
-  const VALID_TABS: Tab[] = ['subjects', 'promote'];
+  type Tab = 'students' | 'subjects';
+  const VALID_TABS: Tab[] = ['subjects'];
   const initialTab = $page.url.searchParams.get('tab');
   let activeTab = $state<Tab>(VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : 'students');
 </script>
@@ -153,13 +152,25 @@
                 {#if c.capacity != null}<span class="chip">Capacity: {c.capacity}</span>{/if}
               </div>
             </div>
-            <button onclick={startEdit}
-              class="flex shrink-0 items-center gap-1.5 self-start rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
-              </svg>
-              Edit
-            </button>
+            <div class="flex shrink-0 gap-2 self-start">
+              <!-- Once-a-year action, not worth its own tab (see 12bo) — a
+                   plain link alongside Edit, matching the weight of the
+                   other header-level class actions rather than a full button. -->
+              <a href="/admin/academic/promote?class={classId}"
+                class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18"/>
+                </svg>
+                Promote class
+              </a>
+              <button onclick={startEdit}
+                class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/>
+                </svg>
+                Edit
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -214,38 +225,13 @@
         <span class="tab-badge {activeTab === 'subjects' ? 'tab-badge-active' : ''}">{subjectCount}</span>
       {/if}
     </button>
-    <button onclick={() => activeTab = 'promote'} title="Promote / Transfer"
-      class="tab {activeTab === 'promote' ? 'tab-active' : ''}">
-      <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18"/>
-      </svg>
-      <span class="hidden sm:inline">Promote / Transfer</span>
-    </button>
   </div>
 
   <!-- Tab panels -->
   {#if activeTab === 'students'}
     <StudentsTab {classId} capacity={c.capacity} classActive={c.is_active} />
-  {:else if activeTab === 'subjects'}
-    <SubjectsTab {classId} classActive={c.is_active} />
   {:else}
-    <!-- Bulk promote/transfer/repeat is one action, one place: the dedicated
-         Promotions page (nav: Students > Promotions) — this used to be a full
-         second copy of that same form, scoped to this class. Deep-linking with
-         the class pre-selected keeps the in-context convenience without the
-         duplicate ~250 lines of logic. -->
-    <div class="rounded-2xl border border-dashed border-[var(--border)] px-6 py-14 text-center">
-      <svg class="mx-auto mb-3 h-10 w-10 text-[var(--fg-subtle)]" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18"/>
-      </svg>
-      <p class="text-sm font-medium text-[var(--fg-muted)]">Promote, repeat, or demote students from this class</p>
-      <p class="mt-1 text-xs text-[var(--fg-subtle)]">Handled from the Promotions page, with this class pre-selected.</p>
-      <a href="/admin/academic/promote?class={classId}"
-        class="mt-4 inline-flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-        style="background: var(--brand)">
-        Go to Promotions →
-      </a>
-    </div>
+    <SubjectsTab {classId} classActive={c.is_active} />
   {/if}
 {/if}
 
