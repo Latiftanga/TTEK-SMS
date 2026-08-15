@@ -203,6 +203,7 @@ export interface RosterStudent {
   id: string;
   display_name: string;
   admission_number: string;
+  is_registered: boolean;
 }
 
 // Students eligible to be scored for this assessment's subject — not just

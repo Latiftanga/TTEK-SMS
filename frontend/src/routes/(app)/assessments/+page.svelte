@@ -3,9 +3,7 @@
   import { reactiveQuery } from '$lib/query.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import {
-    listAssessments, listAssessmentTypes, listMySubjects, type Assessment,
-  } from '$lib/api/assessments';
+  import { listAssessments, listAssessmentTypes, listMySubjects, type Assessment } from '$lib/api/assessments';
   import { listYears, listClasses } from '$lib/api/academic';
   import { userRole } from '$lib/stores/permissions';
   import { setPageTitle } from '$lib/stores/title';
@@ -13,6 +11,7 @@
   import AssessmentCardList from './AssessmentCardList.svelte';
   import CreateAssessmentForm from './CreateAssessmentForm.svelte';
   import TermActionsRow from './TermActionsRow.svelte';
+  import SubjectRegistrationBanner from './SubjectRegistrationBanner.svelte';
   setPageTitle('Assessments');
 
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver');
@@ -143,6 +142,9 @@
   // ── Helpers ───────────────────────────────────────────────────────────────────
   const typeName = (id: string) => ($typesQ.data ?? []).find(t => t.id === id)?.name ?? '—';
 
+  // See SubjectRegistrationBanner.svelte for what this gates.
+  const showRegistrationNudge = $derived(!canManage && !!(classId && termId && subjectId && categoryId));
+
   // ── Create form ───────────────────────────────────────────────────────────────
   // Subject and Category are never asked for here — the form only ever
   // opens once both are already locked in by the page filters (see the
@@ -220,6 +222,12 @@
 </div>
 
 <TermActionsRow {canManage} {classId} {termId} {selectedTerm} />
+
+<SubjectRegistrationBanner
+  {classId} {subjectId} {termId}
+  subjectName={subjectName(subjectId)}
+  visible={showRegistrationNudge}
+/>
 
 <!-- Assessments list — Class, Subject, and Category are all required (in
      that order) before anything renders, on every breakpoint. That's what

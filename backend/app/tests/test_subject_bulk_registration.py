@@ -684,3 +684,74 @@ async def test_set_roster_skips_conflict_check_when_expected_ids_omitted(
         headers=auth,
     )
     assert resp.status_code == 200
+
+
+# ── Scoped subject-teacher caller (the Assessments "Register" tab's caller) ────
+# Every roster test above uses the unrestricted `auth` fixture — none had
+# exercised core/student_scope.py::resolve_subject_teacher_scope's actual
+# scoped (non-bypass) branch at the HTTP level, even though that's exactly
+# the caller shape the new teacher-facing course-roster screen targets: a
+# plain subject teacher with a SubjectTeacher row but no ClassTeacher row.
+
+@pytest.mark.asyncio
+async def test_roster_allowed_for_subject_teacher_without_class_teacher_role(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, math_subject: Subject,
+    redis_permissions: None,
+):
+    s1, _te1 = await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "Z")
+
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    teacher_user = await db_session.scalar(select(User).where(User.email == "teacher@presec-test.edu.gh"))
+    # math_subject's own fixture already assigned a SubjectTeacher for this
+    # (class, subject, year) — that triple is unique, so re-point the
+    # existing row at our scoped caller rather than inserting a second one.
+    existing = await db_session.scalar(
+        select(SubjectTeacher).where(
+            SubjectTeacher.class_id == school_class.id, SubjectTeacher.subject_id == math_subject.id,
+            SubjectTeacher.academic_year_id == academic_year.id,
+        )
+    )
+    existing.staff_member_id = teacher_user.staff_member_id
+    await db_session.flush()
+
+    get_resp = await client.get(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        params={"academic_term_id": str(academic_term.id)}, headers=teacher_auth,
+    )
+    assert get_resp.status_code == 200
+
+    post_resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{math_subject.id}/roster",
+        json={"academic_term_id": str(academic_term.id), "student_ids": [str(s1.id)]}, headers=teacher_auth,
+    )
+    assert post_resp.status_code == 200
+    assert post_resp.json() == {"registered": 1, "removed": 0, "skipped": 0}
+
+
+@pytest.mark.asyncio
+async def test_roster_404_for_teacher_of_different_subject_same_class(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm,
+    math_subject: Subject, french_elective: Subject,
+    redis_permissions: None,
+):
+    """Same scoped caller, holding a SubjectTeacher row for Math only — 404
+    (not 403, matches student_scope.py's hide-existence convention) when
+    they try to touch French's roster in the same class."""
+    teacher_auth = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    teacher_user = await db_session.scalar(select(User).where(User.email == "teacher@presec-test.edu.gh"))
+    existing = await db_session.scalar(
+        select(SubjectTeacher).where(
+            SubjectTeacher.class_id == school_class.id, SubjectTeacher.subject_id == math_subject.id,
+            SubjectTeacher.academic_year_id == academic_year.id,
+        )
+    )
+    existing.staff_member_id = teacher_user.staff_member_id
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/students/classes/{school_class.id}/subjects/{french_elective.id}/roster",
+        json={"academic_term_id": str(academic_term.id), "student_ids": []}, headers=teacher_auth,
+    )
+    assert resp.status_code == 404

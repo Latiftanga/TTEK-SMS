@@ -5,7 +5,7 @@
   import { listStaff } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
-  import SubjectRosterPanel from './SubjectRosterPanel.svelte';
+  import SubjectRosterPanel from '$lib/components/SubjectRosterPanel.svelte';
 
   interface Props { subjectId: string; classId: string; yearId: string; termId: string; }
   const { subjectId, classId, yearId, termId }: Props = $props();
