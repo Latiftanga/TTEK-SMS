@@ -159,26 +159,34 @@ async def enforce_current_term_for_scoring(
 async def enforce_current_term_for_subject_registration(
     user_id: uuid.UUID,
     academic_term_id: uuid.UUID | None,
+    requested_reason: str | None,
     db: AsyncSession,
-) -> None:
-    """Same as enforce_current_term_for_attendance/scoring, gated on
-    assessments.approve_scores — the same permission that already governs
-    the results_locked override for this exact registration flow (see
-    services/student_subject_registration.py). Registering or removing a
-    subject against a term that isn't the one currently running doesn't
-    make sense for a class/subject teacher; unlike results_locked (an
-    explicit admin toggle with its own audited override_reason), there's no
-    "unlock" here — a non-current term is just structurally the wrong place
-    to be touching a student's curriculum, so this is a hard block rather
-    than an override-with-reason."""
-    if academic_term_id is None or await user_has_permission(user_id, "assessments", "approve_scores", db):
-        return
+) -> str | None:
+    """A scoped (non-assessments.approve_scores) caller may only register or
+    remove subjects for the term admins have set as current — same idea as
+    enforce_current_term_for_attendance/scoring. A caller who does hold
+    assessments.approve_scores may still backfill a non-current term (that's
+    the whole point of the permission), but — unlike the original version of
+    this check — must now supply an override_reason, exactly like the
+    results_locked override this same registration flow already enforces
+    (check_term_lock_override in core/permissions.py). Returns the resolved
+    reason (None if the term is current, i.e. nothing to record) so the
+    caller can write it to SubjectRegistrationAuditLog; a plain teacher who
+    somehow supplies a reason still gets rejected, since the permission
+    check is what actually gates this, not the reason's mere presence."""
+    if academic_term_id is None:
+        return None
     term = await db.get(AcademicTerm, academic_term_id)
-    if term and not term.is_current:
+    if not term or term.is_current:
+        return None
+    reason = (requested_reason or "").strip()
+    if not reason or not await user_has_permission(user_id, "assessments", "approve_scores", db):
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Subjects can only be registered or removed for the current term.",
+            status.HTTP_423_LOCKED,
+            "Subjects can only be registered or removed for the current term. A user with "
+            "assessments.approve_scores can override by supplying an override_reason.",
         )
+    return reason
 
 
 async def classes_for_scope(

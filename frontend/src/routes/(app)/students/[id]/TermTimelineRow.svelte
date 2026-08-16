@@ -71,6 +71,9 @@
       {/if}
 
       {#if isRegistered}
+        {#if !term.is_current}
+          <span class="text-amber-500" title="Not the current term — adding or removing subjects here needs a reason, and is only possible for staff who can approve scores">⚠</span>
+        {/if}
         <button onclick={() => expanded = !expanded}
           class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
           {subjectCount === undefined ? '…' : `${subjectCount} subject${subjectCount === 1 ? '' : 's'}`}

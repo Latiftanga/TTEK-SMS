@@ -243,7 +243,7 @@
   open={addOverrideNeeded || removeOverrideNeeded}
   errorMessage={addOverrideNeeded ? addError : removeError}
   isPending={addOverrideNeeded ? $addMut.isPending : $removeMut.isPending}
-  message="This term's results are locked. Adding or removing a subject registration this late requires a reason — it is written to the audit log."
+  message="This action needs a reason before it can go ahead — it is written to the audit log. (You'll see the exact rule being overridden below.)"
   onSubmit={(reason) => {
     if (addOverrideNeeded) $addMut.mutate(reason);
     else if (removeOverrideNeeded) $removeMut.mutate(reason);

@@ -162,6 +162,43 @@ async def test_audit_log_captures_override_reason_not_discarded(
     assert log.reason == "Late registration approved by exams office."
 
 
+@pytest.mark.asyncio
+async def test_audit_log_captures_non_current_term_override_reason(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, school_admin: User,
+    school_class: Class, academic_year: AcademicYear, academic_term: AcademicTerm, subject: Subject,
+):
+    """The non-current-term override (core/teacher_scope.py::
+    enforce_current_term_for_subject_registration) must leave the same kind
+    of audited trail as the results_locked override above — a senior staff
+    member backfilling a closed period is never silent."""
+    non_current_term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_year.id, term_number=2, name="Non-Current Term",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 1), is_current=False,
+    )
+    db_session.add(non_current_term)
+    await db_session.flush()
+
+    student, _te = await _enroll_student(db_session, school, school_class, academic_year, academic_term, school_admin.id, "D")
+    te = TermEnrollment(
+        school_id=school.id, student_id=student.id, academic_term_id=non_current_term.id,
+        enrolled_by_id=school_admin.id, is_active=True,
+    )
+    db_session.add(te)
+    await db_session.flush()
+
+    resp = await client.post(f"/students/term-enrollments/{te.id}/subjects", json={
+        "items": [{"subject_id": str(subject.id), "registration_type": "CORE"}],
+        "override_reason": "Backfilling a subject omitted at term start.",
+    }, headers=auth)
+    assert resp.status_code == 201
+    reg_id = resp.json()[0]["id"]
+
+    log = await db_session.scalar(
+        select(SubjectRegistrationAuditLog).where(SubjectRegistrationAuditLog.registration_id == reg_id)
+    )
+    assert log.reason == "Backfilling a subject omitted at term start."
+
+
 # ── has_scores on the roster ───────────────────────────────────────────────────
 
 @pytest.mark.asyncio

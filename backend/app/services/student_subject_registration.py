@@ -39,17 +39,18 @@ CURRENT TERM ONLY
 -----------------
 Registering or removing a subject against a term that isn't the one
 currently running is blocked for a scoped caller (core/teacher_scope.py::
-enforce_current_term_for_subject_registration), same shape as Attendance/
-Scoring — no override-with-reason, since there's no "unlock" for a term
-simply not being current. A caller holding assessments.approve_scores is
-unrestricted, for backfilling historical data.
+enforce_current_term_for_subject_registration). A caller holding
+assessments.approve_scores may still backfill a non-current term, but must
+now supply an override_reason to do so (423 without one) — same shape as
+the results_locked override below, so a senior staff member touching a
+closed period always leaves an audited trail, never a silent bypass.
 
 AUDIT LOG
 ---------
 Every create/delete writes a SubjectRegistrationAuditLog row (mirroring
-ScoreAuditLog/BehaviourAuditLog) — check_term_lock_override()'s return
-value is captured and stored as `reason` (null unless it was actually a
-locked-term override), not discarded.
+ScoreAuditLog/BehaviourAuditLog) — `reason` is whichever of the two
+override checks (term-lock, non-current-term) actually produced one, null
+if the action needed no override at all.
 """
 from __future__ import annotations
 import uuid
@@ -131,8 +132,10 @@ async def register_subjects(
     await _assert_can_register(
         sca.class_id, [item.subject_id for item in items], term.academic_year_id, user_id, db,
     )
-    await enforce_current_term_for_subject_registration(user_id, term.id, db)
-    resolved_reason = await check_term_lock_override(term.id, override_reason, user_id, db)
+    current_term_reason = await enforce_current_term_for_subject_registration(
+        user_id, term.id, override_reason, db,
+    )
+    resolved_reason = await check_term_lock_override(term.id, override_reason, user_id, db) or current_term_reason
     for item in items:
         if not await class_subject_exists(sca.class_id, item.subject_id, school_id, db):
             # Scoped by school_id, not a bare db.get() — item.subject_id is
@@ -249,8 +252,12 @@ async def delete_subject_registration(
             # match against, so deny rather than silently fall through.
             if await resolve_class_teacher_scope(user_id, term.academic_year_id, db) is not None:
                 raise HTTPException(status_code=404, detail="Subject registration not found.")
-        await enforce_current_term_for_subject_registration(user_id, te.academic_term_id, db)
-        resolved_reason = await check_term_lock_override(te.academic_term_id, override_reason, user_id, db)
+        current_term_reason = await enforce_current_term_for_subject_registration(
+            user_id, te.academic_term_id, override_reason, db,
+        )
+        resolved_reason = await check_term_lock_override(
+            te.academic_term_id, override_reason, user_id, db,
+        ) or current_term_reason
     db.add(SubjectRegistrationAuditLog(
         school_id=school_id, registration_id=reg.id, term_enrollment_id=te_id,
         subject_id=reg.subject_id, action="DELETE", registration_type=reg.registration_type,
