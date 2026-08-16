@@ -32,16 +32,16 @@
   const termsQ      = createQuery({ queryKey: ['all-terms'],        queryFn: listAllTerms,          staleTime: 60_000 });
 
   // Reconstructs the exact filtered list view this assessment belongs to
-  // (class/subject/category/term), not just a bare "/assessments" — so
-  // "back" works the same whether the teacher arrived from that filtered
-  // list, a deep link, or anywhere else. Falls back to the bare list while
-  // the assessment is still loading.
+  // (class/subject/type/term), not just a bare "/assessments" — so "back"
+  // works the same whether the teacher arrived from that filtered list, a
+  // deep link, or anywhere else. Falls back to the bare list while the
+  // assessment is still loading.
   const backHref = $derived.by(() => {
     const a = $assessmentQ.data;
     if (!a) return '/assessments';
     const params = new URLSearchParams({
       class: a.class_id, subject: a.subject_id,
-      category: a.assessment_type_id, term: a.academic_term_id,
+      type: a.assessment_type_id, term: a.academic_term_id,
     });
     return `/assessments?${params}`;
   });

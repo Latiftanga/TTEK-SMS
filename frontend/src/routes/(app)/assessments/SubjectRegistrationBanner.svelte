@@ -3,8 +3,8 @@
   import { getSubjectRoster } from '$lib/api/students';
   import RegisterStudentsModal from './RegisterStudentsModal.svelte';
 
-  // Shown once Class → Subject → Category are all picked (the same point
-  // the assessment list itself appears) when anyone in the class hasn't
+  // Shown once Class → Subject are both picked (the same point the
+  // assessment list itself appears) when anyone in the class hasn't
   // been registered for this subject yet — a proactive nudge, not an
   // access-control gate: it shows unconditionally, even for a school
   // that's never touched subject registration before, since that's
