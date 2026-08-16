@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
 
-export type DashboardView = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster' | null;
+export type DashboardView = 'staff' | 'admin' | 'approver' | 'finance' | null;
 
 const STORAGE_KEY = 'user_view';
 
@@ -28,20 +28,23 @@ export const isSchoolAdmin = derived(_view, $v => $v === 'admin');
 export const isApprover   = derived(_view, $v => $v === 'approver');
 export const isFinance     = derived(_view, $v => $v === 'finance');
 
-// Whether the current 'teacher' role holds at least one ClassTeacher
-// assignment this year, vs. a subject-only teacher — drives whether
-// class-teacher-only nav items (e.g. Reports) are shown. Distinct from
-// the role check above: only meaningful when userRole === 'teacher'.
-const CLASS_TEACHER_KEY = 'user_is_class_teacher';
+// Independent capability signals, computed regardless of which `view` is
+// primary — these are what sidebar nav gating (teachingOnly/
+// classTeacherOnly/housemasterOnly) actually checks now, not the `view`
+// string, so a staff member who holds several responsibilities at once
+// (e.g. Class Teacher + Housemaster) doesn't lose nav items for the ones
+// that didn't "win" the primary view.
+function persistedBoolean(key: string) {
+  const store = writable<boolean>(browser ? localStorage.getItem(key) === 'true' : false);
+  return {
+    subscribe: store.subscribe,
+    set: (value: boolean) => {
+      store.set(value);
+      if (browser) localStorage.setItem(key, String(value));
+    },
+  };
+}
 
-const _isClassTeacher = writable<boolean>(
-  browser ? localStorage.getItem(CLASS_TEACHER_KEY) === 'true' : false
-);
-
-export const isClassTeacher = {
-  subscribe: _isClassTeacher.subscribe,
-  set: (value: boolean) => {
-    _isClassTeacher.set(value);
-    if (browser) localStorage.setItem(CLASS_TEACHER_KEY, String(value));
-  },
-};
+export const isClassTeacher   = persistedBoolean('user_is_class_teacher');
+export const isSubjectTeacher = persistedBoolean('user_is_subject_teacher');
+export const isHousemaster    = persistedBoolean('user_is_housemaster');

@@ -2,7 +2,7 @@
 Dashboard stat-accuracy regression tests.
 
 Covers three bugs found in review, all in services/dashboard.py /
-dashboard_admin.py / dashboard_teacher.py:
+dashboard_admin.py / dashboard_staff.py:
   1. "Pending approvals" (admin + approver views) counted every unapproved
      Score in the school's history, never scoped to the current term.
   2. The admin view's present_map query didn't filter
@@ -232,7 +232,7 @@ async def test_admin_dashboard_excludes_present_count_for_withdrawn_assignment(
 
 
 # ── Teacher dashboard: same is_active gap, plus LATE/EXCUSED "marked" gap ─────
-# Both scenarios exercise dashboard_teacher.py's _class_snapshot(); combined into
+# Both scenarios exercise dashboard_staff.py's _class_snapshot(); combined into
 # one dashboard call (one login) rather than two, to match the fixture shape.
 
 @pytest.mark.asyncio

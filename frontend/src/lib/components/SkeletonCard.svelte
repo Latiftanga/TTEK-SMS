@@ -3,7 +3,7 @@
   const { height = 'h-20', lines = 2 }: Props = $props();
 </script>
 
-<div class="rounded-xl bg-[var(--card)] p-4 ring-1 ring-[var(--border)]"
+<div class="rounded-[1.25rem] bg-[var(--card)] p-5 ring-1 ring-[var(--border)]"
      style="box-shadow: var(--shadow-sm)">
   <div class="{height} flex flex-col justify-between gap-2.5">
     {#each Array(lines) as _, i}

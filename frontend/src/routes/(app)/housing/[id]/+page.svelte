@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { getHouse, updateHouse, type HouseGender } from '$lib/api/housing';
-  import { userRole } from '$lib/stores/permissions';
+  import { userRole, isHousemaster } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import TabBar from '$lib/components/TabBar.svelte';
@@ -16,7 +16,7 @@
   const houseId  = $derived($page.params.id!);
   const activeTab = $derived(($page.url.searchParams.get('tab') ?? 'exeats') as 'rooms' | 'students' | 'rollcall' | 'exeats');
   const canAdmin   = $derived($userRole === 'admin');
-  const canOperate = $derived($userRole === 'admin' || $userRole === 'housemaster');
+  const canOperate = $derived($userRole === 'admin' || $isHousemaster);
 
   const TABS = [
     { id: 'exeats',   label: 'Exeats',     icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/>` },

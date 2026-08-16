@@ -16,13 +16,17 @@ class DashboardExtras(BaseModel):
     # Present on every dashboard response regardless of which view ends up
     # primary — get_dashboard() picks exactly ONE full view by permission
     # seniority, but a staff member can genuinely hold several
-    # responsibilities at once (e.g. Class Teacher + Housemaster).
-    # is_class_teacher is computed independently of which view won, so the
-    # sidebar nav's classTeacherOnly gating stays correct even when
-    # 'teacher' isn't the primary view; other_roles is a compact "you
-    # also..." strip covering every other responsibility the primary view
-    # doesn't already surface.
+    # responsibilities at once (e.g. Class Teacher + Housemaster). These
+    # three booleans are computed independently of which view won, so the
+    # sidebar nav's teachingOnly/classTeacherOnly/housemasterOnly gating
+    # stays correct no matter which view is primary — the nav no longer
+    # depends on the `view` string at all for these three roles. other_roles
+    # is a compact "you also..." strip, only populated for the admin/
+    # finance/approver primaries (the `staff` view already shows all three
+    # directly as full sections, so a badge there would just repeat itself).
     is_class_teacher: bool = False
+    is_subject_teacher: bool = False
+    is_housemaster: bool = False
     other_roles: list[RoleBadge] = []
 
 
@@ -42,11 +46,11 @@ class ClassSnapshot(BaseModel):
     absent_students: list[AbsentStudent]
 
 
-class TeacherDashboard(DashboardExtras):
-    view: Literal["teacher"] = "teacher"
-    greeting_name: str
-    today_iso: str
-    my_classes: list[ClassSnapshot]
+class SubjectSnapshot(BaseModel):
+    class_id: uuid.UUID
+    class_name: str
+    subject_id: uuid.UUID
+    subject_name: str
     pending_score_assessments: int
 
 
@@ -93,18 +97,29 @@ class FinanceDashboard(DashboardExtras):
 class HouseSnapshot(BaseModel):
     id: uuid.UUID
     name: str
+    capacity: int | None
     total_residents: int
     pending_exeats: int
     off_campus_count: int
 
 
-class HousemasterDashboard(DashboardExtras):
-    view: Literal["housemaster"] = "housemaster"
+class StaffDashboard(DashboardExtras):
+    """The composed dashboard for anyone who isn't admin/finance/approver —
+    replaces the old separate TeacherDashboard/HousemasterDashboard. Each
+    section is populated independently from the caller's real assignment
+    rows (ClassTeacher/SubjectTeacher/HouseMaster), not from a single
+    "winning" role — a class teacher who's also a housemaster sees both
+    my_classes and my_houses at once. See services/dashboard_staff.py."""
+    view: Literal["staff"] = "staff"
     greeting_name: str
+    today_iso: str
+    my_classes: list[ClassSnapshot] = []
+    pending_score_assessments: int = 0
+    my_subjects: list[SubjectSnapshot] = []
     my_houses: list[HouseSnapshot] = []
 
 
 DashboardData = Annotated[
-    TeacherDashboard | ApproverDashboard | FinanceDashboard | AdminDashboard | HousemasterDashboard,
+    ApproverDashboard | FinanceDashboard | AdminDashboard | StaffDashboard,
     Field(discriminator="view"),
 ]

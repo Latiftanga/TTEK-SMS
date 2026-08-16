@@ -37,11 +37,11 @@
 </div>
 
 <!-- Two-column on xl: left = hero ring, right = stats + actions -->
-<div class="grid grid-cols-1 gap-5 xl:grid-cols-[3fr_2fr]">
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-[3fr_2fr]">
 
   <!-- LEFT: hero ring card -->
   <div>
-    <div class="relative overflow-hidden rounded-2xl p-6 text-white"
+    <div class="relative overflow-hidden rounded-[1.5rem] p-7 text-white"
          style="background: linear-gradient(135deg, var(--brand) 0%, color-mix(in oklab, var(--brand) 72%, #312e81) 100%)">
 
       <p class="mb-5 text-sm font-semibold opacity-80 uppercase tracking-widest">Term Collection</p>
@@ -73,36 +73,34 @@
   </div>
 
   <!-- RIGHT: stat cards + actions -->
-  <div class="space-y-5">
+  <div class="space-y-6">
 
-    <div class="grid grid-cols-3 xl:grid-cols-1 gap-3">
+    <div class="grid grid-cols-3 xl:grid-cols-1 gap-4">
       <StatCard label="Payments Today"  value={data.payments_today}
         iconPath={icons.creditCard}
-        color="bg-green-50 dark:bg-green-950/40" iconColor="text-green-600 dark:text-green-400"
         href="/fees" />
       <StatCard label="Outstanding"     value={data.outstanding_students}
         iconPath={icons.clock}
-        color="bg-red-50 dark:bg-red-950/40" iconColor="text-red-500 dark:text-red-400"
         href="/fees?outstanding" alert={data.outstanding_students > 0} trend="students" />
       <StatCard label="Remaining"       value={fmtGHS(remaining)}
-        iconPath={icons.trendDown}
-        color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400" />
+        iconPath={icons.trendDown} />
     </div>
 
     <div>
       <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Actions</p>
-      <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+      <div class="overflow-hidden rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]"
+           style="box-shadow: var(--shadow-sm);">
         {#each actions as action}
           <a href={action.href} class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-[var(--bg)]">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
-                        {action.primary ? 'text-white' : 'bg-gray-100 dark:bg-gray-800'}"
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl
+                        {action.primary ? 'text-white' : 'bg-[var(--hover)]'}"
                  style={action.primary ? 'background-color: var(--brand)' : ''}>
               {#if action.primary}
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
                 </svg>
               {:else}
-                <svg class="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <svg class="h-4 w-4 text-[var(--fg-muted)]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
               {/if}
@@ -111,7 +109,7 @@
               <p class="text-sm font-semibold text-[var(--fg)]">{action.label}</p>
               <p class="text-[11px] text-[var(--fg-muted)]">{action.sub}</p>
             </div>
-            <svg class="h-4 w-4 text-gray-300 dark:text-gray-700 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <svg class="h-4 w-4 text-[var(--fg-subtle)] transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
           </a>

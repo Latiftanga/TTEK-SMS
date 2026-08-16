@@ -8,9 +8,18 @@
  *                    since a BASIC school can board students too and an SHS school
  *                    can be day-only. Backend enforces the same flag on every
  *                    /housing/* endpoint (see routers/housing.py::_require_boarding).
+ *
+ * `roles` alone answers "which primary dashboard view is this person on"
+ * (admin/finance/approver, or 'staff' for everyone else). It deliberately
+ * cannot answer "is this person a class teacher / subject teacher /
+ * housemaster" — a 'staff'-view person can be any combination of those
+ * three at once. `teachingOnly`/`classTeacherOnly`/`housemasterOnly` check
+ * the independent capability booleans (isClassTeacher/isSubjectTeacher/
+ * isHousemaster from stores/permissions.ts) on top of `roles`, exactly like
+ * `requiresBoarding` layers on top of `schoolTypes`.
  */
 
-export type NavRole    = 'teacher' | 'admin' | 'approver' | 'finance' | 'housemaster';
+export type NavRole    = 'staff' | 'admin' | 'approver' | 'finance';
 export type SchoolType = 'BASIC' | 'SHS' | 'TECHNICAL' | 'VOCATIONAL' | 'PRIVATE';
 
 export interface ChildNavItem {
@@ -30,6 +39,8 @@ export interface NavItem {
   schoolTypes?: SchoolType[];
   requiresBoarding?: boolean;
   classTeacherOnly?: boolean;   // requires isClassTeacher, on top of roles — see Sidebar/BottomNav
+  teachingOnly?: boolean;       // requires isClassTeacher OR isSubjectTeacher, on top of roles
+  housemasterOnly?: boolean;    // requires isHousemaster, on top of roles
   children?: ChildNavItem[];
 }
 
@@ -69,13 +80,19 @@ export const NAV_GROUPS: NavGroup[] = [
     // Daily work — no heading
     items: [
       { href: '/dashboard',   label: 'Dashboard',    icon: IC.dashboard,   exact: true },
-      { href: '/attendance',  label: 'Attendance',    icon: IC.attendance,  roles: ['teacher', 'admin', 'approver'] },
+      // Attendance-marking is genuinely ClassTeacher-only on the backend
+      // (core/teacher_scope.py::resolve_attendance_scope has no
+      // SubjectTeacher branch at all, unlike Assessments below) — a
+      // subject-only teacher would just hit an empty roster here.
+      { href: '/attendance',  label: 'Attendance',    icon: IC.attendance,  roles: ['staff', 'admin', 'approver'],
+        classTeacherOnly: true },
       {
         // Teachers can't see either config child below, so for them Reports
         // would be the only item in the submenu — an extra click with no payoff.
         // Nested here for admin/approver (who get real value from 3 children);
         // duplicated as a plain top-level link below for teacher only.
-        href: '/assessments', label: 'Assessments', icon: IC.assessments, roles: ['teacher', 'admin', 'approver'],
+        href: '/assessments', label: 'Assessments', icon: IC.assessments, roles: ['staff', 'admin', 'approver'],
+        teachingOnly: true,
         children: [
           { href: '/assessments/types',   label: 'Assessment Types', roles: ['admin', 'approver'] },
           { href: '/assessments/scales',  label: 'Grading Scales',   roles: ['admin', 'approver'] },
@@ -84,11 +101,11 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       // Subject-only teachers (no ClassTeacher assignment) have no real need for
       // this — report cards are the class teacher's responsibility to review/hand
-      // out. classTeacherOnly is on top of roles: ['teacher'] below.
-      { href: '/reports',     label: 'Reports',      icon: IC.reports,     roles: ['teacher'], classTeacherOnly: true },
+      // out. classTeacherOnly is on top of roles: ['staff'] below.
+      { href: '/reports',     label: 'Reports',      icon: IC.reports,     roles: ['staff'], classTeacherOnly: true },
       { href: '/fees',        label: 'Fees',          icon: IC.fees,        roles: ['finance', 'admin'] },
-      { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'housemaster'],
-        requiresBoarding: true },
+      { href: '/housing', label: 'Housing', icon: IC.housing, roles: ['admin', 'staff'],
+        housemasterOnly: true, requiresBoarding: true },
     ],
   },
   {
@@ -106,7 +123,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Students-module access per the staff-roles spec — they register
       // students into their own subject/enter scores through Assessments, not
       // the Students module. Same classTeacherOnly pattern as Reports above.
-      { href: '/students', label: 'Students', icon: IC.students, roles: ['teacher'], classTeacherOnly: true },
+      { href: '/students', label: 'Students', icon: IC.students, roles: ['staff'], classTeacherOnly: true },
       {
         href: '/admin/staff', label: 'Staff', icon: IC.staff, roles: ['admin'],
         children: [
@@ -136,10 +153,11 @@ export const NAV_GROUPS: NavGroup[] = [
 
 // ── Role display ──────────────────────────────────────────────────────────────
 
+// 'staff' has no single fixed label — see stores/identity.ts::roleLabel,
+// which builds one from the individual class-teacher/subject-teacher/
+// housemaster capability booleans instead.
 export const ROLE_LABELS: Record<string, string> = {
-  teacher:     'Class Teacher',
-  admin:       'School Admin',
-  approver:    'Approver',
-  finance:     'Finance Officer',
-  housemaster: 'House Master',
+  admin:    'School Admin',
+  approver: 'Approver',
+  finance:  'Finance Officer',
 };

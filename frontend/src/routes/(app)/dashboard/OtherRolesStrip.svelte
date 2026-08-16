@@ -10,10 +10,10 @@
 </script>
 
 {#if roles.length > 0}
-  <div class="mt-4 flex flex-wrap gap-2">
+  <div class="mt-5 flex flex-wrap gap-2">
     {#each roles as r (r.role)}
       <a href={r.href}
-        class="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs transition hover:border-[var(--brand)]">
+        class="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card)] px-3.5 py-2 text-xs transition hover:border-[var(--brand)]">
         <span class="font-semibold text-[var(--fg)]">{r.label}</span>
         <span class="text-[var(--fg-muted)]">· {r.detail}</span>
       </a>

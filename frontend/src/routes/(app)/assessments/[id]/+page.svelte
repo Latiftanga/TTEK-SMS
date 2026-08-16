@@ -9,7 +9,7 @@
     listAssessmentTypes, assessmentLabel, type Score,
   } from '$lib/api/assessments';
   import { listSubjects, listAllTerms } from '$lib/api/academic';
-  import { userRole } from '$lib/stores/permissions';
+  import { userRole, isClassTeacher, isSubjectTeacher } from '$lib/stores/permissions';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import { detailOf, isLocked } from '$lib/apiError';
@@ -23,7 +23,7 @@
   const qc = useQueryClient();
   const assessmentId   = $derived($page.params.id!);
   const canManage      = $derived($userRole === 'admin' || $userRole === 'approver');
-  const canEnterScores = $derived($userRole === 'teacher' || canManage);
+  const canEnterScores = $derived($isClassTeacher || $isSubjectTeacher || canManage);
 
   const assessmentQ = createQuery({ queryKey: ['assessment', assessmentId], queryFn: () => getAssessment(assessmentId), staleTime: 60_000 });
   const scoresQ     = createQuery({ queryKey: ['scores', assessmentId],     queryFn: () => listScores(assessmentId),     staleTime: 30_000 });

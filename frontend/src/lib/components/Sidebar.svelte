@@ -5,7 +5,7 @@
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { getMySchool } from '$lib/api/schools';
-  import { userRole, isClassTeacher } from '$lib/stores/permissions';
+  import { userRole, isClassTeacher, isSubjectTeacher, isHousemaster } from '$lib/stores/permissions';
   import { NAV_GROUPS, IC, type NavRole, type SchoolType, type NavItem, type ChildNavItem } from '$lib/nav';
 
   interface Props { open: boolean; onclose: () => void; }
@@ -20,9 +20,11 @@
 
   // ── Role + school-type resolution ────────────────────────────────────────────
   const isSuperadmin = $derived($currentUser?.is_superadmin ?? false);
-  const role         = $derived($userRole as NavRole | null);
-  const schoolType   = $derived($school?.schoolType as SchoolType | undefined);
-  const classTeacher = $derived($isClassTeacher);
+  const role          = $derived($userRole as NavRole | null);
+  const schoolType    = $derived($school?.schoolType as SchoolType | undefined);
+  const classTeacher  = $derived($isClassTeacher);
+  const subjectTeacher = $derived($isSubjectTeacher);
+  const housemaster    = $derived($isHousemaster);
 
   // has_boarding isn't in the lightweight `school` store (branding only) — fetched
   // separately, deduped via TanStack Query against the same ['my-school'] key the
@@ -49,9 +51,23 @@
     return isSuperadmin || hasBoarding === undefined || hasBoarding;
   }
 
+  // These three all share the same shape: only actually gate when the
+  // resolved role is 'staff' — an admin/approver who's also in `roles`
+  // always passes regardless of their own personal teaching/housing load,
+  // matching how they behaved before these flags existed.
   function canSeeClassTeacherOnly(flag: boolean | undefined): boolean {
-    if (isSuperadmin || !flag) return true;
+    if (isSuperadmin || !flag || role !== 'staff') return true;
     return classTeacher;
+  }
+
+  function canSeeTeachingOnly(flag: boolean | undefined): boolean {
+    if (isSuperadmin || !flag || role !== 'staff') return true;
+    return classTeacher || subjectTeacher;
+  }
+
+  function canSeeHousemasterOnly(flag: boolean | undefined): boolean {
+    if (isSuperadmin || !flag || role !== 'staff') return true;
+    return housemaster;
   }
 
   const visibleGroups = $derived(
@@ -59,7 +75,9 @@
       .map(g => ({
         ...g,
         items: g.items
-          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes) && canSeeBoarding(i.requiresBoarding) && canSeeClassTeacherOnly(i.classTeacherOnly))
+          .filter(i => canSee(i.roles) && canSeeType(i.schoolTypes) && canSeeBoarding(i.requiresBoarding)
+            && canSeeClassTeacherOnly(i.classTeacherOnly) && canSeeTeachingOnly(i.teachingOnly)
+            && canSeeHousemasterOnly(i.housemasterOnly))
           .map(i => ({
             ...i,
             children: i.children?.filter(c => canSee(c.roles) && canSeeType(c.schoolTypes)),

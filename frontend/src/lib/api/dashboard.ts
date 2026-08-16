@@ -9,13 +9,15 @@ export interface RoleBadge {
 
 // Present on every dashboard response regardless of which view is primary —
 // a staff member can hold several responsibilities at once (e.g. Class
-// Teacher + Housemaster), but the backend only ever returns ONE full view
-// (chosen by seniority). is_class_teacher is computed independently of
-// which view won (drives the sidebar's classTeacherOnly nav gating);
-// other_roles is a compact "you also..." strip for every other
-// responsibility the primary view doesn't already cover.
+// Teacher + Housemaster). The three booleans are computed independently of
+// which view won — they drive the sidebar's teachingOnly/classTeacherOnly/
+// housemasterOnly nav gating, not the `view` string itself. other_roles is a
+// compact "you also..." strip, only populated for the admin/finance/
+// approver views (the 'staff' view already shows all three as full sections).
 export interface DashboardExtras {
   is_class_teacher: boolean;
+  is_subject_teacher: boolean;
+  is_housemaster: boolean;
   other_roles: RoleBadge[];
 }
 
@@ -35,11 +37,11 @@ export interface ClassSnapshot {
   absent_students: AbsentStudent[];
 }
 
-export interface TeacherDashboard extends DashboardExtras {
-  view: 'teacher';
-  greeting_name: string;
-  today_iso: string;
-  my_classes: ClassSnapshot[];
+export interface SubjectSnapshot {
+  class_id: string;
+  class_name: string;
+  subject_id: string;
+  subject_name: string;
   pending_score_assessments: number;
 }
 
@@ -86,18 +88,27 @@ export interface FinanceDashboard extends DashboardExtras {
 export interface HouseSnapshot {
   id: string;
   name: string;
+  capacity: number | null;
   total_residents: number;
   pending_exeats: number;
   off_campus_count: number;
 }
 
-export interface HousemasterDashboard extends DashboardExtras {
-  view: 'housemaster';
+// The composed dashboard for anyone who isn't admin/finance/approver —
+// replaces the old separate TeacherDashboard/HousemasterDashboard. Each
+// section is populated independently from the caller's real assignment
+// rows, not from a single "winning" role.
+export interface StaffDashboard extends DashboardExtras {
+  view: 'staff';
   greeting_name: string;
+  today_iso: string;
+  my_classes: ClassSnapshot[];
+  pending_score_assessments: number;
+  my_subjects: SubjectSnapshot[];
   my_houses: HouseSnapshot[];
 }
 
-export type DashboardData = TeacherDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard | HousemasterDashboard;
+export type DashboardData = StaffDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard;
 
 export async function getDashboard(): Promise<DashboardData> {
   const { data } = await client.get<DashboardData>('/dashboard');

@@ -4,7 +4,7 @@
   import { currentUser } from '$lib/stores/auth';
   import { school } from '$lib/stores/school';
   import { getMySchool } from '$lib/api/schools';
-  import { userRole, isClassTeacher } from '$lib/stores/permissions';
+  import { userRole, isClassTeacher, isSubjectTeacher, isHousemaster } from '$lib/stores/permissions';
   import { NAV_GROUPS, type NavItem, type NavRole, type SchoolType } from '$lib/nav';
 
   interface Props { onmore: () => void; }
@@ -32,7 +32,8 @@
   const ALL_TABS: Tab[] = NAV_GROUPS.flatMap(g => g.items)
     .flatMap((i): Tab[] => [
       { href: i.href, label: i.label, icon: i.icon, exact: i.exact, roles: i.roles, schoolTypes: i.schoolTypes,
-        requiresBoarding: i.requiresBoarding, classTeacherOnly: i.classTeacherOnly },
+        requiresBoarding: i.requiresBoarding, classTeacherOnly: i.classTeacherOnly,
+        teachingOnly: i.teachingOnly, housemasterOnly: i.housemasterOnly },
       ...(i.children ?? [])
         .filter((c): c is typeof c & { icon: string } => !!c.icon)
         .map(c => ({ href: c.href, label: c.label, icon: c.icon, roles: c.roles, schoolTypes: c.schoolTypes })),
@@ -40,14 +41,18 @@
     .filter(t => MOBILE_HREFS.has(t.href))
     .map(t => ({ ...t, label: MOBILE_LABELS[t.href] ?? t.label }));
 
-  // The 4 most useful tabs per role — in priority order.
-  // Tabs not listed here bubble to the end and may end up behind "More".
+  // The 4 most useful tabs per role — in priority order. Tabs not listed
+  // here bubble to the end and may end up behind "More". 'staff' now covers
+  // Class Teacher/Subject Teacher/Housemaster in any combination — this
+  // superset order relies on `eligible` having already filtered out
+  // whichever of these a given person can't actually see (teachingOnly/
+  // housemasterOnly), so e.g. a pure housemaster with no teaching duties
+  // naturally never has '/attendance' to prioritise in the first place.
   const MOBILE_ORDER: Partial<Record<NavRole, string[]>> = {
-    teacher:     ['/dashboard', '/attendance', '/assessments', '/reports'],
-    approver:    ['/dashboard', '/attendance', '/assessments', '/reports'],
-    admin:       ['/dashboard', '/students',   '/attendance',  '/fees'],
-    finance:     ['/dashboard', '/fees',       '/students'],
-    housemaster: ['/dashboard', '/housing',    '/students'],
+    staff:    ['/dashboard', '/attendance', '/assessments', '/housing', '/reports'],
+    approver: ['/dashboard', '/attendance', '/assessments', '/reports'],
+    admin:    ['/dashboard', '/students',   '/attendance',  '/fees'],
+    finance:  ['/dashboard', '/fees',       '/students'],
   };
 
   function isActive(href: string, exact: boolean | undefined) {
@@ -68,12 +73,21 @@
     const isSuperadmin = $currentUser?.is_superadmin ?? false;
     const sType      = $school?.schoolType as SchoolType | undefined;
     const hasBoarding = $schoolQ.data?.has_boarding as boolean | undefined;
-    const classTeacherOk = isSuperadmin || $isClassTeacher;
+    // Only actually gate when role === 'staff' — an admin/approver who's
+    // also in a tab's `roles` always passes regardless of their own
+    // personal teaching/housing load, matching Sidebar.svelte's identical
+    // reasoning.
+    const classTeacherOk = isSuperadmin || role !== 'staff' || $isClassTeacher;
+    const teachingOk     = isSuperadmin || role !== 'staff' || $isClassTeacher || $isSubjectTeacher;
+    const housemasterOk  = isSuperadmin || role !== 'staff' || $isHousemaster;
     return ALL_TABS.filter(t => {
       const roleOk = isSuperadmin || !t.roles || (role !== null && t.roles.includes(role));
       const typeOk = !t.schoolTypes || !sType || t.schoolTypes.includes(sType);
       const boardingOk = !t.requiresBoarding || isSuperadmin || hasBoarding === undefined || hasBoarding;
-      return roleOk && typeOk && boardingOk && (!t.classTeacherOnly || classTeacherOk);
+      return roleOk && typeOk && boardingOk
+        && (!t.classTeacherOnly || classTeacherOk)
+        && (!t.teachingOnly || teachingOk)
+        && (!t.housemasterOnly || housemasterOk);
     });
   });
 

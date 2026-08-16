@@ -102,11 +102,16 @@ class StaffCategory(Base, UUIDPrimaryKey, TimestampMixin):
     for job families not covered by GES (e.g. "IT Support" in a private school).
 
     staff_type drives the TEACHING/NON_TEACHING split:
-    - TEACHING   → shown in class teacher / subject teacher assignment dropdowns
-    - NON_TEACHING → excluded from those dropdowns
+    - TEACHING   → shown in class teacher / subject teacher assignment dropdowns;
+                   also auto-derives the TEACHER StaffPosition (see
+                   core/permissions.py::resolve_permissions) — being a teacher is
+                   the core role, not an optional responsibility a staff member is
+                   manually granted, unlike Class Teacher/Housemaster/Headmaster.
+    - NON_TEACHING → excluded from those dropdowns, no derived position
 
-    NO PERMISSIONS are attached to a category. System access comes from
-    StaffPosition (authority roles), not from employment classification.
+    All OTHER permissions still come from StaffPosition (authority roles),
+    not from employment classification — TEACHER is the one deliberate
+    exception, not a general rule that categories grant access.
     """
     __tablename__ = "staff_category"
     __table_args__ = (

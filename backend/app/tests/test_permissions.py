@@ -19,7 +19,7 @@ from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class, ClassTeacher
 from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
-from app.models.staff import StaffMember, staff_member_positions
+from app.models.staff import StaffCategory, StaffMember, StaffType, staff_member_positions
 
 
 async def _other_school_auth(client: AsyncClient, db_session: AsyncSession) -> tuple[dict, School]:
@@ -228,6 +228,86 @@ async def test_class_teacher_fork_does_not_leak_to_other_school(
     # (would fail if the union incorrectly included the untouched template).
     resp = await client.get("/fees/types", headers=ct_auth)
     assert resp.status_code == 403
+
+
+async def _make_staff_with_category(
+    db_session: AsyncSession, school: School, staff_type: StaffType | None, *, email: str,
+) -> StaffMember:
+    category = StaffCategory(
+        school_id=school.id, name="Test Category", code=f"TESTCAT-{email[:6]}", staff_type=staff_type,
+    )
+    db_session.add(category)
+    await db_session.flush()
+    staff = StaffMember(
+        school_id=school.id, staff_number=f"CAT-{email[:6]}", first_name="Category", last_name="Test",
+        category_id=category.id, is_active=True,
+    )
+    db_session.add(staff)
+    await db_session.flush()
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff.id,
+    ))
+    await db_session.flush()
+    return staff
+
+
+@pytest.mark.asyncio
+async def test_teaching_category_derives_teacher_position(
+    client: AsyncClient, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """Being a teacher is the core role, not a manually-picked
+    responsibility — a staff member whose category is TEACHING gets
+    TEACHER's permissions automatically, with no position ever inserted
+    into staff_member_positions for them."""
+    await _make_staff_with_category(db_session, school, StaffType.TEACHING, email="teaching-cat@presec-test.edu.gh")
+
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": "teaching-cat@presec-test.edu.gh", "password": "Whatever123!",
+        "school_code": school.school_code,
+    })
+    assert resp.status_code == 200
+    cat_auth = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    # assessments.enter_scores is on the TEACHER template — GET /assessments
+    # is a light way to confirm the permission resolved without a full setup.
+    my_subjects = await client.get(
+        "/assessments/my-subjects", params={"term_id": "00000000-0000-0000-0000-000000000000"}, headers=cat_auth,
+    )
+    assert my_subjects.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_non_teaching_category_does_not_derive_teacher_position(
+    client: AsyncClient, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """The flip side — a NON_TEACHING category must not grant TEACHER's
+    permissions just by existing."""
+    await _make_staff_with_category(
+        db_session, school, StaffType.NON_TEACHING, email="nonteaching-cat@presec-test.edu.gh",
+    )
+
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": "nonteaching-cat@presec-test.edu.gh", "password": "Whatever123!",
+        "school_code": school.school_code,
+    })
+    assert resp.status_code == 200
+    cat_auth = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    resp = await client.get("/students", headers=cat_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_teacher_excluded_from_manual_authority_picker(
+    client: AsyncClient, auth: dict, redis_permissions: None,
+):
+    """TEACHER must not appear in the manually-assignable Authority list —
+    same treatment as the already-derived CLASS_TEACHER/HOUSEMASTER."""
+    resp = await client.get("/schools/me/positions", headers=auth)
+    assert resp.status_code == 200
+    codes = {p["name"] for p in resp.json()}
+    assert "Teacher" not in codes
 
 
 @pytest.mark.asyncio

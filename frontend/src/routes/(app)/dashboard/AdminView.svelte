@@ -16,6 +16,8 @@
   const attendancePct = $derived(Math.round(data.attendance_pct));
   const collectionPct = $derived(Math.min(100, Math.round(data.term_collection_pct)));
 
+  // No per-stat color mapping anymore — StatCard now keeps a single
+  // neutral icon treatment and reserves color for the alert state only.
   const icons = {
     students:   `<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>`,
     attendance: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
@@ -56,21 +58,17 @@
 </div>
 
 <!-- 4 stat cards -->
-<div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+<div class="mb-7 grid grid-cols-2 gap-4 lg:grid-cols-4">
   <StatCard
     label="Enrolled"
     value={fmt(data.total_students)}
     iconPath={icons.students}
-    color="bg-indigo-50 dark:bg-indigo-950/40"
-    iconColor="text-indigo-500 dark:text-indigo-400"
     href="/students"
   />
   <StatCard
     label="Present Today"
     value="{attendancePct}%"
     iconPath={icons.attendance}
-    color="bg-emerald-50 dark:bg-emerald-950/40"
-    iconColor="text-emerald-500 dark:text-emerald-400"
     trend="{fmt(data.today_present)} of {fmt(data.today_total)}"
     href="/attendance"
     alert={data.attendance_pct < 80 && data.today_total > 0}
@@ -79,8 +77,6 @@
     label="Fees Collected"
     value="{collectionPct}%"
     iconPath={icons.fees}
-    color="bg-sky-50 dark:bg-sky-950/40"
-    iconColor="text-sky-500 dark:text-sky-400"
     trend={fmtGHS(Number(data.term_collected))}
     href="/fees"
     alert={data.term_collection_pct < 50}
@@ -89,20 +85,18 @@
     label="Awaiting Approval"
     value={fmt(data.pending_approvals)}
     iconPath={icons.pending}
-    color="bg-amber-50 dark:bg-amber-950/40"
-    iconColor="text-amber-500 dark:text-amber-400"
     href="/assessments"
     alert={data.pending_approvals > 0}
   />
 </div>
 
 <!-- Two-column on xl -->
-<div class="grid grid-cols-1 gap-5 xl:grid-cols-[3fr_2fr]">
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-[3fr_2fr]">
 
   <!-- LEFT: class-level attendance -->
   {#if data.class_attendance.length > 0}
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
-         style="box-shadow: var(--shadow-sm);">
+    <div class="rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] p-6"
+         style="box-shadow: var(--shadow-md);">
       <div class="mb-5 flex items-center justify-between">
         <div>
           <p class="text-sm font-semibold text-[var(--fg)]">Attendance by class</p>
@@ -142,10 +136,10 @@
   {/if}
 
   <!-- RIGHT: fee summary + admin links -->
-  <div class="space-y-5">
+  <div class="space-y-6">
 
     <!-- Fee collection -->
-    <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
+    <div class="rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] p-6"
          style="box-shadow: var(--shadow-sm);">
       <div class="mb-4 flex items-center justify-between">
         <div>
@@ -171,13 +165,13 @@
       <p class="mb-2.5 text-[0.6875rem] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
         Administration
       </p>
-      <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]
+      <div class="overflow-hidden rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)]
                   divide-y divide-[var(--border)]"
            style="box-shadow: var(--shadow-sm);">
         {#each adminLinks as link}
           <a href={link.href}
              class="group flex items-center gap-3.5 px-4 py-3.5 transition hover:bg-[var(--hover)]">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl
                         bg-[var(--hover)] transition group-hover:bg-[var(--card)]">
               <svg class="h-4 w-4 text-[var(--fg-muted)]" fill="none" stroke="currentColor"
                    stroke-width="1.6" viewBox="0 0 24 24">

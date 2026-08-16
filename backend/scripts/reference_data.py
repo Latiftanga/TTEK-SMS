@@ -118,11 +118,13 @@ PUBLIC_HOLIDAYS = [
 # Officer, Assistant Head, ...) is tracked separately via StaffRank/
 # StaffCategory (GES_RANKS below), which already has real fidelity for
 # exactly those titles. Deliberately just 5 templates, not a preset per GES
-# title: HEAD/TEACHER/BURSAR are manually assigned; CLASS_TEACHER/
-# HOUSEMASTER are auto-derived (never manually assigned — see
-# core/permissions.py::resolve_permissions's DERIVED_CODES) from real
-# ClassTeacher/HouseMaster assignment rows, so their templates must stay
-# even though nobody picks them from a list. Anyone whose real delegated
+# title: HEAD/BURSAR are manually assigned via the "Authority" picker;
+# TEACHER/CLASS_TEACHER/HOUSEMASTER are all auto-derived (never manually
+# assigned — see core/permissions.py::resolve_permissions's DERIVED_CODES)
+# so their templates must stay even though nobody picks them from a list.
+# TEACHER derives from StaffCategory.staff_type == TEACHING (the core role,
+# not an optional responsibility); CLASS_TEACHER/HOUSEMASTER derive from
+# real ClassTeacher/HouseMaster assignment rows. Anyone whose real delegated
 # authority doesn't match one of these 5 (a Deputy Head, an Exam Officer, an
 # Assistant Head of any portfolio, ...) gets it via a personal permission
 # override on a specific staff member (admin/staff/[id] > Permissions —

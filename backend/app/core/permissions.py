@@ -144,7 +144,7 @@ async def resolve_permissions(
         return cached
 
     from app.models.auth import PositionPermission, StaffPermission, StaffPosition
-    from app.models.staff import StaffMember, staff_member_positions
+    from app.models.staff import StaffMember, StaffType, staff_member_positions
     from app.models.academic import ClassTeacher
     from app.models.housing import HouseMaster
 
@@ -177,17 +177,26 @@ async def resolve_permissions(
                 )
             ))
 
-        # Auto-derive CLASS_TEACHER and HOUSEMASTER positions from actual
-        # assignments — staff don't get manually granted these roles.
-        # school_id filtered explicitly on both, not just implied by
-        # staff_member_id being unique to one school: without it, a
-        # cross-school ClassTeacher/HouseMaster row planted against this
-        # staff member's real id (e.g. via a missing ownership check
-        # elsewhere — see academic_teachers.py's assign_class_teacher) would
-        # still be picked up here and grant the position's permissions,
-        # even though the row belongs to a school this person doesn't work
-        # for.
+        # Auto-derive TEACHER, CLASS_TEACHER, and HOUSEMASTER positions —
+        # none of these three are manually granted. TEACHER is the core
+        # role, not an optional responsibility like the other two: it
+        # tracks StaffCategory.staff_type == TEACHING (set on every staff
+        # member at creation via Employment > Category) rather than a real
+        # assignment row, so a teacher never needs to be manually "added" to
+        # their own job. CLASS_TEACHER/HOUSEMASTER stay assignment-row-based
+        # as before. school_id filtered explicitly for the assignment-row
+        # checks, not just implied by staff_member_id being unique to one
+        # school: without it, a cross-school ClassTeacher/HouseMaster row
+        # planted against this staff member's real id (e.g. via a missing
+        # ownership check elsewhere — see academic_teachers.py's
+        # assign_class_teacher) would still be picked up here and grant the
+        # position's permissions, even though the row belongs to a school
+        # this person doesn't work for. TEACHER has no such planting risk —
+        # staff.category is read straight off the staff member's own row.
         derived_codes: list[str] = []
+        if staff.category and staff.category.staff_type == StaffType.TEACHING:
+            derived_codes.append("TEACHER")
+
         is_ct = await db.scalar(
             select(ClassTeacher.id).where(
                 ClassTeacher.staff_member_id == staff_member_id,

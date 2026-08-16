@@ -1,43 +1,38 @@
 <script lang="ts">
+  // Color is reserved for meaning (alert = amber, the brand accent on
+  // hover), never for pure decoration — every icon box is the same neutral
+  // tone regardless of which stat it is, so a page with 4+ cards doesn't
+  // read as a rainbow of unrelated tints.
   interface Props {
     label: string;
     value: string | number;
     icon?: string;
     iconPath?: string;
-    color?: string;
-    iconColor?: string;
     trend?: string;
     href?: string;
     alert?: boolean;
   }
 
-  const {
-    label, value, icon,
-    iconPath,
-    color = 'bg-zinc-100 dark:bg-zinc-800',
-    iconColor = 'text-zinc-500',
-    trend, href, alert = false,
-  }: Props = $props();
+  const { label, value, icon, iconPath, trend, href, alert = false }: Props = $props();
 </script>
 
 <svelte:element
   this={href ? 'a' : 'div'}
   {href}
-  class="group relative flex flex-col justify-between overflow-hidden rounded-xl p-4
+  class="group relative flex flex-col justify-between overflow-hidden rounded-[1.25rem] p-5
          bg-[var(--card)] ring-1 ring-[var(--border)]
          {alert ? 'ring-amber-300/60 dark:ring-amber-600/40' : ''}
          {href ? 'cursor-pointer transition-shadow hover:shadow-md' : ''}
          "
   style="box-shadow: var(--shadow-sm);"
 >
-  <!-- Accent bar — animated on hover -->
+  <!-- Accent bar — solid, not a multi-hue gradient; amber when this stat needs attention, brand on hover otherwise -->
   {#if alert}
-    <div class="absolute inset-x-0 top-0 h-[3px] rounded-t-xl
-                bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500"></div>
+    <div class="absolute inset-x-0 top-0 h-[3px]" style="background-color: #f59e0b"></div>
   {:else if href}
-    <div class="absolute inset-x-0 top-0 h-[3px] rounded-t-xl scale-x-0 origin-left
-                bg-gradient-to-r from-[var(--brand)] to-[color-mix(in_oklab,var(--brand)_60%,#7c3aed)]
-                transition-transform duration-300 ease-out group-hover:scale-x-100"></div>
+    <div class="absolute inset-x-0 top-0 h-[3px] scale-x-0 origin-left
+                transition-transform duration-300 ease-out group-hover:scale-x-100"
+         style="background-color: var(--brand)"></div>
   {/if}
 
   <!-- Top: label + icon -->
@@ -45,34 +40,35 @@
     <p class="text-[0.6875rem] font-semibold uppercase tracking-[0.07em] text-[var(--fg-muted)] leading-none pt-0.5">
       {label}
     </p>
-    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {color}
+    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl
+                {alert ? 'bg-amber-50 dark:bg-amber-950/40' : 'bg-[var(--hover)]'}
                 transition-transform duration-200
-                {href ? 'group-hover:scale-110 group-hover:-rotate-3' : ''}">
+                {href ? 'group-hover:scale-105' : ''}">
       {#if iconPath}
-        <svg class="h-5 w-5 {iconColor}" fill="none" stroke="currentColor"
-             stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true">
+        <svg class="h-4.5 w-4.5 {alert ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--fg-muted)]'}"
+             fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true">
           {@html iconPath}
         </svg>
       {:else if icon}
-        <span class="{iconColor} text-base leading-none select-none">{icon}</span>
+        <span class="{alert ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--fg-muted)]'} text-base leading-none select-none">{icon}</span>
       {/if}
     </div>
   </div>
 
   <!-- Value + trend -->
-  <div class="mt-3">
-    <p class="text-[1.625rem] font-bold leading-none tracking-tight
+  <div class="mt-3.5">
+    <p class="text-[1.75rem] font-bold leading-none tracking-tight
               {alert ? 'text-amber-500 dark:text-amber-400' : 'text-[var(--fg)]'}">
       {value}
     </p>
     {#if trend}
-      <p class="mt-1.5 text-[0.6875rem] text-[var(--fg-muted)] leading-snug">{trend}</p>
+      <p class="mt-2 text-[0.6875rem] text-[var(--fg-muted)] leading-snug">{trend}</p>
     {/if}
   </div>
 
   <!-- Arrow on hover -->
   {#if href}
-    <div class="absolute bottom-3 right-3 flex h-5 w-5 items-center justify-center rounded-lg
+    <div class="absolute bottom-3.5 right-3.5 flex h-5 w-5 items-center justify-center rounded-lg
                 opacity-0 transition-all duration-200 group-hover:opacity-100
                 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
          style="background: var(--brand-dim); color: var(--brand)">

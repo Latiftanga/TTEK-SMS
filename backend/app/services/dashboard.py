@@ -19,12 +19,11 @@ from app.schemas.dashboard import (
     ApproverDashboard,
     DashboardData,
     RoleBadge,
-    TeacherDashboard,
+    StaffDashboard,
 )
 from app.services.academic_year import get_current_term
 from app.services.dashboard_admin import admin_view, finance_view
-from app.services.dashboard_housemaster import housemaster_view
-from app.services.dashboard_teacher import teacher_view
+from app.services.dashboard_staff import staff_view
 
 
 async def _approver_view(
@@ -57,15 +56,15 @@ async def _approver_view(
     )
 
 
-# ── Secondary-role detection ─────────────────────────────────────────────────
+# ── Role-signal detection ────────────────────────────────────────────────────
 # A staff member can hold several responsibilities at once (Class Teacher +
-# Housemaster is the reported case), but the cascade below only ever returns
-# ONE full view, chosen by seniority. These helpers compute lightweight
-# signals for every OTHER responsibility, independent of which view wins, so
-# get_dashboard() can attach them as `other_roles` badges + the
-# nav-correctness `is_class_teacher` flag. Deliberately cheap (a couple of
-# COUNT queries each) — a full per-class/per-house snapshot belongs to the
-# view itself, not a "you also..." badge.
+# Housemaster is the reported case). The cascade below still returns ONE
+# primary view by seniority (admin/finance/approver win over everything),
+# but is_class_teacher/is_subject_teacher/is_housemaster are computed
+# independently of which view wins so nav gating stays correct regardless —
+# see _role_signals() below. Deliberately cheap (a couple of COUNT queries
+# each) — the full per-class/per-subject/per-house snapshot lives in
+# dashboard_staff.py's StaffDashboard, not here.
 
 async def _class_teacher_info(staff_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> tuple[int, int]:
     """(class count, pending unpublished assessments across them) for the
@@ -140,61 +139,66 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'s' if n != 1 else ''}"
 
 
-async def _other_role_badges(
+async def _role_signals(
     primary: str, staff_id: uuid.UUID, school_id: uuid.UUID, perms: dict, db: AsyncSession,
-) -> tuple[bool, list[RoleBadge]]:
-    """Returns (is_class_teacher, badges) — is_class_teacher is reported
-    unconditionally (used for nav correctness even when it IS the primary
-    view), badges cover only responsibilities the primary view doesn't
-    already surface."""
-    badges: list[RoleBadge] = []
-
+) -> tuple[bool, bool, bool, list[RoleBadge]]:
+    """Returns (is_class_teacher, is_subject_teacher, is_housemaster,
+    badges). The three booleans are always computed, independent of which
+    view is primary — this is what lets nav gating stop depending on the
+    `view` string. badges are only built when primary is admin/finance/
+    approver: the `staff` view already shows class/subject/house
+    responsibilities directly as full sections, so a badge there would just
+    repeat itself."""
     ct_classes, ct_pending = await _class_teacher_info(staff_id, school_id, db)
-    is_class_teacher = ct_classes > 0
-    if primary != "teacher" and is_class_teacher:
-        detail = _plural(ct_classes, "class")
-        if ct_pending:
-            detail += f" · {_plural(ct_pending, 'pending score')}"
-        badges.append(RoleBadge(role="teacher", label="Class Teacher", detail=detail, href="/attendance"))
+    subj_count = await _subject_teacher_count(staff_id, school_id, db)
+    hm_houses, hm_pending = await _housemaster_info(staff_id, school_id, db)
 
-    if primary != "teacher":
-        subj_count = await _subject_teacher_count(staff_id, school_id, db)
-        if subj_count:
+    is_class_teacher = ct_classes > 0
+    is_subject_teacher = subj_count > 0
+    is_housemaster = hm_houses > 0
+
+    badges: list[RoleBadge] = []
+    if primary != "staff":
+        if is_class_teacher:
+            detail = _plural(ct_classes, "class")
+            if ct_pending:
+                detail += f" · {_plural(ct_pending, 'pending score')}"
+            badges.append(RoleBadge(role="teacher", label="Class Teacher", detail=detail, href="/attendance"))
+
+        if is_subject_teacher:
             badges.append(RoleBadge(
                 role="subject_teacher", label="Subject Teacher",
                 detail=_plural(subj_count, "subject"), href="/assessments",
             ))
 
-    if primary != "housemaster":
-        hm_houses, hm_pending = await _housemaster_info(staff_id, school_id, db)
-        if hm_houses:
+        if is_housemaster:
             detail = _plural(hm_houses, "house")
             if hm_pending:
                 detail += f" · {_plural(hm_pending, 'pending exeat')}"
             badges.append(RoleBadge(role="housemaster", label="Housemaster", detail=detail, href="/housing"))
 
-    if primary != "approver" and perms.get("assessments.approve_scores"):
-        approver = await _approver_view(school_id, "", db)
-        if approver.pending_approvals:
-            badges.append(RoleBadge(
-                role="approver", label="Approver",
-                detail=_plural(approver.pending_approvals, "pending approval"), href="/assessments",
-            ))
+        if primary != "approver" and perms.get("assessments.approve_scores"):
+            approver = await _approver_view(school_id, "", db)
+            if approver.pending_approvals:
+                badges.append(RoleBadge(
+                    role="approver", label="Approver",
+                    detail=_plural(approver.pending_approvals, "pending approval"), href="/assessments",
+                ))
 
-    if primary != "finance" and perms.get("fees.collect"):
-        outstanding = await db.scalar(
-            select(func.count(StudentFeeSummary.id)).where(
-                StudentFeeSummary.school_id == school_id,
-                StudentFeeSummary.total_paid < StudentFeeSummary.total_due,
-            )
-        ) or 0
-        if outstanding:
-            badges.append(RoleBadge(
-                role="finance", label="Finance",
-                detail=f"{_plural(outstanding, 'student')} owing", href="/fees",
-            ))
+        if primary != "finance" and perms.get("fees.collect"):
+            outstanding = await db.scalar(
+                select(func.count(StudentFeeSummary.id)).where(
+                    StudentFeeSummary.school_id == school_id,
+                    StudentFeeSummary.total_paid < StudentFeeSummary.total_due,
+                )
+            ) or 0
+            if outstanding:
+                badges.append(RoleBadge(
+                    role="finance", label="Finance",
+                    detail=f"{_plural(outstanding, 'student')} owing", href="/fees",
+                ))
 
-    return is_class_teacher, badges
+    return is_class_teacher, is_subject_teacher, is_housemaster, badges
 
 
 async def get_dashboard(
@@ -209,11 +213,9 @@ async def get_dashboard(
         # with any other non-staff caller. The superadmin's real dashboard is
         # /superadmin; this generic fallback is only what they'd see if they
         # landed on /dashboard directly.
-        return TeacherDashboard(
+        return StaffDashboard(
             greeting_name="Welcome",
             today_iso=date.today().isoformat(),
-            my_classes=[],
-            pending_score_assessments=0,
         )
 
     staff = await db.get(StaffMember, user.staff_member_id)
@@ -227,18 +229,28 @@ async def get_dashboard(
         primary, result = "finance", await finance_view(school_id, greeting_name, db)
     elif perms.get("assessments.approve_scores"):
         primary, result = "approver", await _approver_view(school_id, greeting_name, db)
-    elif perms.get("housing.manage"):
-        primary, result = "housemaster", await housemaster_view(school_id, user.staff_member_id, greeting_name, db)
     # Catches senior non-teaching staff who hold none of the above (e.g.
     # someone granted staff.edit via a personal permission override for an
-    # administrative portfolio, but no fees.collect/assessments.approve_scores/
-    # housing.manage) — without this they'd otherwise fall through to the
-    # teacher dashboard ("my classes: none"), which reads as broken for
-    # someone who doesn't teach at all.
+    # administrative portfolio, but no fees.collect/assessments.approve_scores)
+    # — without this they'd otherwise fall through to the staff dashboard
+    # ("my classes/subjects/houses: none"), which reads as broken for someone
+    # who doesn't teach or house at all.
     elif perms.get("staff.edit"):
         primary, result = "approver", await _approver_view(school_id, greeting_name, db)
     else:
-        primary, result = "teacher", await teacher_view(school_id, user.staff_member_id, greeting_name, db)
+        # Everyone else — Class Teacher, Subject Teacher, Housemaster, any
+        # combination, or none yet — gets the one composed staff view; each
+        # section is populated independently from real assignment rows, not
+        # from a seniority pick, so holding several responsibilities at once
+        # shows all of them rather than just one.
+        primary, result = "staff", await staff_view(school_id, user.staff_member_id, greeting_name, db)
 
-    is_class_teacher, other_roles = await _other_role_badges(primary, user.staff_member_id, school_id, perms, db)
-    return result.model_copy(update={"is_class_teacher": is_class_teacher, "other_roles": other_roles})
+    is_class_teacher, is_subject_teacher, is_housemaster, other_roles = await _role_signals(
+        primary, user.staff_member_id, school_id, perms, db,
+    )
+    return result.model_copy(update={
+        "is_class_teacher": is_class_teacher,
+        "is_subject_teacher": is_subject_teacher,
+        "is_housemaster": is_housemaster,
+        "other_roles": other_roles,
+    })

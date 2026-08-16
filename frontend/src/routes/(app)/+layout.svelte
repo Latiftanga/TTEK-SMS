@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { createQuery } from '@tanstack/svelte-query';
   import Sidebar   from '$lib/components/Sidebar.svelte';
   import TopBar    from '$lib/components/TopBar.svelte';
   import BottomNav from '$lib/components/BottomNav.svelte';
@@ -9,12 +10,44 @@
   import { initOfflineSync, pendingOutboxCount, isOnline } from '$lib/offline/sync';
   import { currentUser } from '$lib/stores/auth';
   import { isPortalUser } from '$lib/api/auth';
+  import { getDashboard } from '$lib/api/dashboard';
+  import { userRole, isClassTeacher, isSubjectTeacher, isHousemaster } from '$lib/stores/permissions';
 
   const { children } = $props();
 
   let sidebarOpen = $state(false);
 
   $effect(() => { initOfflineSync(); });
+
+  // Nav-gating state (userRole + is*Teacher/Housemaster) previously only got
+  // (re)populated when the /dashboard page itself happened to mount — this
+  // layout, which is what actually renders the sidebar/bottom nav for every
+  // page, never fetched it at all. So a staff member whose class-teacher/
+  // subject-teacher/housemaster status changed (by an admin, elsewhere) kept
+  // seeing whichever nav items the stale localStorage value from their last
+  // /dashboard visit allowed, on every other page, for as long as they
+  // avoided revisiting /dashboard. Fetching it here — mounted for the whole
+  // app-shell session, same ['dashboard'] cache key +page.svelte also reads,
+  // so no duplicate request while actually on that page — with a refetch
+  // whenever the shell (re)mounts plus a periodic refresh means the nav
+  // self-corrects wherever the user is browsing, not just on that one page.
+  const navStateQuery = createQuery({
+    queryKey: ['dashboard'],
+    queryFn: getDashboard,
+    staleTime: 2 * 60_000,
+    refetchOnMount: 'always',
+    refetchInterval: 2 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  $effect(() => {
+    const d = $navStateQuery.data;
+    if (d) {
+      userRole.set(d.view);
+      isClassTeacher.set(d.is_class_teacher);
+      isSubjectTeacher.set(d.is_subject_teacher);
+      isHousemaster.set(d.is_housemaster);
+    }
+  });
 
   // Student (ADMISSION_ID) and guardian (PHONE + guardian_id) logins have no
   // staff permissions and belong on /portal, not this staff app shell —

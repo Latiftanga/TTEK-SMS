@@ -29,26 +29,24 @@
 </div>
 
 <!-- Two-column on xl: left = stats + ring, right = actions -->
-<div class="grid grid-cols-1 gap-5 xl:grid-cols-[3fr_2fr]">
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-[3fr_2fr]">
 
   <!-- LEFT -->
-  <div class="space-y-5">
+  <div class="space-y-6">
 
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-2 gap-4">
       <StatCard
         label="Pending Approvals" value={data.pending_approvals}
-        icon="⏳" color="bg-amber-50 dark:bg-amber-950/40" iconColor="text-amber-600 dark:text-amber-400"
-        href="/assessments" alert={data.pending_approvals > 0}
+        icon="⏳" href="/assessments" alert={data.pending_approvals > 0}
       />
       <StatCard
         label="This Term" value={data.assessments_this_term}
-        icon="📝" color="bg-blue-50 dark:bg-blue-950/40" iconColor="text-blue-600 dark:text-blue-400"
-        href="/assessments" trend={`${approved} approved`}
+        icon="📝" href="/assessments" trend={`${approved} approved`}
       />
     </div>
 
     {#if data.assessments_this_term > 0}
-      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+      <div class="rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] p-5" style="box-shadow: var(--shadow-sm);">
         <p class="mb-4 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Approval progress</p>
         <div class="flex items-center gap-6">
           <div class="relative flex-shrink-0">
@@ -90,14 +88,15 @@
   <!-- RIGHT: actions -->
   <div>
     <p class="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Actions</p>
-    <div class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]">
+    <div class="overflow-hidden rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] divide-y divide-[var(--border)]"
+         style="box-shadow: var(--shadow-sm);">
       <a href="/assessments" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
-        <div class="flex h-8 w-8 items-center justify-center rounded-lg
-                    {data.pending_approvals > 0 ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-gray-100 dark:bg-gray-800'}">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl
+                    {data.pending_approvals > 0 ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-[var(--hover)]'}">
           {#if data.pending_approvals > 0}
             <span class="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
           {:else}
-            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg class="h-4 w-4 text-[var(--fg-muted)]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
           {/if}
         </div>
         <div class="flex-1">
@@ -106,11 +105,11 @@
             {data.pending_approvals > 0 ? `${data.pending_approvals} waiting` : 'Nothing pending'}
           </p>
         </div>
-        <svg class="h-4 w-4 text-gray-300 dark:text-gray-700 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg class="h-4 w-4 text-[var(--fg-subtle)] transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
       </a>
       <a href="/assessments" class="group flex items-center gap-4 px-5 py-4 transition hover:bg-[var(--bg)]">
-        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-          <svg class="h-4 w-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--hover)]">
+          <svg class="h-4 w-4 text-[var(--fg-muted)]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
           </svg>
         </div>
@@ -118,7 +117,7 @@
           <p class="text-sm font-semibold text-[var(--fg)]">All Assessments</p>
           <p class="text-[11px] text-[var(--fg-muted)]">Browse & manage</p>
         </div>
-        <svg class="h-4 w-4 text-gray-300 dark:text-gray-700 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg class="h-4 w-4 text-[var(--fg-subtle)] transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
       </a>
     </div>
   </div>
