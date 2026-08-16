@@ -47,7 +47,7 @@ async def _make_enrollment(
 
 
 def _zip_path(school_id: uuid.UUID, job_id: str) -> Path:
-    return Path(settings.local_upload_dir) / "bulk" / str(school_id) / f"{job_id}.zip"
+    return Path(settings.secure_upload_dir) / "bulk" / str(school_id) / f"{job_id}.zip"
 
 
 def _read_zip_names(school_id: uuid.UUID, job_id: str) -> list[str]:

@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     # ── Storage ──────────────────────────────────────────────────────────────
     storage_backend: Literal["LOCAL", "CLOUDFLARE_R2"] = "LOCAL"
     local_upload_dir: str = "./uploads"
+    # Separate from local_upload_dir on purpose: main.py mounts local_upload_dir
+    # as a public, unauthenticated static route (school logos, student/staff
+    # photos — deliberately servable without a login so branded pages and
+    # avatars work). Anything genuinely private (DocumentRecord files, bulk
+    # report-card ZIPs) must live outside that tree entirely, since a
+    # StaticFiles mount serves its whole directory recursively — a "private"
+    # subfolder under local_upload_dir would still be world-readable at
+    # /uploads/private/... with no way to carve it out of the same mount.
+    secure_upload_dir: str = "./secure_uploads"
     r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""

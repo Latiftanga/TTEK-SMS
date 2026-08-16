@@ -46,6 +46,7 @@ services:
     volumes:
       - ./backend:/app                  # live reload in development
       - uploads_data:/app/uploads
+      - secure_uploads_data:/app/secure_uploads
     ports:
       - "8000:8000"
     depends_on:
@@ -80,6 +81,7 @@ services:
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads
+      - secure_uploads_data:/app/secure_uploads
       - worker_packages:/usr/local/lib/python3.12/site-packages  # preserve pip installs
     depends_on:
       db:
@@ -110,4 +112,5 @@ volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  secure_uploads_data:
   worker_packages:

@@ -4,6 +4,8 @@ Run inside Docker: docker compose exec api pytest app/tests/test_documents.py -v
 """
 import io
 import uuid
+from datetime import date
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -11,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
+from app.core.config import settings
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.students import Student
@@ -345,6 +348,174 @@ async def test_class_teacher_cannot_manage_documents_for_other_staff_member(
     doc_id = admin_upload.json()["id"]
     dl_resp = await client.get(f"/documents/{doc_id}/download", headers=teacher_auth)
     assert dl_resp.status_code == 403
+
+
+# ── Secure storage (unauthenticated static-mount exposure fix) ────────────────
+
+@pytest.mark.asyncio
+async def test_uploaded_document_not_reachable_via_public_uploads_mount(
+    client: AsyncClient, auth: dict, student: Student,
+):
+    """DocumentRecord files live under secure_upload_dir, which main.py never
+    mounts as a static route (unlike local_upload_dir, mounted at /uploads
+    for logos/photos). Confirms a document can't be fetched unauthenticated
+    just by guessing/replaying the same relative path the old code used to
+    write under local_upload_dir."""
+    upload = await client.post(
+        f"/documents/student/{student.id}?document_type=certificate",
+        files={"file": ("cert.pdf", io.BytesIO(b"%PDF-1.4 secret"), "application/pdf")},
+        headers=auth,
+    )
+    assert upload.status_code == 201
+    rec_id = upload.json()["id"]
+    file_name = upload.json()["file_name"]
+
+    # The exact relative path shape upload_document() builds — proves the
+    # file is neither reachable at that path nor anywhere else under the
+    # public mount, without needing the unauthenticated client to know the
+    # real stored (uuid-prefixed) filename.
+    guessed = f"/uploads/documents/{student.school_id}/student/{student.id}/{rec_id}_{file_name}"
+    resp = await client.get(guessed)
+    assert resp.status_code == 404
+
+    # The authenticated, scoped download endpoint still works from the same
+    # storage location — proves this isn't reachable because it was never
+    # written at all, only because it isn't publicly mounted.
+    dl_resp = await client.get(f"/documents/{rec_id}/download", headers=auth)
+    assert dl_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_delete_document_removes_file_from_disk(
+    client: AsyncClient, auth: dict, student: Student,
+):
+    upload = await client.post(
+        f"/documents/student/{student.id}?document_type=form",
+        files={"file": ("form.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=auth,
+    )
+    rel_path = f"documents/{student.school_id}/student/{student.id}/"
+    doc_id = upload.json()["id"]
+    matches = list((Path(settings.secure_upload_dir) / rel_path).glob(f"{doc_id}_*"))
+    assert len(matches) == 1
+    on_disk = matches[0]
+    assert on_disk.exists()
+
+    del_resp = await client.delete(f"/documents/{doc_id}", headers=auth)
+    assert del_resp.status_code == 204
+    assert not on_disk.exists()
+
+
+# ── Input length validation ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_upload_rejects_oversized_filename(
+    client: AsyncClient, auth: dict, student: Student,
+):
+    long_name = "a" * 250 + ".pdf"
+    resp = await client.post(
+        f"/documents/student/{student.id}?document_type=certificate",
+        files={"file": (long_name, io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=auth,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_oversized_document_type(
+    client: AsyncClient, auth: dict, student: Student,
+):
+    resp = await client.post(
+        f"/documents/student/{student.id}?document_type={'x' * 150}",
+        files={"file": ("cert.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=auth,
+    )
+    assert resp.status_code == 422
+
+
+# ── Housemaster boarding-document scope ───────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_housemaster_can_manage_documents_for_student_in_own_house(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school, student: Student,
+    academic_year, redis_permissions: None,
+):
+    """HOUSEMASTER holds documents.manage for exactly this reason (exeat
+    letters, incident forms) but had no scoping check that ever recognised
+    the role at all — previously fell through to a plain 404 for every
+    student, HouseMaster row or not. Confirms the new
+    is_house_master_of_student() branch actually grants access to a student
+    genuinely resident in the house they run."""
+    from app.models.housing import House, HouseGender, HouseMaster, StudentHouseAssignment
+
+    hm_auth, staff_id = await _login_as_position(client, auth, db_session, school, "HOUSEMASTER")
+
+    house = House(
+        school_id=school.id, name="Hall Doc", code="DOCH", gender=HouseGender.MIXED, is_active=True,
+    )
+    db_session.add(house)
+    await db_session.flush()
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    db_session.add(StudentHouseAssignment(
+        school_id=school.id, student_id=student.id, house_id=house.id,
+        academic_year_id=academic_year.id, assigned_at=date.today(),
+    ))
+    await db_session.flush()
+
+    upload = await client.post(
+        f"/documents/student/{student.id}?document_type=exeat_letter",
+        files={"file": ("exeat.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=hm_auth,
+    )
+    assert upload.status_code == 201
+    doc_id = upload.json()["id"]
+
+    dl_resp = await client.get(f"/documents/{doc_id}/download", headers=hm_auth)
+    assert dl_resp.status_code == 200
+
+    del_resp = await client.delete(f"/documents/{doc_id}", headers=hm_auth)
+    assert del_resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_housemaster_cannot_manage_documents_for_student_in_other_house(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school, student: Student,
+    academic_year, redis_permissions: None,
+):
+    """The student is resident in a DIFFERENT house than the one this
+    housemaster runs — must still 404, same as any other out-of-scope
+    student."""
+    from app.models.housing import House, HouseGender, HouseMaster, StudentHouseAssignment
+
+    hm_auth, staff_id = await _login_as_position(client, auth, db_session, school, "HOUSEMASTER")
+
+    own_house = House(
+        school_id=school.id, name="Hall Own", code="OWNH", gender=HouseGender.MIXED, is_active=True,
+    )
+    other_house = House(
+        school_id=school.id, name="Hall Other", code="OTHH", gender=HouseGender.MIXED, is_active=True,
+    )
+    db_session.add_all([own_house, other_house])
+    await db_session.flush()
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=own_house.id, staff_member_id=staff_id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    db_session.add(StudentHouseAssignment(
+        school_id=school.id, student_id=student.id, house_id=other_house.id,
+        academic_year_id=academic_year.id, assigned_at=date.today(),
+    ))
+    await db_session.flush()
+
+    upload = await client.post(
+        f"/documents/student/{student.id}?document_type=exeat_letter",
+        files={"file": ("exeat.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers=hm_auth,
+    )
+    assert upload.status_code == 404
 
 
 @pytest.mark.asyncio

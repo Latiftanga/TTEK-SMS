@@ -2,7 +2,12 @@
 ARQ job: bulk_generate_report_cards
 
 Generates one PDF per student in a class for a given term, zips them,
-and writes the ZIP to /uploads/bulk/{school_id}/{job_id}.zip.
+and writes the ZIP to {secure_upload_dir}/bulk/{school_id}/{job_id}.zip.
+
+secure_upload_dir, not local_upload_dir — a class's full set of scores and
+grades is exactly the kind of thing that must never be reachable via the
+public, unauthenticated static mount local_upload_dir gets in main.py.
+download_bulk_report() is the only thing that ever reads from this path.
 
 The API router queues this job and returns the job_id.
 The download endpoint streams the ZIP once it exists.
@@ -99,7 +104,7 @@ async def _run(
     # from the CALLER's own school_id, so a job_id from another school (even
     # if guessed/leaked) resolves to a path that was never written and 404s,
     # rather than streaming a different school's full class roster + scores.
-    bulk_dir = Path(settings.local_upload_dir) / "bulk" / str(school_id)
+    bulk_dir = Path(settings.secure_upload_dir) / "bulk" / str(school_id)
     bulk_dir.mkdir(parents=True, exist_ok=True)
     zip_path = bulk_dir / f"{job_id}.zip"
     zip_path.write_bytes(zip_buffer.getvalue())

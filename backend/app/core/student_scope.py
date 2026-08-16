@@ -238,3 +238,32 @@ async def assert_can_view_student(
     scope = await resolve_student_view_scope(user_id, school_id, db)
     if scope is not None and student_id not in scope:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Student not found.")
+
+
+async def is_house_master_of_student(
+    user_id: uuid.UUID, student_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> bool:
+    """True if the caller is an active HouseMaster of the house this student
+    is currently (non-vacated) assigned to. Narrower than a Category A
+    pastoral write (`can_write_student`, ClassTeacher only) — used where a
+    permission is specifically about a Housemaster's own boarding-related
+    duties (documents.manage, for exeat letters/incident forms) rather than
+    the student's general pastoral record, so it doesn't widen every
+    Category A write (profile/guardians/medical) to every housemaster
+    school-wide, just the one place that actually needs it."""
+    staff_id = await _staff_member_id_for(user_id, db)
+    if staff_id is None:
+        return False
+    managed_house_ids = select(HouseMaster.house_id).where(
+        HouseMaster.staff_member_id == staff_id,
+        HouseMaster.is_active == True,  # noqa: E712
+    )
+    row = await db.scalar(
+        select(StudentHouseAssignment.id).where(
+            StudentHouseAssignment.student_id == student_id,
+            StudentHouseAssignment.house_id.in_(managed_house_ids),
+            StudentHouseAssignment.vacated_at.is_(None),
+            StudentHouseAssignment.school_id == school_id,
+        )
+    )
+    return row is not None

@@ -38,7 +38,7 @@ async def download_document(
     user_id, school_id = auth
     rec = await doc_svc.get_document(doc_id, school_id, user_id, db, action="view")
     from pathlib import Path
-    full_path = Path(settings.local_upload_dir) / rec.file_path
+    full_path = Path(settings.secure_upload_dir) / rec.file_path
     if not full_path.exists():
         from fastapi import HTTPException
         raise HTTPException(404, "File not found on disk.")
