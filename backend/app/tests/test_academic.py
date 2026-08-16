@@ -864,6 +864,81 @@ async def test_responsibilities_shows_subject_assignment_by_year(
     assert "academic_term_id" not in assignment
 
 
+# ── Removing a class/subject teacher ────────────────────────────────────────────
+# Previously the only way to change who holds one of these roles was handing it
+# to someone else (an upsert) — there was no way to plainly unassign it.
+
+@pytest.mark.asyncio
+async def test_remove_class_teacher(
+    client: AsyncClient, auth: dict, staff_member, academic_year, redis_permissions: None,
+):
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)).json()["id"]
+    await client.post(f"/academic/classes/{class_id}/class-teacher", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    resp = await client.delete(
+        f"/academic/classes/{class_id}/class-teacher?year_id={academic_year.id}", headers=auth,
+    )
+    assert resp.status_code == 204
+
+    listed = await client.get(
+        f"/academic/classes/{class_id}/class-teacher?year_id={academic_year.id}", headers=auth,
+    )
+    assert listed.json() is None
+
+
+@pytest.mark.asyncio
+async def test_remove_class_teacher_404_when_nothing_to_remove(
+    client: AsyncClient, auth: dict, academic_year,
+):
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "B",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.delete(
+        f"/academic/classes/{class_id}/class-teacher?year_id={academic_year.id}", headers=auth,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_remove_subject_teacher(
+    client: AsyncClient, auth: dict, staff_member, academic_year,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+    await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    resp = await client.delete(
+        f"/academic/classes/{class_id}/subject-teachers/{subject_id}?year_id={academic_year.id}",
+        headers=auth,
+    )
+    assert resp.status_code == 204
+
+    listed = await client.get(
+        f"/academic/classes/{class_id}/subject-teachers?year_id={academic_year.id}", headers=auth,
+    )
+    assert listed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_remove_subject_teacher_404_when_nothing_to_remove(
+    client: AsyncClient, auth: dict, academic_year,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+
+    resp = await client.delete(
+        f"/academic/classes/{class_id}/subject-teachers/{subject_id}?year_id={academic_year.id}",
+        headers=auth,
+    )
+    assert resp.status_code == 404
+
+
 # ── Cross-school ownership on teacher assignment ────────────────────────────────
 # assign_class_teacher/assign_subject_teacher previously trusted
 # staff_member_id/academic_year_id (and, for the latter, subject_id) from the

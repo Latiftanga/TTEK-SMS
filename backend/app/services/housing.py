@@ -202,6 +202,35 @@ async def assign_house_master(
     return _to_hm(hm)
 
 
+async def remove_house_master(
+    house_id: uuid.UUID, academic_year_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
+) -> uuid.UUID:
+    """Deactivates the active HouseMaster row for this house+year — the
+    counterpart assign_house_master() never had: previously the only way to
+    change who runs a house was handing it to someone else, never plainly
+    unassigning it. Same administrative-appointment gate as assigning one
+    (removing is the same tier of decision). Returns the outgoing
+    staff_member_id so the caller can invalidate their permission cache
+    (they lose the HOUSEMASTER derived role)."""
+    await assert_unrestricted(
+        user_id, school_id, academic_year_id, db,
+        "Only a school administrator can remove a housemaster.",
+    )
+    hm = await db.scalar(
+        select(HouseMaster).where(
+            HouseMaster.house_id == house_id,
+            HouseMaster.academic_year_id == academic_year_id,
+            HouseMaster.school_id == school_id,
+            HouseMaster.is_active.is_(True),
+        )
+    )
+    if not hm:
+        raise HTTPException(404, "No active housemaster to remove.")
+    hm.is_active = False
+    await db.flush()
+    return hm.staff_member_id
+
+
 async def get_current_house_master(
     house_id: uuid.UUID, year_id: uuid.UUID, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> HouseMasterRead | None:

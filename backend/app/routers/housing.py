@@ -177,6 +177,18 @@ async def assign_house_master(
     return result
 
 
+@router.delete("/houses/{house_id}/master", status_code=204)
+async def remove_house_master(
+    house_id: uuid.UUID,
+    year_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("housing", "manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    removed_staff_id = await svc.remove_house_master(house_id, year_id, user_id, school_id, db)
+    await invalidate_permissions(removed_staff_id)
+
+
 @router.get("/houses/{house_id}/students", response_model=list[StudentInHouseRead])
 async def list_house_students(
     house_id: uuid.UUID,

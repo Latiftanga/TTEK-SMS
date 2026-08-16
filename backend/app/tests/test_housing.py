@@ -190,6 +190,40 @@ async def test_reassign_housemaster_deactivates_previous(
     assert r.json()["is_active"] is True
 
 
+@pytest.mark.asyncio
+async def test_remove_house_master(
+    client: AsyncClient, auth: dict,
+    staff_member: StaffMember, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="HMH3")
+    await client.post(f"/housing/houses/{h['id']}/master", json={
+        "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    r = await client.delete(
+        f"/housing/houses/{h['id']}/master?year_id={academic_year.id}", headers=auth,
+    )
+    assert r.status_code == 204
+
+    listed = await client.get(
+        f"/housing/houses/{h['id']}/master?year_id={academic_year.id}", headers=auth,
+    )
+    assert listed.json() is None
+
+
+@pytest.mark.asyncio
+async def test_remove_house_master_404_when_nothing_to_remove(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="HMH4")
+
+    r = await client.delete(
+        f"/housing/houses/{h['id']}/master?year_id={academic_year.id}", headers=auth,
+    )
+    assert r.status_code == 404
+
+
 # ── Student assignments ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

@@ -262,6 +262,18 @@ async def assign_class_teacher(
     return ClassTeacherRead.model_validate(ct)
 
 
+@router.delete("/classes/{class_id}/class-teacher", status_code=204)
+async def remove_class_teacher(
+    class_id: uuid.UUID,
+    year_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("academic", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    removed_staff_id = await teacher_svc.remove_class_teacher(class_id, year_id, school_id, db)
+    await invalidate_permissions(removed_staff_id)
+
+
 @router.get("/classes/{class_id}/subject-teachers", response_model=list[SubjectTeacherRead])
 async def list_subject_teachers(
     class_id: uuid.UUID,
@@ -284,6 +296,18 @@ async def assign_subject_teacher(
     _, school_id = ids
     st = await teacher_svc.assign_subject_teacher(class_id, req, school_id, db)
     return SubjectTeacherRead.model_validate(st)
+
+
+@router.delete("/classes/{class_id}/subject-teachers/{subject_id}", status_code=204)
+async def remove_subject_teacher(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    year_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("academic", "edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = ids
+    await teacher_svc.remove_subject_teacher(class_id, subject_id, year_id, school_id, db)
 
 
 @router.delete("/classes/{class_id}/subjects/{subject_id}", status_code=204)

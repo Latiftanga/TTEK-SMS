@@ -105,6 +105,61 @@ async def assign_subject_teacher(
     return st
 
 
+async def remove_class_teacher(
+    class_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> uuid.UUID:
+    """Deactivates the active ClassTeacher row for this class+year — the
+    counterpart assign_class_teacher() never had: previously the only way to
+    change who holds this role was handing it to someone else, never plainly
+    unassigning it. Returns the outgoing staff_member_id so the caller can
+    invalidate their permission cache (they lose the CLASS_TEACHER derived
+    role — see core/permissions.py::resolve_permissions's DERIVED_CODES)."""
+    ct = await db.scalar(
+        select(ClassTeacher).where(
+            ClassTeacher.class_id == class_id,
+            ClassTeacher.academic_year_id == academic_year_id,
+            ClassTeacher.school_id == school_id,
+            ClassTeacher.is_active.is_(True),
+        )
+    )
+    if not ct:
+        raise HTTPException(404, "No active class teacher to remove.")
+    ct.is_active = False
+    await db.flush()
+    return ct.staff_member_id
+
+
+async def remove_subject_teacher(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Deactivates the active SubjectTeacher row for this class+subject+year.
+    No permission-cache invalidation needed — unlike CLASS_TEACHER/
+    HOUSEMASTER, SubjectTeacher has no derived StaffPosition of its own
+    (DERIVED_CODES doesn't include it), so removing it changes nothing about
+    the caller's resolved permissions, only which (class, subject) pairs
+    they're scoped to."""
+    st = await db.scalar(
+        select(SubjectTeacher).where(
+            SubjectTeacher.class_id == class_id,
+            SubjectTeacher.subject_id == subject_id,
+            SubjectTeacher.academic_year_id == academic_year_id,
+            SubjectTeacher.school_id == school_id,
+            SubjectTeacher.is_active.is_(True),
+        )
+    )
+    if not st:
+        raise HTTPException(404, "No active subject teacher to remove.")
+    st.is_active = False
+    await db.flush()
+
+
 async def get_class_teacher(
     class_id: uuid.UUID,
     year_id: uuid.UUID,
@@ -116,6 +171,7 @@ async def get_class_teacher(
             ClassTeacher.class_id == class_id,
             ClassTeacher.academic_year_id == year_id,
             ClassTeacher.school_id == school_id,
+            ClassTeacher.is_active.is_(True),
         )
     )
 
@@ -131,6 +187,7 @@ async def list_subject_teachers(
             SubjectTeacher.class_id == class_id,
             SubjectTeacher.academic_year_id == year_id,
             SubjectTeacher.school_id == school_id,
+            SubjectTeacher.is_active.is_(True),
         )
     )
     return list(rows)
