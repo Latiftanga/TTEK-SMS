@@ -33,7 +33,13 @@ async def get_responsibilities(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> StaffResponsibilities:
-    # ── Class teacher assignments ─────────────────────────────────────────────
+    # This tab shows what a staff member CURRENTLY does, not a full audit
+    # history — every branch below filters to is_active rows only. Without
+    # this, a removed or reassigned responsibility (services/housing.py::
+    # assign_house_master deactivates the old row rather than deleting it,
+    # same pattern for class/subject teacher) stays visible forever: the
+    # same house showing twice (once active, once as dead history) after a
+    # reassignment is exactly the bug this fixes, not a display quirk.
     ct_rows = (await db.execute(
         select(ClassTeacher, Class, AcademicYear, SHSProgramme)
         .join(Class, ClassTeacher.class_id == Class.id)
@@ -42,8 +48,9 @@ async def get_responsibilities(
         .where(
             ClassTeacher.staff_member_id == staff_id,
             ClassTeacher.school_id == school_id,
+            ClassTeacher.is_active.is_(True),
         )
-        .order_by(ClassTeacher.is_active.desc(), AcademicYear.start_date.desc())
+        .order_by(AcademicYear.start_date.desc())
     )).all()
 
     class_teacher: ClassTeacherAssignment | None = None
@@ -67,12 +74,9 @@ async def get_responsibilities(
         .where(
             SubjectTeacher.staff_member_id == staff_id,
             SubjectTeacher.school_id == school_id,
+            SubjectTeacher.is_active.is_(True),
         )
-        .order_by(
-            SubjectTeacher.is_active.desc(),
-            AcademicYear.start_date.desc(),
-            Class.year_group,
-        )
+        .order_by(AcademicYear.start_date.desc(), Class.year_group)
     )).all()
 
     subject_assignments = [
@@ -96,8 +100,9 @@ async def get_responsibilities(
         .where(
             HouseMaster.staff_member_id == staff_id,
             HouseMaster.school_id == school_id,
+            HouseMaster.is_active.is_(True),
         )
-        .order_by(HouseMaster.is_active.desc(), AcademicYear.start_date.desc())
+        .order_by(AcademicYear.start_date.desc())
     )).all()
 
     house_assignments = [

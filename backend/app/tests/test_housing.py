@@ -224,6 +224,39 @@ async def test_remove_house_master_404_when_nothing_to_remove(
     assert r.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_responsibilities_hides_reassigned_and_removed_housemaster(
+    client: AsyncClient, auth: dict,
+    staff_member: StaffMember, academic_year: AcademicYear,
+):
+    """Regression: get_responsibilities() previously returned every
+    HouseMaster row ever created (active AND inactive) with zero filtering —
+    reassigning the same staff member to the same house (assign_house_master
+    deactivates the old row rather than deleting it) made the Responsibilities
+    tab show that house twice, one active and one dead."""
+    h = await _make_house(client, auth, code="HMH5")
+    await client.post(f"/housing/houses/{h['id']}/master", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    await client.post(f"/housing/houses/{h['id']}/master", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+
+    resp = await client.get(f"/staff/{staff_member.id}/responsibilities", headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["house_assignments"] == [{
+        "house_id": h["id"], "house_name": h["name"], "house_code": h["code"],
+        "academic_year_id": str(academic_year.id), "academic_year_name": academic_year.name,
+        "is_active": True,
+    }]
+
+    await client.delete(
+        f"/housing/houses/{h['id']}/master?year_id={academic_year.id}", headers=auth,
+    )
+    resp = await client.get(f"/staff/{staff_member.id}/responsibilities", headers=auth)
+    assert resp.json()["house_assignments"] == []
+
+
 # ── Student assignments ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

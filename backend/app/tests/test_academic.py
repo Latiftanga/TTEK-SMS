@@ -864,6 +864,42 @@ async def test_responsibilities_shows_subject_assignment_by_year(
     assert "academic_term_id" not in assignment
 
 
+@pytest.mark.asyncio
+async def test_responsibilities_hides_removed_assignments(
+    client: AsyncClient, auth: dict, staff_member, academic_year, redis_permissions: None,
+):
+    """Regression: get_responsibilities() previously returned every historical
+    row (active AND inactive) with zero filtering, so removing or reassigning
+    a class/subject teacher left the old row visible forever as a stale,
+    duplicate-looking entry — surfaced live as the exact same house showing
+    twice (once active, once dead) after a reassignment."""
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 2, "stream": "A",
+    }, headers=auth)).json()["id"]
+    await client.post(f"/academic/classes/{class_id}/class-teacher", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    await client.delete(
+        f"/academic/classes/{class_id}/class-teacher?year_id={academic_year.id}", headers=auth,
+    )
+
+    subj_class_id, subject_id = await _class_with_subject(client, auth)
+    await client.post(f"/academic/classes/{subj_class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    await client.delete(
+        f"/academic/classes/{subj_class_id}/subject-teachers/{subject_id}?year_id={academic_year.id}",
+        headers=auth,
+    )
+
+    resp = await client.get(f"/staff/{staff_member.id}/responsibilities", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["class_teacher"] is None
+    assert data["subject_assignments"] == []
+
+
 # ── Removing a class/subject teacher ────────────────────────────────────────────
 # Previously the only way to change who holds one of these roles was handing it
 # to someone else (an upsert) — there was no way to plainly unassign it.
