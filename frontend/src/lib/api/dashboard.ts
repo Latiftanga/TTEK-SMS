@@ -1,5 +1,24 @@
 import client from './client';
 
+export interface RoleBadge {
+  role: 'teacher' | 'subject_teacher' | 'housemaster' | 'approver' | 'finance';
+  label: string;
+  detail: string;
+  href: string;
+}
+
+// Present on every dashboard response regardless of which view is primary —
+// a staff member can hold several responsibilities at once (e.g. Class
+// Teacher + Housemaster), but the backend only ever returns ONE full view
+// (chosen by seniority). is_class_teacher is computed independently of
+// which view won (drives the sidebar's classTeacherOnly nav gating);
+// other_roles is a compact "you also..." strip for every other
+// responsibility the primary view doesn't already cover.
+export interface DashboardExtras {
+  is_class_teacher: boolean;
+  other_roles: RoleBadge[];
+}
+
 export interface AbsentStudent {
   id: string;
   name: string;
@@ -16,7 +35,7 @@ export interface ClassSnapshot {
   absent_students: AbsentStudent[];
 }
 
-export interface TeacherDashboard {
+export interface TeacherDashboard extends DashboardExtras {
   view: 'teacher';
   greeting_name: string;
   today_iso: string;
@@ -32,7 +51,7 @@ export interface ClassAttendanceLine {
   pct: number;
 }
 
-export interface AdminDashboard {
+export interface AdminDashboard extends DashboardExtras {
   view: 'admin';
   greeting_name: string;
   school_name: string;
@@ -47,14 +66,14 @@ export interface AdminDashboard {
   class_attendance: ClassAttendanceLine[];
 }
 
-export interface ApproverDashboard {
+export interface ApproverDashboard extends DashboardExtras {
   view: 'approver';
   greeting_name: string;
   pending_approvals: number;
   assessments_this_term: number;
 }
 
-export interface FinanceDashboard {
+export interface FinanceDashboard extends DashboardExtras {
   view: 'finance';
   greeting_name: string;
   term_expected: number;
@@ -72,7 +91,7 @@ export interface HouseSnapshot {
   off_campus_count: number;
 }
 
-export interface HousemasterDashboard {
+export interface HousemasterDashboard extends DashboardExtras {
   view: 'housemaster';
   greeting_name: string;
   my_houses: HouseSnapshot[];

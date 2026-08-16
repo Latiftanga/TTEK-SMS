@@ -8,6 +8,7 @@
   import ApproverView     from './ApproverView.svelte';
   import FinanceView      from './FinanceView.svelte';
   import HousemasterView  from './HousemasterView.svelte';
+  import OtherRolesStrip  from './OtherRolesStrip.svelte';
   import { setPageTitle } from '$lib/stores/title';
   setPageTitle('Dashboard');
 
@@ -18,11 +19,15 @@
     refetchOnWindowFocus: false,
   });
 
-  // Populate the permissions store so the sidebar can adapt
+  // Populate the permissions store so the sidebar can adapt. is_class_teacher
+  // comes straight from the backend now, computed independently of which
+  // view ended up primary — a Housemaster who's also a Class Teacher still
+  // gets the Students nav item, not just someone whose primary view happens
+  // to be 'teacher'.
   $effect(() => {
     if ($query.data) {
       userRole.set($query.data.view);
-      isClassTeacher.set($query.data.view === 'teacher' && $query.data.my_classes.length > 0);
+      isClassTeacher.set($query.data.is_class_teacher);
     }
   });
 </script>
@@ -55,4 +60,5 @@
   {:else if data.view === 'housemaster'}
     <HousemasterView {data} />
   {/if}
+  <OtherRolesStrip roles={data.other_roles} />
 {/if}

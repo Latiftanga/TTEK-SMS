@@ -145,3 +145,68 @@ async def test_housemaster_dashboard_multiple_houses(
     assert data["view"] == "housemaster"
     assert len(data["my_houses"]) == 2
     assert {h["id"] for h in data["my_houses"]} == {str(house_a.id), str(house_b.id)}
+
+
+# ── Multi-role: is_class_teacher + other_roles ───────────────────────────────
+# A staff member can genuinely hold several responsibilities at once (the
+# reported case: Class Teacher who's then also appointed Housemaster) — the
+# view cascade above only ever returns ONE full view by seniority, so these
+# two fields are what let the rest of the app (nav) and the dashboard itself
+# (the "you also..." strip) stay correct regardless of which view won.
+
+@pytest.mark.asyncio
+async def test_housemaster_who_is_also_class_teacher_keeps_teacher_badge(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear, academic_term: AcademicTerm, school_class: Class, redis_permissions: None,
+):
+    """housing.manage outranks the plain teacher fallback in the cascade, so
+    'housemaster' stays the primary view — but is_class_teacher must still
+    be true (nav correctness) and other_roles must surface the Class
+    Teacher responsibility the primary housemaster view doesn't cover."""
+    house = House(school_id=school.id, name="Eastern House", code="EAS", gender=HouseGender.MIXED)
+    db_session.add(house)
+    await db_session.flush()
+
+    hm_auth, staff = await _login_as_housemaster(client, auth, db_session, school)
+
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house.id, staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get("/dashboard", headers=hm_auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["view"] == "housemaster"
+    assert data["is_class_teacher"] is True
+    teacher_badges = [r for r in data["other_roles"] if r["role"] == "teacher"]
+    assert len(teacher_badges) == 1
+    assert "1 class" in teacher_badges[0]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_plain_teacher_dashboard_has_no_other_roles(
+    client: AsyncClient, db_session: AsyncSession, school: School,
+    staff_member: StaffMember, academic_year: AcademicYear, academic_term: AcademicTerm,
+    school_class: Class, redis_permissions: None,
+):
+    """The common case (one responsibility, no housing/finance/approval
+    role) must not show a pointless empty 'you also...' strip."""
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_member.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    auth = await _teacher_login(client, db_session, school, staff_member)
+    resp = await client.get("/dashboard", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["view"] == "teacher"
+    assert data["is_class_teacher"] is True
+    assert data["other_roles"] == []
