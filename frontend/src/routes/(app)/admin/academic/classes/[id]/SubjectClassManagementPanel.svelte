@@ -77,7 +77,7 @@
       <span class="rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">No teacher</span>
     {/if}
     {#if yearId && !editing}
-      <button onclick={startChange} class="text-xs font-medium transition hover:underline" style="color:var(--brand)">
+      <button onclick={startChange} class="flex min-h-[44px] items-center px-1 text-xs font-medium transition hover:underline" style="color:var(--brand)">
         {currentTeacher ? 'Change' : 'Assign'}
       </button>
     {/if}

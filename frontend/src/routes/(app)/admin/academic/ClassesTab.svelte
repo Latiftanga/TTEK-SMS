@@ -216,12 +216,13 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/>
                       </svg>
                     </a>
-                    <button onclick={() => editModal = cls} title="Edit"
-                      class="rounded-lg p-1.5 text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+                    <button onclick={() => editModal = cls} title="Edit" aria-label="Edit class"
+                      class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[var(--fg-subtle)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
                     </button>
-                    <button onclick={() => cls.is_active ? (confirmDeactivate = cls) : $toggleMut.mutate({ id: cls.id, is_active: true })} title={cls.is_active ? 'Deactivate' : 'Activate'}
-                      class="rounded-lg p-1.5 transition hover:bg-[var(--hover)] {cls.is_active ? 'text-[var(--fg-subtle)] hover:text-red-500' : 'text-[var(--fg-subtle)] hover:text-green-500'}">
+                    <button onclick={() => cls.is_active ? (confirmDeactivate = cls) : $toggleMut.mutate({ id: cls.id, is_active: true })}
+                      title={cls.is_active ? 'Deactivate' : 'Activate'} aria-label={cls.is_active ? 'Deactivate class' : 'Activate class'}
+                      class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition hover:bg-[var(--hover)] {cls.is_active ? 'text-[var(--fg-subtle)] hover:text-red-500' : 'text-[var(--fg-subtle)] hover:text-green-500'}">
                       {#if cls.is_active}
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                       {:else}

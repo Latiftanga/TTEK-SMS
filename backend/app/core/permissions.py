@@ -179,10 +179,19 @@ async def resolve_permissions(
 
         # Auto-derive CLASS_TEACHER and HOUSEMASTER positions from actual
         # assignments — staff don't get manually granted these roles.
+        # school_id filtered explicitly on both, not just implied by
+        # staff_member_id being unique to one school: without it, a
+        # cross-school ClassTeacher/HouseMaster row planted against this
+        # staff member's real id (e.g. via a missing ownership check
+        # elsewhere — see academic_teachers.py's assign_class_teacher) would
+        # still be picked up here and grant the position's permissions,
+        # even though the row belongs to a school this person doesn't work
+        # for.
         derived_codes: list[str] = []
         is_ct = await db.scalar(
             select(ClassTeacher.id).where(
                 ClassTeacher.staff_member_id == staff_member_id,
+                ClassTeacher.school_id == staff.school_id,
                 ClassTeacher.is_active == True,  # noqa: E712
             ).limit(1)
         )
@@ -192,6 +201,7 @@ async def resolve_permissions(
         is_hm = await db.scalar(
             select(HouseMaster.id).where(
                 HouseMaster.staff_member_id == staff_member_id,
+                HouseMaster.school_id == staff.school_id,
                 HouseMaster.is_active == True,  # noqa: E712
             ).limit(1)
         )

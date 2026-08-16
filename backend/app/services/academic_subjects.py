@@ -191,7 +191,9 @@ async def create_subject(
 ) -> Subject:
     if req.catalogue_id:
         cat = await db.get(SubjectCatalogue, req.catalogue_id)
-        if cat and cat.subject_type == SubjectType.ELECTIVE:
+        if not cat:
+            raise HTTPException(404, "Catalogue subject not found.")
+        if cat.subject_type == SubjectType.ELECTIVE:
             await _require_shs(school_id, db)
     subj = Subject(
         school_id=school_id,

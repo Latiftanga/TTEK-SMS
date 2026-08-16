@@ -3,19 +3,19 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.academic import SchoolLevel, SubjectType
 
 
 class AcademicYearCreate(BaseModel):
-    name: str  # "2024/2025"
+    name: str = Field(max_length=20)  # "2024/2025"
     start_date: date
     end_date: date
 
 
 class AcademicYearUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=20)
     start_date: date | None = None
     end_date: date | None = None
 
@@ -53,7 +53,7 @@ class AcademicYearRead(BaseModel):
 
 class AcademicTermCreate(BaseModel):
     term_number: int  # 1, 2, or 3
-    name: str         # "First Term", "Second Term", "Third Term"
+    name: str = Field(max_length=50)  # "First Term", "Second Term", "Third Term"
     start_date: date
     end_date: date
 
@@ -66,7 +66,7 @@ class AcademicTermCreate(BaseModel):
 
 
 class AcademicTermUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=50)
     start_date: date | None = None
     end_date: date | None = None
     block_owing_students: bool | None = None
@@ -84,13 +84,13 @@ class ProgrammeRead(BaseModel):
 
 
 class ProgrammeCreate(BaseModel):
-    code: str
-    name: str
+    code: str = Field(max_length=30)
+    name: str = Field(max_length=100)
 
 
 class ProgrammeUpdate(BaseModel):
-    code: str | None = None
-    name: str | None = None
+    code: str | None = Field(default=None, max_length=30)
+    name: str | None = Field(default=None, max_length=100)
     is_active: bool | None = None
 
 
@@ -111,13 +111,13 @@ class CatalogueRead(BaseModel):
 
 class SubjectCreate(BaseModel):
     catalogue_id: uuid.UUID | None = None   # link to national catalogue or None for custom
-    code: str
-    name: str
+    code: str = Field(max_length=20)
+    name: str = Field(max_length=100)
 
 
 class SubjectUpdate(BaseModel):
-    code: str | None = None
-    name: str | None = None
+    code: str | None = Field(default=None, max_length=20)
+    name: str | None = Field(default=None, max_length=100)
     is_active: bool | None = None
 
 
@@ -133,15 +133,15 @@ class SubjectRead(BaseModel):
 
 
 class ClassCreate(BaseModel):
-    level: str          # "SHS 1", "SHS 2", "JHS 1", "Primary 6" etc.
+    level: str = Field(max_length=20)          # "SHS 1", "SHS 2", "JHS 1", "Primary 6" etc.
     year_group: int     # 1, 2, 3 within the level
     programme_id: uuid.UUID | None = None
-    stream: str | None = None   # "A", "B", "Gold", "Blue" etc.
+    stream: str | None = Field(default=None, max_length=10)   # "A", "B", "Gold", "Blue" etc.
     capacity: int | None = None
 
 
 class ClassUpdate(BaseModel):
-    stream: str | None = None
+    stream: str | None = Field(default=None, max_length=10)
     capacity: int | None = None
     is_active: bool | None = None
     programme_id: uuid.UUID | None = None  # None = leave unchanged

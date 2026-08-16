@@ -37,7 +37,7 @@
         <h2 class="text-base font-semibold text-[var(--fg)]">Edit Class</h2>
         <p class="text-xs text-[var(--fg-muted)]">{cls.display_name}</p>
       </div>
-      <button onclick={onClose} class="rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+      <button onclick={onClose} aria-label="Close" class="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
@@ -50,7 +50,7 @@
       </label>
       <label class="block">
         <span class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Capacity</span>
-        <input bind:value={capacity} type="number" min="1" max="999" placeholder="e.g. 40"
+        <input bind:value={capacity} type="number" inputmode="numeric" min="1" max="999" placeholder="e.g. 40"
           class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] transition focus:border-[var(--brand)] focus:outline-none" />
       </label>
       {#if error}<p class="text-xs text-red-500">{error}</p>{/if}

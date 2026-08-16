@@ -7,6 +7,7 @@
   import { setPageTitle } from '$lib/stores/title';
   import { toast } from '$lib/stores/toast';
   import { apiError } from '$lib/utils';
+  import { portal } from '$lib/actions/portal';
   import PageHeader from '$lib/components/PageHeader.svelte';
 
   setPageTitle('Graduation');
@@ -207,30 +208,35 @@
 
 <!-- Confirm dialog -->
 {#if confirm}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
-      <h2 class="mb-1 text-base font-semibold text-[var(--fg)]">Confirm graduation</h2>
-      <p class="mb-4 text-sm text-[var(--fg-muted)]">
-        This will record outcomes for {toProcess.length} student{toProcess.length !== 1 ? 's' : ''}{deactivate ? ' and deactivate their accounts.' : '.'}
-      </p>
-
-      <div class="mb-4 divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] bg-[var(--bg)]">
-        {#each toProcess.slice(0, 6) as s}
-          <div class="flex items-center justify-between px-3 py-2 text-xs">
-            <span class="font-medium text-[var(--fg)]">{s.display_name}</span>
-            <span class="{ACTION_COLORS[actions[s.id] ?? 'SKIP']} font-semibold">
-              {ACTION_LABELS[actions[s.id] ?? 'SKIP']}
-            </span>
-          </div>
-        {/each}
-        {#if toProcess.length > 6}
-          <div class="px-3 py-2 text-xs text-[var(--fg-muted)]">
-            …and {toProcess.length - 6} more
-          </div>
-        {/if}
+  <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="flex w-full max-w-sm flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl"
+         style="max-height: 90vh">
+      <div class="shrink-0 px-6 pt-6">
+        <h2 class="mb-1 text-base font-semibold text-[var(--fg)]">Confirm graduation</h2>
+        <p class="text-sm text-[var(--fg-muted)]">
+          This will record outcomes for {toProcess.length} student{toProcess.length !== 1 ? 's' : ''}{deactivate ? ' and deactivate their accounts.' : '.'}
+        </p>
       </div>
 
-      <div class="flex gap-3">
+      <div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div class="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] bg-[var(--bg)]">
+          {#each toProcess.slice(0, 6) as s}
+            <div class="flex items-center justify-between px-3 py-2 text-xs">
+              <span class="font-medium text-[var(--fg)]">{s.display_name}</span>
+              <span class="{ACTION_COLORS[actions[s.id] ?? 'SKIP']} font-semibold">
+                {ACTION_LABELS[actions[s.id] ?? 'SKIP']}
+              </span>
+            </div>
+          {/each}
+          {#if toProcess.length > 6}
+            <div class="px-3 py-2 text-xs text-[var(--fg-muted)]">
+              …and {toProcess.length - 6} more
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <div class="flex shrink-0 gap-3 border-t border-[var(--border)] px-6 py-4">
         <button onclick={() => confirm = false}
           class="flex-1 rounded-xl border border-[var(--border)] py-2 text-sm font-medium
                  text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">

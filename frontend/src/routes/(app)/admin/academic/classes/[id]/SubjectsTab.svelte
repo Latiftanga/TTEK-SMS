@@ -218,11 +218,11 @@
 
             <!-- Actions -->
             <button onclick={() => expandedSubjectId = expandedSubjectId === cs.subject_id ? null : cs.subject_id}
-              class="shrink-0 text-xs font-medium transition hover:underline" style="color:var(--brand)">
+              class="flex min-h-[44px] shrink-0 items-center px-2 text-xs font-medium transition hover:underline" style="color:var(--brand)">
               {expandedSubjectId === cs.subject_id ? 'Hide' : 'Manage teacher & students'}
             </button>
             <button onclick={() => confirmRemoveId = cs.subject_id} disabled={$removeMut.isPending}
-              class="shrink-0 text-xs text-[var(--fg-subtle)] transition hover:text-red-500 disabled:opacity-40">
+              class="flex min-h-[44px] shrink-0 items-center px-2 text-xs text-[var(--fg-subtle)] transition hover:text-red-500 disabled:opacity-40">
               Remove
             </button>
           </div>

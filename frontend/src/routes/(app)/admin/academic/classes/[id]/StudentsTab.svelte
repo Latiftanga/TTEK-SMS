@@ -83,7 +83,7 @@
         {/if}
         {#if classActive}
           <button onclick={() => showAssign = !showAssign}
-            class="flex shrink-0 items-center gap-1 text-xs font-semibold transition hover:opacity-70" style="color:var(--brand)">
+            class="flex min-h-[44px] shrink-0 items-center gap-1 px-2 text-xs font-semibold transition hover:opacity-70" style="color:var(--brand)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
             </svg>

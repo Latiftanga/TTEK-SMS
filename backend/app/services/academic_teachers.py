@@ -1,12 +1,31 @@
 """Academic teacher assignment service: class teacher and subject teacher assignments."""
 from __future__ import annotations
 import uuid
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import ClassTeacher, SubjectTeacher
+from app.models.academic import AcademicYear, ClassTeacher, SubjectTeacher
+from app.models.staff import StaffMember
 from app.schemas.academic import ClassTeacherAssign, SubjectTeacherAssign
 from app.services.academic_class import get_active_class
+from app.services.subject_roster import class_subject_exists
+
+
+async def _assert_staff_owned(staff_member_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> None:
+    exists = await db.scalar(
+        select(StaffMember.id).where(StaffMember.id == staff_member_id, StaffMember.school_id == school_id)
+    )
+    if not exists:
+        raise HTTPException(404, "Staff member not found.")
+
+
+async def _assert_year_owned(academic_year_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> None:
+    exists = await db.scalar(
+        select(AcademicYear.id).where(AcademicYear.id == academic_year_id, AcademicYear.school_id == school_id)
+    )
+    if not exists:
+        raise HTTPException(404, "Academic year not found.")
 
 
 async def assign_class_teacher(
@@ -16,6 +35,8 @@ async def assign_class_teacher(
     db: AsyncSession,
 ) -> ClassTeacher:
     await get_active_class(class_id, school_id, db)
+    await _assert_staff_owned(req.staff_member_id, school_id, db)
+    await _assert_year_owned(req.academic_year_id, school_id, db)
 
     existing = await db.scalar(
         select(ClassTeacher).where(
@@ -48,6 +69,15 @@ async def assign_subject_teacher(
     db: AsyncSession,
 ) -> SubjectTeacher:
     await get_active_class(class_id, school_id, db)
+    await _assert_staff_owned(req.staff_member_id, school_id, db)
+    await _assert_year_owned(req.academic_year_id, school_id, db)
+    # Reuses the same check register_subjects/create_assessment already use:
+    # a subject teacher can only be assigned to a subject actually on this
+    # class's curriculum (and, as a side effect, this closes the same
+    # cross-school-id gap assign_subjects() was already fixed for — a
+    # subject_id from another school can never be an active ClassSubject here.
+    if not await class_subject_exists(class_id, req.subject_id, school_id, db):
+        raise HTTPException(404, "That subject is not on this class's curriculum.")
 
     existing = await db.scalar(
         select(SubjectTeacher).where(

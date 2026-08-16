@@ -115,7 +115,7 @@
           </div>
           <div>
             <label class="lx">Capacity</label>
-            <input type="number" min="1" bind:value={editCapacity} placeholder="e.g. 40" class="inp mt-1" />
+            <input type="number" inputmode="numeric" min="1" bind:value={editCapacity} placeholder="e.g. 40" class="inp mt-1" />
           </div>
           <div class="flex items-end pb-1">
             <label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--fg)]">

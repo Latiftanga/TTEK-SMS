@@ -4,6 +4,7 @@ Run inside Docker: docker compose exec api pytest app/tests/test_academic.py -v
 
 Fixtures (school, school_admin, auth) are defined in conftest.py.
 """
+import uuid
 from datetime import date
 
 import pytest
@@ -76,6 +77,16 @@ async def test_duplicate_year_name_rejected(client: AsyncClient, auth: dict):
     await client.post("/academic/years", json=payload, headers=auth)
     resp = await client.post("/academic/years", json=payload, headers=auth)
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_create_year_rejects_oversized_name(client: AsyncClient, auth: dict):
+    """name is String(20) at the DB layer — an oversized value used to hit
+    an unhandled IntegrityError (500) instead of a clean 422."""
+    resp = await client.post("/academic/years", json={
+        "name": "X" * 21, "start_date": "2024-09-02", "end_date": "2025-07-31",
+    }, headers=auth)
+    assert resp.status_code == 422
 
 
 # ── Academic Terms ────────────────────────────────────────────────────────────
@@ -407,6 +418,26 @@ async def test_create_creche_class_rejects_nonone_year_group(client: AsyncClient
     assert "year_group" in resp.json()["detail"].lower() or "creche" in resp.json()["detail"].lower()
 
 
+@pytest.mark.asyncio
+async def test_duplicate_class_rejected_at_db_level(
+    db_session: AsyncSession, school: School,
+):
+    """Proves the COALESCE'd unique index itself holds (a TOCTOU race could
+    otherwise slip past create_class()'s own pre-insert SELECT), not just the
+    service layer's check — same shape as the AcademicYear/AcademicTerm
+    "one current" DB-level tests above. Both rows share the Basic-school
+    shape (programme_id=NULL, stream=NULL) specifically, since that's the
+    case a plain UniqueConstraint would silently fail to catch (NULL != NULL)."""
+    from app.models.academic import Class
+
+    db_session.add(Class(school_id=school.id, level="JHS", year_group=1, is_active=True))
+    await db_session.flush()
+
+    db_session.add(Class(school_id=school.id, level="JHS", year_group=1, is_active=True))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
 async def _second_shs_school_auth(client: AsyncClient, db_session: AsyncSession) -> dict:
     """Create a second SHS school + superadmin and return their auth headers."""
     region = await db_session.scalar(select(GhanaRegion).limit(1))
@@ -591,6 +622,27 @@ async def test_create_and_list_subjects(client: AsyncClient, auth: dict):
     resp = await client.get("/academic/subjects", headers=auth)
     assert resp.status_code == 200
     assert len(resp.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_subject_rejects_bogus_catalogue_id(client: AsyncClient, auth: dict):
+    """A nonexistent catalogue_id previously skipped the electives/SHS guard
+    silently and fell through to an unhandled IntegrityError (500) on
+    insert — must be a clean 404 instead."""
+    resp = await client.post("/academic/subjects", json={
+        "catalogue_id": str(uuid.uuid4()), "code": "BOGUS", "name": "Bogus Catalogue Link",
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_subject_rejects_oversized_code(client: AsyncClient, auth: dict):
+    """code is String(20) at the DB layer — an oversized value used to hit an
+    unhandled IntegrityError (500) instead of a clean 422."""
+    resp = await client.post("/academic/subjects", json={
+        "code": "X" * 21, "name": "Whatever",
+    }, headers=auth)
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -810,6 +862,155 @@ async def test_responsibilities_shows_subject_assignment_by_year(
     assert assignment["academic_year_id"] == str(academic_year.id)
     assert assignment["academic_year_name"] == academic_year.name
     assert "academic_term_id" not in assignment
+
+
+# ── Cross-school ownership on teacher assignment ────────────────────────────────
+# assign_class_teacher/assign_subject_teacher previously trusted
+# staff_member_id/academic_year_id (and, for the latter, subject_id) from the
+# client with zero ownership check — the same bug shape already closed for
+# assign_subjects()'s subject_ids (test_assign_subject_rejects_other_schools_subject
+# above). Also closes a permission-escalation side effect: core/permissions.py's
+# CLASS_TEACHER/HOUSEMASTER auto-derivation only ever filtered by
+# staff_member_id, so a planted cross-school ClassTeacher row would have
+# granted the victim staff member CLASS_TEACHER's permissions at a school
+# they don't work for.
+
+@pytest.mark.asyncio
+async def test_assign_class_teacher_rejects_other_schools_staff(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, academic_year,
+):
+    other_auth = await _basic_school_auth(client, db_session)
+    other_staff_id = (await client.post("/staff", json={
+        "staff_number": "OTH-CT", "first_name": "Other", "last_name": "Teacher",
+    }, headers=other_auth)).json()["id"]
+
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/academic/classes/{class_id}/class-teacher", json={
+        "staff_member_id": other_staff_id, "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_assign_class_teacher_rejects_other_schools_year(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, staff_member,
+):
+    other_auth = await _second_shs_school_auth(client, db_session)
+    other_year_id = (await client.post("/academic/years", json={
+        "name": "2030/2031", "start_date": "2030-09-01", "end_date": "2031-07-31",
+    }, headers=other_auth)).json()["id"]
+
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "B",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/academic/classes/{class_id}/class-teacher", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": other_year_id,
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_assign_subject_teacher_rejects_other_schools_staff(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, academic_year,
+):
+    other_auth = await _basic_school_auth(client, db_session)
+    other_staff_id = (await client.post("/staff", json={
+        "staff_number": "OTH-ST", "first_name": "Other", "last_name": "Teacher",
+    }, headers=other_auth)).json()["id"]
+    class_id, subject_id = await _class_with_subject(client, auth)
+
+    resp = await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": other_staff_id,
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_assign_subject_teacher_rejects_subject_not_on_curriculum(
+    client: AsyncClient, auth: dict, staff_member, academic_year,
+):
+    """subject_id must be an active ClassSubject on this class — mirrors
+    register_subjects/create_assessment's same guard, and as a side effect
+    closes the same cross-school subject_id gap assign_subjects() already
+    had fixed (a cross-school subject_id can never be an active ClassSubject
+    on a class it doesn't belong to)."""
+    class_id = (await client.post("/academic/classes", json={
+        "level": "SHS", "year_group": 1, "stream": "C",
+    }, headers=auth)).json()["id"]
+    # Real subject, same school, but never attached to this class's curriculum.
+    subject_id = (await client.post("/academic/subjects", json={
+        "code": "UNATT", "name": "Unattached Subject",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.post(f"/academic/classes/{class_id}/subject-teachers", json={
+        "subject_id": subject_id, "staff_member_id": str(staff_member.id),
+        "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cross_school_class_teacher_does_not_leak_permission(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, academic_year, school,
+    redis_permissions: None,
+):
+    """Even bypassing the ownership check entirely (simulating the exact
+    planted-row scenario the fix above prevents from happening via the API),
+    resolve_permissions()'s CLASS_TEACHER auto-derivation must not grant the
+    position's permissions to a staff member for a ClassTeacher row that
+    belongs to a DIFFERENT school than the one they're logging into."""
+    from app.models.academic import Class, ClassTeacher
+    from app.models.staff import StaffMember
+
+    other_auth = await _second_shs_school_auth(client, db_session)
+    other_school = await db_session.scalar(
+        select(School).where(School.school_code == "SHS002")
+    )
+
+    # A real staff member at THIS school, with no ClassTeacher row here at all.
+    staff_resp = await client.post("/staff", json={
+        "staff_number": "LEAK-CT", "first_name": "Leak", "last_name": "Target",
+    }, headers=auth)
+    staff_id = staff_resp.json()["id"]
+
+    victim_email = "leak-target@presec-test.edu.gh"
+    db_session.add(User(
+        school_id=school.id, login_type=LoginType.EMAIL, email=victim_email,
+        password_hash=hash_password("Whatever123!"), is_active=True, staff_member_id=staff_id,
+    ))
+    await db_session.flush()
+
+    # Directly plant a ClassTeacher row belonging to the OTHER school,
+    # pointing at this staff member's real id — bypassing the API's own
+    # ownership check on purpose, to prove the derivation itself is safe
+    # even if some other path ever let this data exist.
+    other_class = Class(school_id=other_school.id, level="SHS", year_group=1, stream="Z", is_active=True)
+    db_session.add(other_class)
+    await db_session.flush()
+    db_session.add(ClassTeacher(
+        school_id=other_school.id, class_id=other_class.id,
+        staff_member_id=uuid.UUID(staff_id), academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL", "identifier": victim_email, "password": "Whatever123!",
+        "school_code": school.school_code,
+    })
+    assert resp.status_code == 200, resp.text
+    victim_auth = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    # CLASS_TEACHER grants students.create — a plain staff member with zero
+    # legitimate permissions must not be able to create a student.
+    resp = await client.post("/students", json={
+        "first_name": "Should", "last_name": "Fail",
+    }, headers=victim_auth)
+    assert resp.status_code == 403
 
 
 # ── SHS / BASIC guards ────────────────────────────────────────────────────────

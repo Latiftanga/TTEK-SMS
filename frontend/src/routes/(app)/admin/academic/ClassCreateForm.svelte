@@ -97,7 +97,7 @@
     </div>
     <div>
       <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Capacity (optional)</label>
-      <input type="number" bind:value={form.capacity} placeholder="e.g. 40"
+      <input type="number" inputmode="numeric" bind:value={form.capacity} placeholder="e.g. 40"
         class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
     </div>
   </div>

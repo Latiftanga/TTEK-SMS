@@ -147,6 +147,23 @@ class Subject(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
 class Class(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "class"
     # Class name is NEVER stored — computed: level + year_group + programme + stream
+    __table_args__ = (
+        # create_class()'s own pre-insert duplicate check (academic_class.py)
+        # was previously the only thing enforcing this — a TOCTOU race on two
+        # near-simultaneous requests could still insert two rows with an
+        # identical displayed name. COALESCE'd rather than a plain
+        # UniqueConstraint because programme_id/stream are nullable and
+        # Postgres treats NULL != NULL in a plain unique constraint, which
+        # would silently fail to catch the most common case (a Basic school,
+        # where both are always NULL).
+        Index(
+            "uq_class_school_level_year_programme_stream",
+            "school_id", "level", "year_group",
+            text("coalesce(programme_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
+            text("coalesce(stream, '')"),
+            unique=True,
+        ),
+    )
 
     level: Mapped[str] = mapped_column(String(20), nullable=False)
     year_group: Mapped[int] = mapped_column(Integer, nullable=False)
