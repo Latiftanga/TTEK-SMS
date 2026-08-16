@@ -72,7 +72,7 @@ export const assignHouseMaster = (
   houseId: string,
   req: { staff_member_id: string; academic_year_id: string }
 ): Promise<HouseMasterRead> =>
-  api.post(`/housing/houses/${houseId}/house-master`, req).then(r => r.data);
+  api.post(`/housing/houses/${houseId}/master`, req).then(r => r.data);
 
 export const getHouse = (id: string): Promise<House> =>
   api.get(`/housing/houses/${id}`).then(r => r.data);
