@@ -78,32 +78,62 @@ async def get_category_id(db, code: str) -> object:
     return cat.id if cat else None
 
 
-async def get_or_create_position(db, school_id, name: str, perms: list[str]) -> StaffPosition:
+async def get_template_position(db, code: str) -> StaffPosition:
+    """Look up one of the real shared templates seed_reference_data.py owns
+    (school_id IS NULL) — this script used to hand-roll its own ad hoc
+    "School Administrator"/"Finance Officer"/"Teacher" positions with a
+    second, smaller, partly-invalid permission list (fees.create and
+    staff.approve_leave aren't real permissions — see PERMISSION_MATRIX),
+    a second position-definition path that duplicated HEAD/BURSAR/TEACHER
+    under different names. Reusing the real templates means there is
+    exactly one place position permissions are ever defined."""
     pos = await db.scalar(
+        select(StaffPosition).where(StaffPosition.code == code, StaffPosition.school_id.is_(None))
+    )
+    assert pos is not None, f"StaffPosition {code!r} not found — run seed_reference_data.py first."
+    return pos
+
+
+async def _migrate_off_legacy_ad_hoc_position(db, school_id, staff_member_id) -> None:
+    """Self-heal a demo staff member created before this script stopped
+    hand-rolling its own "School Administrator"/"Finance Officer"/per-school
+    "Teacher" positions (see get_template_position's docstring). Unlinks any
+    such legacy position still held by this staff member and, if nobody else
+    is left holding it, deletes the now-orphaned row entirely — so re-running
+    this script against a stack that still carries the old duplicate data
+    converges it onto the single real template, not just adds to it."""
+    legacy = (await db.scalars(
         select(StaffPosition).where(
             StaffPosition.school_id == school_id,
-            StaffPosition.name == name,
+            StaffPosition.is_template.is_(False),
+            (StaffPosition.name.in_(["School Administrator", "Finance Officer"]))
+            | (StaffPosition.code == "TEACHER"),
         )
-    )
-    if not pos:
-        code = name.upper().replace(" ", "_")[:50]
-        pos = StaffPosition(school_id=school_id, name=name, code=code, is_template=False)
-        db.add(pos)
-        await db.flush()
-
-    existing_perms = {
-        (p.module, p.action)
-        for p in await db.scalars(
-            select(PositionPermission).where(PositionPermission.position_id == pos.id)
+    )).all()
+    for pos in legacy:
+        link = await db.scalar(
+            select(staff_member_positions).where(
+                staff_member_positions.c.staff_member_id == staff_member_id,
+                staff_member_positions.c.position_id == pos.id,
+            )
         )
-    }
-    for perm_str in perms:
-        module, action = perm_str.split(".")
-        if (module, action) not in existing_perms:
-            db.add(PositionPermission(
-                position_id=pos.id, module=module, action=action, is_allowed=True,
-            ))
-    return pos
+        if link is None:
+            continue
+        await db.execute(
+            staff_member_positions.delete().where(
+                staff_member_positions.c.staff_member_id == staff_member_id,
+                staff_member_positions.c.position_id == pos.id,
+            )
+        )
+        print(f"  Migrated off legacy position: {pos.name}")
+        still_used = await db.scalar(
+            select(staff_member_positions).where(staff_member_positions.c.position_id == pos.id)
+        )
+        if still_used is None:
+            await db.execute(
+                PositionPermission.__table__.delete().where(PositionPermission.position_id == pos.id)
+            )
+            await db.delete(pos)
 
 
 async def create_staff_user(
@@ -120,6 +150,7 @@ async def create_staff_user(
                 print(f"  Patched category for {email}")
         # Ensure position link
         if existing_user.staff_member_id:
+            await _migrate_off_legacy_ad_hoc_position(db, school_id, existing_user.staff_member_id)
             has_pos = await db.scalar(
                 select(staff_member_positions).where(
                     staff_member_positions.c.staff_member_id == existing_user.staff_member_id,
@@ -190,30 +221,9 @@ async def seed_school(db, cfg: dict, region_id, district_id) -> None:
 
     school_id = school.id
 
-    admin_pos = await get_or_create_position(db, school_id, "School Administrator", [
-        "school.view", "school.edit", "school.manage_users",
-        "academic.view", "academic.create", "academic.edit", "academic.delete",
-        "students.view", "students.create", "students.edit",
-        "staff.view", "staff.create", "staff.edit", "staff.delete", "staff.approve_leave",
-        "attendance.view", "attendance.record", "attendance.approve",
-        "assessments.view", "assessments.enter_scores", "assessments.approve_scores",
-        "fees.view", "fees.create", "fees.collect",
-        "housing.view", "housing.manage",
-        "reports.view", "reports.generate",
-    ])
-    teacher_pos = await get_or_create_position(db, school_id, "Teacher", [
-        "school.view",
-        "students.view", "students.create", "students.edit",
-        "academic.view",
-        "attendance.view", "attendance.record",
-        "assessments.view", "assessments.enter_scores",
-        "fees.view",
-        "reports.view",
-    ])
-    finance_pos = await get_or_create_position(db, school_id, "Finance Officer", [
-        "students.view",
-        "fees.view", "fees.create", "fees.collect",
-    ])
+    admin_pos   = await get_template_position(db, "HEAD")
+    teacher_pos = await get_template_position(db, "TEACHER")
+    finance_pos = await get_template_position(db, "BURSAR")
 
     admin_cat   = await get_category_id(db, CATEGORY_BY_ROLE["admin"])
     teacher_cat = await get_category_id(db, CATEGORY_BY_ROLE["teacher"])

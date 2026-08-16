@@ -22,16 +22,24 @@ from app.core.student_scope import (
     resolve_term_enrollment_scope,
 )
 from app.models.academic import AcademicYear, Class, ClassTeacher, SubjectTeacher
-from app.models.auth import LoginType, StaffPosition, User
+from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.models.students import Student, StudentClassAssignment
+from app.tests.legacy_position_perms import LEGACY_POSITION_PERMISSIONS
 
 
 async def _make_staff_with_position(
     db_session: AsyncSession, school: School, position_code: str, suffix: str,
 ) -> tuple[StaffMember, User]:
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    if pos is None and position_code in LEGACY_POSITION_PERMISSIONS:
+        pos = StaffPosition(school_id=school.id, code=position_code, name=position_code.title(), is_template=False)
+        db_session.add(pos)
+        await db_session.flush()
+        for module, action in LEGACY_POSITION_PERMISSIONS[position_code]:
+            db_session.add(PositionPermission(position_id=pos.id, module=module, action=action, is_allowed=True))
+        await db_session.flush()
     assert pos is not None, "Run seed_reference_data.py first"
 
     staff = StaffMember(

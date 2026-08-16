@@ -115,8 +115,8 @@ async def _assert_entity_access(
     students.delete holders and the same broad-access permissions that
     module already treats as unrestricted), OR — write side only — an
     active HouseMaster of the house this student is currently assigned to.
-    HOUSEMASTER/ASSISTANT_HEAD_BOARDING hold documents.manage specifically
-    for boarding paperwork (exeat letters, incident forms), but the plain
+    HOUSEMASTER holds documents.manage specifically for boarding paperwork
+    (exeat letters, incident forms), but the plain
     Category A pastoral-write check (ClassTeacher only) never considered
     that role — without this, the permission grant was silently unusable
     for the students it was actually meant to cover. A staff member's

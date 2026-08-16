@@ -113,7 +113,24 @@ PUBLIC_HOLIDAYS = [
 ]
 
 # Authority roles — system permissions only.
-# These are POSITIONS (what gives you system access), not job classes.
+# These are POSITIONS (what gives you system access), not job classes — a
+# staff member's actual job title/rank (Deputy Headmaster, HOD, Examination
+# Officer, Assistant Head, ...) is tracked separately via StaffRank/
+# StaffCategory (GES_RANKS below), which already has real fidelity for
+# exactly those titles. Deliberately just 5 templates, not a preset per GES
+# title: HEAD/TEACHER/BURSAR are manually assigned; CLASS_TEACHER/
+# HOUSEMASTER are auto-derived (never manually assigned — see
+# core/permissions.py::resolve_permissions's DERIVED_CODES) from real
+# ClassTeacher/HouseMaster assignment rows, so their templates must stay
+# even though nobody picks them from a list. Anyone whose real delegated
+# authority doesn't match one of these 5 (a Deputy Head, an Exam Officer, an
+# Assistant Head of any portfolio, ...) gets it via a personal permission
+# override on a specific staff member (admin/staff/[id] > Permissions —
+# StaffPermission, resolve_permissions()'s Layer 1, beats position defaults)
+# rather than a nationwide-fixed permission bundle standing in for a title
+# that in practice varies school to school. (Previously seeded 6 more
+# templates for exactly those titles — removed as redundant with the
+# per-person override path, which already existed and already worked.)
 # code, name, permissions: list of (module, action)
 STAFF_POSITIONS = [
     ("HEAD", "Headmaster / Headmistress", [
@@ -132,85 +149,6 @@ STAFF_POSITIONS = [
         ("assessments", "record_behaviour"),
         ("fees", "view"), ("fees", "collect"), ("fees", "manage"),
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
-        ("reports", "view"), ("reports", "generate"),
-        ("documents", "view"), ("documents", "manage"),
-    ]),
-    ("DEPUTY_HEAD", "Deputy Headmaster", [
-        ("school", "view"), ("school", "edit"),
-        ("staff", "view"), ("staff", "create"), ("staff", "edit"),
-        # students.delete is the module's de-facto "admin tier" bypass (see
-        # core/student_scope.py) — grants unrestricted student access (not
-        # scoped to a specific ClassTeacher assignment) plus the
-        # transfer-approval queue and year-end actions.
-        ("students", "view"), ("students", "create"), ("students", "edit"), ("students", "delete"),
-        ("academic", "view"), ("academic", "create"), ("academic", "edit"),
-        ("attendance", "view"), ("attendance", "record"), ("attendance", "approve"),
-        ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
-        ("assessments", "record_behaviour"),
-        ("fees", "view"), ("fees", "collect"),
-        ("housing", "view"), ("housing", "assign"),
-        ("reports", "view"), ("reports", "generate"),
-        ("documents", "view"), ("documents", "manage"),
-    ]),
-    ("ASSISTANT_HEAD_ACADEMICS", "Assistant Head (Academics)", [
-        # Per the staff-roles spec: oversees/approves subject-class
-        # registrations and monitors attendance/assessment records
-        # school-wide — a step above HOD (department-level) in seniority,
-        # so this is HOD's set plus attendance.approve, the one thing HOD
-        # itself lacks that would otherwise leave attendance oversight
-        # scoped to just their own ClassTeacher assignment (see
-        # core/teacher_scope.py::resolve_attendance_scope's bypass).
-        # No new approval workflow or anomaly-flagging yet — deferred.
-        ("school", "view"),
-        ("staff", "view"),
-        ("students", "view"), ("students", "edit"), ("students", "delete"),
-        ("academic", "view"), ("academic", "edit"),
-        ("attendance", "view"), ("attendance", "record"), ("attendance", "approve"),
-        ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
-        ("assessments", "record_behaviour"),
-        ("reports", "view"), ("reports", "generate"),
-        ("documents", "view"), ("documents", "manage"),
-    ]),
-    ("ASSISTANT_HEAD_ADMINISTRATION", "Assistant Head (Administration)", [
-        # General school administration/records/staff-facing portfolio — no
-        # close existing analog, built fresh from the spec's "Administration"
-        # portfolio description. Deliberately excludes school.manage_users
-        # (HEAD-only), academic/assessments/attendance (Academics portfolio's
-        # job), fees (BURSAR's job), and housing (Domestic/Boarding's job).
-        ("school", "view"), ("school", "edit"),
-        ("staff", "view"), ("staff", "create"), ("staff", "edit"),
-        ("students", "view"),
-        ("reports", "view"), ("reports", "generate"),
-        ("documents", "view"), ("documents", "manage"),
-    ]),
-    ("ASSISTANT_HEAD_BOARDING", "Assistant Head (Domestic/Boarding)", [
-        # Same permission set as HOUSEMASTER — Housing has no per-house
-        # scoping mechanism today (unlike Attendance/Assessments/Students),
-        # so a Housemaster is already unrestricted across every house in the
-        # school; this position is currently functionally identical to
-        # Housemaster until Housing gets its own scoping fix (a separate,
-        # pre-existing gap, not addressed here). Kept as a distinct named
-        # position anyway since the spec asks for a "Domestic/Boarding"
-        # portfolio appointment distinct from an individual house's
-        # Housemaster, organizationally if not (yet) technically.
-        ("school", "view"),
-        ("students", "view"),
-        ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
-        ("attendance", "view"), ("attendance", "record"),
-        ("reports", "view"), ("reports", "generate"),
-        ("documents", "view"), ("documents", "manage"),
-    ]),
-    ("HOD", "Head of Department", [
-        ("school", "view"),
-        ("staff", "view"),
-        # students.delete — see the DEPUTY_HEAD comment above; a department
-        # head needs unrestricted student access across their department,
-        # not just the one class (if any) they happen to be ClassTeacher of.
-        ("students", "view"), ("students", "edit"), ("students", "delete"),
-        ("academic", "view"), ("academic", "edit"),
-        ("attendance", "view"), ("attendance", "record"),
-        ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
-        ("assessments", "record_behaviour"),
         ("reports", "view"), ("reports", "generate"),
         ("documents", "view"), ("documents", "manage"),
     ]),
@@ -252,15 +190,6 @@ STAFF_POSITIONS = [
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
         ("attendance", "view"), ("attendance", "record"),
         ("reports", "view"),
-        ("documents", "view"), ("documents", "manage"),
-    ]),
-    ("EXAM_OFFICER", "Examination Officer", [
-        ("school", "view"),
-        ("students", "view"),
-        ("academic", "view"), ("academic", "edit"),
-        ("assessments", "view"), ("assessments", "enter_scores"), ("assessments", "approve_scores"),
-        ("assessments", "record_behaviour"),
-        ("reports", "view"), ("reports", "generate"),
         ("documents", "view"), ("documents", "manage"),
     ]),
     ("BURSAR", "Bursar / Finance Officer", [

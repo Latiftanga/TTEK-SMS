@@ -188,10 +188,21 @@ class StaffPosition(Base, UUIDPrimaryKey, TimestampMixin):
     A named role that determines a staff member's default permissions.
 
     System-wide template positions (is_template=True) have school_id=NULL and
-    are seeded by seed_reference_data.py.  Schools may create their own custom
-    positions (is_template=False, school_id set) that inherit from no template.
+    are seeded by seed_reference_data.py. A school can fork one of these on
+    first edit (routers/permissions.py::update_position_permissions) into its
+    own school-scoped, non-template copy (school_id set) — there is no way to
+    author a wholly new position from scratch, only to customize a template.
 
-    The 6 seeded templates are: HEAD, DEPUTY, TEACHER, BURSAR, HOUSEMASTER, SECRETARY.
+    The 5 seeded templates are: HEAD, TEACHER, BURSAR, CLASS_TEACHER,
+    HOUSEMASTER. CLASS_TEACHER/HOUSEMASTER are never manually assigned — they
+    exist only as permission templates for the derived-role lookup in
+    core/permissions.py::resolve_permissions (a staff member gets them
+    automatically from an active ClassTeacher/HouseMaster assignment row).
+    Any other delegated authority (Deputy Head, HOD, Exam Officer, an
+    Assistant Head of any portfolio, ...) is granted per staff member via a
+    personal permission override (StaffPermission), not a named position —
+    those titles vary too much school to school for one nationwide preset to
+    fit every case.
     """
     __tablename__ = "staff_position"
 

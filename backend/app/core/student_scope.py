@@ -9,8 +9,9 @@ as this module's de-facto "senior/admin tier" action. Reusing it (rather
 than adding a new `students.manage` permission) keeps the students module
 at 4 actions instead of 5.
 
-Senior/administrative staff (`students.delete` holders — HEAD, and per
-this change DEPUTY_HEAD/HOD — plus superadmin) are never scoped: they need
+Senior/administrative staff (`students.delete` holders — HEAD by default, or
+anyone else granted it via a personal permission override — plus superadmin)
+are never scoped: they need
 cross-school visibility to do their job (reviewing a transfer from any
 class, editing a student a class teacher hasn't been assigned to yet,
 etc.), mirroring the existing bypass convention in teacher_scope.py and

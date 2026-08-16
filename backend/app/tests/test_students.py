@@ -16,9 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.academic import AcademicYear, Class
-from app.models.auth import LoginType, StaffPosition, User
+from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import School, SmsConfig, SmsProvider
 from app.models.students import StudentClassAssignment
+from app.tests.legacy_position_perms import LEGACY_POSITION_PERMISSIONS
 
 
 def _student(num: str = "ADM001", **kw) -> dict:
@@ -37,6 +38,13 @@ async def _login_as_position(
     """Create a staff member holding `position_code`, give them a login, and
     return (their bearer-token auth headers, their staff_member id)."""
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    if pos is None and position_code in LEGACY_POSITION_PERMISSIONS:
+        pos = StaffPosition(school_id=school.id, code=position_code, name=position_code.title(), is_template=False)
+        db_session.add(pos)
+        await db_session.flush()
+        for module, action in LEGACY_POSITION_PERMISSIONS[position_code]:
+            db_session.add(PositionPermission(position_id=pos.id, module=module, action=action, is_allowed=True))
+        await db_session.flush()
     assert pos is not None, "Run seed_reference_data.py first"
 
     staff_id = (await client.post("/staff", json={

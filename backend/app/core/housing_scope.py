@@ -13,8 +13,8 @@ like "unrestricted."
 Housing inverts that on purpose, per the user's own framing when this module
 was built: "admin manages houses, housemasters see only their own house."
 HouseMaster is an appointment a school makes only for actual housemasters —
-HEAD/DEPUTY_HEAD/BURSAR/ASSISTANT_HEAD_BOARDING never hold one, so "zero
-active HouseMaster rows this year" reliably means "this caller isn't a
+none of the other positions (HEAD/TEACHER/BURSAR/CLASS_TEACHER) grant it, so
+"zero active HouseMaster rows this year" reliably means "this caller isn't a
 housemaster at all," not "a housemaster whose assignment got lost." This was
 already the de facto behaviour of two hand-rolled checks that existed before
 this module (services/housing.py::list_my_houses,

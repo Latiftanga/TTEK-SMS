@@ -5,11 +5,11 @@ they are assigned ClassTeacher of, or the (class, subject) pairs they are
 assigned SubjectTeacher of, for a given academic year.
 
 Senior/approval-tier staff (attendance.approve / assessments.approve_scores —
-held only by HEAD, DEPUTY_HEAD, HOD, EXAM_OFFICER per
-scripts/reference_data.py) are never scoped: they need cross-class oversight
-to do their job (approving another teacher's scores, generating school-wide
-reports, etc.), mirroring the existing bypass convention in
-services/student_list.py.
+held by HEAD by default, or by anyone else granted it via a personal
+permission override, per scripts/reference_data.py) are never scoped: they
+need cross-class oversight to do their job (approving another teacher's
+scores, generating school-wide reports, etc.), mirroring the existing bypass
+convention in services/student_list.py.
 
 Unlike the "absence of registration data" backward-compat convention used
 elsewhere in this codebase (subject registration/electives, services/

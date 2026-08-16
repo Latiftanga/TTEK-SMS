@@ -74,8 +74,8 @@ async def create_house(
 
 
 async def list_houses(user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> list[HouseDetail]:
-    """Every house for an unrestricted caller (admin/HEAD/DEPUTY_HEAD/
-    Assistant Head - Boarding); only the house(s) the caller is an active
+    """Every house for an unrestricted caller (anyone who isn't an active
+    HouseMaster this year); only the house(s) the caller is an active
     HouseMaster of this year otherwise. GET /houses and GET /houses/mine are
     the same scoped query — /mine exists only as a clearer name for the
     housemaster-facing frontend, not a different access level."""

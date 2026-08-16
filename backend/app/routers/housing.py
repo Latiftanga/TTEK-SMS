@@ -9,8 +9,8 @@ literal final segments so ordering is not an issue there.
 SCOPING NOTE
 ------------
 Every endpoint below runs through core/housing_scope.py: an unrestricted
-caller (admin/HEAD/DEPUTY_HEAD/Assistant Head - Boarding — anyone with zero
-active HouseMaster rows this year) sees/manages everything; an actual
+caller (HEAD, or anyone else — zero active HouseMaster rows this year) sees/
+manages everything; an actual
 housemaster is scoped to just their own house(s), 404 on anything else. See
 that module's docstring for why "no HouseMaster row" means unrestricted here,
 unlike Students' stricter "empty means empty" convention.

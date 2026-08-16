@@ -3,8 +3,9 @@ Teacher-role scoping for assessments/scoring — a CLASS_TEACHER holds
 assessments.enter_scores/view but should only reach assessments for
 (class, subject) combos they are the SubjectTeacher of, matching the user's
 own framing ("he/she should see only the subjects or classes he/she is
-assign to teach"). assessments.approve_scores holders (HOD/EXAM_OFFICER/
-HEAD/DEPUTY_HEAD) are never scoped — they need cross-class oversight.
+assign to teach"). assessments.approve_scores holders (HEAD by default, or
+anyone else granted it via a personal permission override) are never
+scoped — they need cross-class oversight.
 
 Run inside Docker: docker compose exec api pytest app/tests/test_assessment_scope.py -v
 """
@@ -22,9 +23,10 @@ from app.models.academic import (
     SubjectTeacher, SubjectType,
 )
 from app.models.assessments import Assessment, AssessmentType
-from app.models.auth import LoginType, StaffPosition, User
+from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import School
 from app.models.students import Student
+from app.tests.legacy_position_perms import LEGACY_POSITION_PERMISSIONS
 
 
 async def _login_as_position(
@@ -34,6 +36,13 @@ async def _login_as_position(
     return (their bearer-token auth headers, their staff_member id) — mirrors
     test_attendance.py/test_scoring_lock.py's helper."""
     pos = await db_session.scalar(select(StaffPosition).where(StaffPosition.code == position_code))
+    if pos is None and position_code in LEGACY_POSITION_PERMISSIONS:
+        pos = StaffPosition(school_id=school.id, code=position_code, name=position_code.title(), is_template=False)
+        db_session.add(pos)
+        await db_session.flush()
+        for module, action in LEGACY_POSITION_PERMISSIONS[position_code]:
+            db_session.add(PositionPermission(position_id=pos.id, module=module, action=action, is_allowed=True))
+        await db_session.flush()
     assert pos is not None, "Run seed_reference_data.py first"
 
     staff_id = (await client.post("/staff", json={

@@ -16,10 +16,10 @@ POST /staff/{id}/invite                school.manage_users
 POST /staff/{id}/reset-password        school.manage_users
 
 school.manage_users is deliberately the stronger gate for both position
-changes and password resets: staff.edit is held by DEPUTY_HEAD and
-ASSISTANT_HEAD_ADMINISTRATION (not just HEAD), and neither position-
-assignment nor password-reset should be reachable by a staff.edit holder
-acting on themselves or a more senior colleague — the first is a direct
+changes and password resets: staff.edit can be held by more than just HEAD
+(a personal permission override can grant it to anyone), and neither
+position-assignment nor password-reset should be reachable by a staff.edit
+holder acting on themselves or a more senior colleague — the first is a direct
 self-escalation path (PATCH your own position_ids onto HEAD), the second
 is a direct account takeover (reset the HEAD's password, log in as them).
 Both actions are logged to AuditLog, which nothing in this module wrote to
@@ -226,9 +226,9 @@ async def update_staff(
         )
 
     # position_ids is a stronger action than the rest of this endpoint —
-    # staff.edit alone (held by DEPUTY_HEAD/ASSISTANT_HEAD_ADMINISTRATION,
-    # not just HEAD) previously let a caller grant themselves or anyone else
-    # a more powerful position with no check at all. Gated the same as
+    # staff.edit alone (which can be held by more than just HEAD, via a
+    # personal permission override) previously let a caller grant themselves
+    # or anyone else a more powerful position with no check at all. Gated the same as
     # POST /staff/{id}/invite, the other "decide who has system access"
     # action in this router.
     if req.position_ids is not None and not await user_has_permission(user_id, "school", "manage_users", db):
