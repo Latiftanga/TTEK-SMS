@@ -19,6 +19,9 @@
   import PasswordResetModals    from './PasswordResetModals.svelte';
   import ResponsibilitiesTab    from './ResponsibilitiesTab.svelte';
   import PermissionsTab         from './PermissionsTab.svelte';
+  import DocumentsPanel         from '$lib/components/DocumentsPanel.svelte';
+  import InviteResultModal      from './InviteResultModal.svelte';
+  import StaffSidebar           from './StaffSidebar.svelte';
   import { setPageTitle } from '$lib/stores/title';
 
   const qc = useQueryClient();
@@ -39,7 +42,7 @@
     staleTime: 10 * 60_000,
   });
 
-  type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave' | 'responsibilities' | 'permissions';
+  type Tab = 'profile' | 'qualifications' | 'promotions' | 'leave' | 'responsibilities' | 'documents' | 'permissions';
   const IC = {
     profile:          `<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>`,
     responsibilities: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>`,
@@ -47,6 +50,7 @@
     promotions:       `<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/>`,
     leave:            `<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>`,
     permissions:      `<path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>`,
+    documents:        `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>`,
   };
 
   const TABS = $derived([
@@ -55,6 +59,7 @@
     { key: 'qualifications' as Tab,    label: 'Qualifications',   icon: IC.qualifications   },
     ...($schoolQuery.data?.ownership !== 'PRIVATE' ? [{ key: 'promotions' as Tab, label: 'Promotions', icon: IC.promotions }] : []),
     { key: 'leave' as Tab,             label: 'Leave',            icon: IC.leave            },
+    { key: 'documents' as Tab,         label: 'Documents',        icon: IC.documents        },
     ...(!isOwnProfile ? [{ key: 'permissions' as Tab, label: 'Permissions', icon: IC.permissions }] : []),
   ]);
   const activeTab = $derived(($page.url.searchParams.get('tab') as Tab) ?? 'profile');
@@ -70,7 +75,6 @@
   });
 
   let inviteResult = $state<InviteResult | null>(null);
-  let inviteLinkCopied = $state(false);
 
   // Every school gets a branded subdomain by default now (see
   // services/school.py::create_school) — surfacing it here means new staff
@@ -84,14 +88,6 @@
     onError: (e) => toast.error(apiError(e, 'Could not send invitation.')),
   });
 
-  function copyInviteLink() {
-    if (!inviteResult) return;
-    navigator.clipboard.writeText(inviteResult.invite_link).then(() => {
-      inviteLinkCopied = true;
-      setTimeout(() => inviteLinkCopied = false, 2000);
-    });
-  }
-
   let resetResult   = $state<TempPasswordResult | null>(null);
   let confirmReset  = $state(false);
   const resetMut = createMutation({
@@ -100,21 +96,11 @@
     onError: (e) => { confirmReset = false; toast.error(apiError(e, 'Could not reset password.')); },
   });
 
-  const EMP_LABEL: Record<string, string> = {
-    PERMANENT: 'Permanent', CONTRACT: 'Contract',
-    NATIONAL_SERVICE: 'National Service', INTERN: 'Intern',
-  };
-
   // Resetting a colleague's password is an account-takeover-shaped action —
   // requires school.manage_users specifically (backend 403s otherwise, same
   // as position changes on ResponsibilitiesTab.svelte); $userRole is
   // 'admin' exactly when the caller holds it.
   const canResetPassword = $derived($userRole === 'admin');
-
-  function fmtDate(d: string | null | undefined) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' });
-  }
 </script>
 
 <!-- Back -->
@@ -249,88 +235,15 @@
         <PromotionsTab staff={s} staffId={staffId} readOnly={isOwnProfile} />
       {:else if activeTab === 'leave'}
         <LeaveTab staffId={staffId} {isOwnProfile} />
+      {:else if activeTab === 'documents'}
+        <DocumentsPanel entityType="staff" entityId={staffId} />
       {:else if activeTab === 'permissions'}
         <PermissionsTab {staffId} />
       {/if}
     </div>
 
     <!-- RIGHT: sidebar -->
-    <div class="space-y-4">
-
-      <!-- Employment card -->
-      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-        <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
-          Employment
-        </p>
-        <dl class="space-y-3">
-          {#each ([
-            ['Category',      s.category_name ?? '—'],
-            ['Staff type',    s.staff_type ? (s.staff_type === 'TEACHING' ? 'Teaching' : 'Non-teaching') : '—'],
-            ['Type',          s.employment_type ? EMP_LABEL[s.employment_type] : '—'],
-            ['Joined',        fmtDate(s.joined_date)],
-            ['Date of birth', fmtDate(s.date_of_birth)],
-            ['Gender',        s.gender ? s.gender.charAt(0) + s.gender.slice(1).toLowerCase() : '—'],
-          ] as Array<[string, string]>) as [rowLabel, rowValue]}
-            <div class="flex items-start justify-between gap-3">
-              <dt class="shrink-0 text-xs text-[var(--fg-muted)]">{rowLabel}</dt>
-              <dd class="text-right text-xs font-medium text-[var(--fg)]">{rowValue}</dd>
-            </div>
-          {/each}
-        </dl>
-      </div>
-
-      <!-- HR identifiers -->
-      {#if s.national_id || s.ssnit_number}
-        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-          <p class="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">
-            HR identifiers
-          </p>
-          <dl class="space-y-3">
-            {#if s.national_id}
-              <div class="flex items-start justify-between gap-3">
-                <dt class="shrink-0 text-xs text-[var(--fg-muted)]">Ghana Card</dt>
-                <dd class="text-right font-mono text-xs text-[var(--fg)]">{s.national_id}</dd>
-              </div>
-            {/if}
-            {#if s.ssnit_number}
-              <div class="flex items-start justify-between gap-3">
-                <dt class="shrink-0 text-xs text-[var(--fg-muted)]">SSNIT</dt>
-                <dd class="text-right font-mono text-xs text-[var(--fg)]">{s.ssnit_number}</dd>
-              </div>
-            {/if}
-          </dl>
-        </div>
-      {/if}
-
-      <!-- Platform access (hidden on own profile — you're already signed in) -->
-      {#if !isOwnProfile && (s.email || s.phone)}
-        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-          <p class="mb-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--fg-muted)]">Platform access</p>
-
-          {#if s.has_account}
-            <div class="flex items-center gap-2">
-              <svg class="h-4 w-4 shrink-0 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-              <p class="text-xs text-[var(--fg-muted)]">Has an active account — can sign in already.</p>
-            </div>
-          {:else}
-            <p class="mb-3 text-xs text-[var(--fg-muted)]">
-              Send a login invitation to this staff member.
-            </p>
-            <button
-              onclick={() => $inviteMut.mutate()}
-              disabled={$inviteMut.isPending}
-              class="w-full rounded-xl border border-[var(--border)] py-2 text-xs font-medium
-                     text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]
-                     disabled:opacity-50">
-              {$inviteMut.isPending ? 'Sending…' : 'Send invitation'}
-            </button>
-          {/if}
-        </div>
-      {/if}
-
-    </div>
+    <StaffSidebar staff={s} {isOwnProfile} inviting={$inviteMut.isPending} onInvite={() => $inviteMut.mutate()} />
   </div>
 {/if}
 
@@ -344,58 +257,10 @@
   onDismiss={() => resetResult = null}
 />
 
-{#if inviteResult}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
-      <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
-        <svg class="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-      </div>
-
-      <h2 class="text-base font-semibold text-[var(--fg)]">Invitation created</h2>
-
-      {#if inviteResult.sms_sent}
-        <p class="mt-1 text-sm text-[var(--fg-muted)]">
-          An SMS with the link was sent to <span class="font-medium text-[var(--fg)]">{$query.data?.phone}</span>.
-          You can also share this link directly:
-        </p>
-      {:else}
-        <p class="mt-1 text-sm text-[var(--fg-muted)]">
-          Share this link with <span class="font-medium text-[var(--fg)]">{$query.data?.display_name}</span>.
-          They'll use it to set their password and activate their account.
-          {#if $query.data?.phone}
-            <span class="text-amber-600 dark:text-amber-400"> (No SMS provider configured — share manually.)</span>
-          {/if}
-        </p>
-      {/if}
-
-      <div class="mt-4 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5">
-        <p class="flex-1 truncate font-mono text-xs text-[var(--fg)]">{inviteResult.invite_link}</p>
-        <button onclick={copyInviteLink}
-          class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-medium
-                 text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
-          {inviteLinkCopied ? '✓ Copied' : 'Copy'}
-        </button>
-      </div>
-
-      <p class="mt-3 text-xs text-[var(--fg-subtle)]">Link expires in 72 hours.</p>
-
-      {#if schoolLoginUrl}
-        <p class="mt-4 rounded-xl bg-[var(--hover)]/50 px-3 py-2.5 text-xs text-[var(--fg-muted)]">
-          Once they've set a password, tell them to bookmark
-          <span class="font-mono font-medium text-[var(--fg)]">{schoolLoginUrl}</span>
-          — their school's own sign-in page. No school code to remember, ever.
-        </p>
-      {/if}
-
-      <div class="mt-5 flex justify-end">
-        <button onclick={() => inviteResult = null}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-          style="background-color: var(--brand)">
-          Done
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<InviteResultModal
+  result={inviteResult}
+  phone={$query.data?.phone}
+  displayName={$query.data?.display_name ?? ''}
+  {schoolLoginUrl}
+  onDismiss={() => inviteResult = null}
+/>
