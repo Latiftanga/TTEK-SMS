@@ -111,6 +111,7 @@ export const NAV_GROUPS: NavGroup[] = [
         href: '/admin/staff', label: 'Staff', icon: IC.staff, roles: ['admin'],
         children: [
           { href: '/admin/leave', label: 'Leave Requests', roles: ['admin'] },
+          { href: '/admin/permissions', label: 'Roles & Permissions', roles: ['admin'] },
         ],
       },
     ],

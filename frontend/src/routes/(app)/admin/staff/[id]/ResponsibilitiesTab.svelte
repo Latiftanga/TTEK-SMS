@@ -2,8 +2,8 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
   import { getStaffResponsibilities, updateStaff, listPositions, type StaffDetail } from '$lib/api/staff';
-  import { listYears, listClasses, assignClassTeacher, type AcademicYear, type SchoolClass } from '$lib/api/academic';
-  import { listHouses, assignHouseMaster, type House } from '$lib/api/housing';
+  import { listYears, listClasses, assignClassTeacher, removeClassTeacher, removeSubjectTeacher, type AcademicYear, type SchoolClass } from '$lib/api/academic';
+  import { listHouses, assignHouseMaster, removeHouseMaster, type House } from '$lib/api/housing';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import { userRole } from '$lib/stores/permissions';
@@ -82,10 +82,28 @@
     onError:   (e) => toast.error(apiError(e, 'Failed to remove.')),
   });
 
+  // Class Teacher / Subject Teacher / House Master removal — the counterpart
+  // this tab never had: previously the only way to change one of these was
+  // handing it to someone else, never plainly unassigning it.
+  const removeRespMut = createMutation({
+    mutationFn: async (row: Row) => {
+      if (row.key.startsWith('ct:')) return removeClassTeacher(row.classId!, row.yearId!);
+      if (row.key.startsWith('st:')) return removeSubjectTeacher(row.classId!, row.subjectId!, row.yearId!);
+      if (row.key.startsWith('hm:')) return removeHouseMaster(row.houseId!, row.yearId!);
+      throw new Error('Unknown responsibility type');
+    },
+    onSuccess: () => { invalidateResps(); toast.success('Responsibility removed.'); },
+    onError:   (e) => toast.error(apiError(e, 'Failed to remove.')),
+  });
+
   let confirmRemovePosId = $state<string | null>(null);
+  let confirmRemoveRow = $state<Row | null>(null);
 
   // ── Flat list ─────────────────────────────────────────────────────────────────
-  type Row = { key: string; label: string; detail: string | null; active: boolean; posId?: string };
+  type Row = {
+    key: string; label: string; detail: string | null; active: boolean;
+    posId?: string; classId?: string; subjectId?: string; houseId?: string; yearId?: string;
+  };
   const rows = $derived.by((): Row[] => {
     const list: Row[] = [];
     staff.position_ids.forEach((id, i) =>
@@ -94,12 +112,23 @@
     const d = $respsQ.data;
     if (d?.class_teacher) {
       const ct = d.class_teacher;
-      list.push({ key: `ct:${ct.class_id}`, label: 'Class Teacher', detail: `${ct.class_name} · ${ct.academic_year_name}`, active: ct.is_active });
+      list.push({
+        key: `ct:${ct.class_id}`, label: 'Class Teacher', detail: `${ct.class_name} · ${ct.academic_year_name}`,
+        active: ct.is_active, classId: ct.class_id, yearId: ct.academic_year_id,
+      });
     }
     for (const s of d?.subject_assignments ?? [])
-      list.push({ key: `st:${s.subject_id}:${s.class_id}:${s.academic_year_id}`, label: s.subject_name, detail: `${s.class_name} · ${s.academic_year_name}`, active: s.is_active });
+      list.push({
+        key: `st:${s.subject_id}:${s.class_id}:${s.academic_year_id}`, label: s.subject_name,
+        detail: `${s.class_name} · ${s.academic_year_name}`, active: s.is_active,
+        classId: s.class_id, subjectId: s.subject_id, yearId: s.academic_year_id,
+      });
     for (const h of d?.house_assignments ?? [])
-      list.push({ key: `hm:${h.house_id}:${h.academic_year_id}`, label: 'House Master', detail: `${h.house_name} · ${h.academic_year_name}`, active: h.is_active });
+      list.push({
+        key: `hm:${h.house_id}:${h.academic_year_id}`, label: 'House Master',
+        detail: `${h.house_name} · ${h.academic_year_name}`, active: h.is_active,
+        houseId: h.house_id, yearId: h.academic_year_id,
+      });
     return list;
   });
 
@@ -216,6 +245,11 @@
               class="shrink-0 text-xs text-[var(--fg-muted)] transition hover:text-red-500 disabled:opacity-50">
               Remove
             </button>
+          {:else if admin && row.active && !row.posId}
+            <button onclick={() => confirmRemoveRow = row} disabled={$removeRespMut.isPending}
+              class="shrink-0 text-xs text-[var(--fg-muted)] transition hover:text-red-500 disabled:opacity-50">
+              Remove
+            </button>
           {/if}
         </div>
       {/each}
@@ -231,4 +265,14 @@
   isPending={$removePosMut.isPending}
   onConfirm={() => { $removePosMut.mutate(confirmRemovePosId!); confirmRemovePosId = null; }}
   onCancel={() => confirmRemovePosId = null}
+/>
+
+<ConfirmModal
+  open={!!confirmRemoveRow}
+  title="Remove {confirmRemoveRow?.label}?"
+  message="{confirmRemoveRow?.detail ?? ''} will be unassigned. This can be reassigned again later."
+  confirmLabel="Remove"
+  isPending={$removeRespMut.isPending}
+  onConfirm={() => { $removeRespMut.mutate(confirmRemoveRow!); confirmRemoveRow = null; }}
+  onCancel={() => confirmRemoveRow = null}
 />

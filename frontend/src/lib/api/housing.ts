@@ -74,6 +74,9 @@ export const assignHouseMaster = (
 ): Promise<HouseMasterRead> =>
   api.post(`/housing/houses/${houseId}/master`, req).then(r => r.data);
 
+export const removeHouseMaster = (houseId: string, yearId: string): Promise<void> =>
+  api.delete(`/housing/houses/${houseId}/master`, { params: { year_id: yearId } }).then(() => undefined);
+
 export const getHouse = (id: string): Promise<House> =>
   api.get(`/housing/houses/${id}`).then(r => r.data);
 

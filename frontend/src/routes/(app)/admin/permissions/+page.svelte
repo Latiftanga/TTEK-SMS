@@ -6,6 +6,9 @@
     type PositionWithPerms,
   } from '$lib/api/permissions';
   import { toast } from '$lib/stores/toast';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import { setPageTitle } from '$lib/stores/title';
+  setPageTitle('Roles & Permissions');
 
   const qc = useQueryClient();
   const posQ = createQuery({ queryKey: ['positions-perms'], queryFn: listPositionsWithPerms, staleTime: 60_000 });
@@ -76,6 +79,8 @@
     $saveMut.mutate({ posId: selected.id, perms });
   }
 </script>
+
+<PageHeader title="Roles & Permissions" description="Default permissions granted by each role. A staff member's own Permissions tab can still override these for that one person." />
 
 {#if $posQ.isPending}
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -298,6 +298,14 @@ export async function assignSubjectTeacher(
   return data;
 }
 
+export async function removeClassTeacher(classId: string, yearId: string): Promise<void> {
+  await client.delete(`/academic/classes/${classId}/class-teacher`, { params: { year_id: yearId } });
+}
+
+export async function removeSubjectTeacher(classId: string, subjectId: string, yearId: string): Promise<void> {
+  await client.delete(`/academic/classes/${classId}/subject-teachers/${subjectId}`, { params: { year_id: yearId } });
+}
+
 export async function listProgrammes(): Promise<Programme[]> {
   const { data } = await client.get<Programme[]>('/academic/programmes');
   return data;
