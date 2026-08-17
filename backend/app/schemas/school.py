@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, computed_field, field_validator
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator
 
 from app.core.config import settings
 from app.models.school import EmailProvider, EmailStatus, SchoolOwnership, SchoolType, SmsProvider
@@ -245,9 +245,9 @@ class SchoolConfigSet(BaseModel):
 
 class SmsConfigCreate(BaseModel):
     provider: SmsProvider
-    api_key: str
-    api_secret: str | None = None
-    sender_id: str
+    api_key: str = Field(max_length=500)
+    api_secret: str | None = Field(default=None, max_length=500)
+    sender_id: str = Field(max_length=20)
 
 
 class SmsConfigRead(BaseModel):

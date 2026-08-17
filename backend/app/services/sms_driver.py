@@ -24,6 +24,7 @@ Twilio         — api_key = Account SID, api_secret = Auth Token
 """
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -37,6 +38,22 @@ class SmsResult:
     success: bool
     provider: SmsProvider
     error: str | None = None
+
+
+_QUERY_STRING_RE = re.compile(r"(https?://[^\s'\"?]+)\?[^\s'\"]*")
+
+
+def _scrub_error(exc: Exception) -> str:
+    """Strip query strings from any URL embedded in an exception's message
+    before it's ever returned or logged. Hubtel/Arkesel send provider
+    credentials as GET query params (see their send() below) — an unscrubbed
+    httpx.HTTPStatusError's default str() embeds the full request URL,
+    which would otherwise leak the live api_key/api_secret straight into
+    SmsLog.error_message, a table gated by a much weaker permission
+    (school.view) than the credentials themselves. Applied uniformly across
+    every driver, not just the two known to leak via query params, as
+    defense-in-depth against any future provider doing the same."""
+    return _QUERY_STRING_RE.sub(r"\1?<redacted>", str(exc))
 
 
 def _normalize_phone(phone: str) -> str:
@@ -93,7 +110,7 @@ class AfricasTalkingDriver(SmsDriver):
             resp.raise_for_status()
             return SmsResult(success=True, provider=self.provider)
         except Exception as exc:
-            return SmsResult(success=False, provider=self.provider, error=str(exc))
+            return SmsResult(success=False, provider=self.provider, error=_scrub_error(exc))
 
 
 class HubtelDriver(SmsDriver):
@@ -126,7 +143,7 @@ class HubtelDriver(SmsDriver):
             resp.raise_for_status()
             return SmsResult(success=True, provider=self.provider)
         except Exception as exc:
-            return SmsResult(success=False, provider=self.provider, error=str(exc))
+            return SmsResult(success=False, provider=self.provider, error=_scrub_error(exc))
 
 
 class ArkeselDriver(SmsDriver):
@@ -158,7 +175,7 @@ class ArkeselDriver(SmsDriver):
             resp.raise_for_status()
             return SmsResult(success=True, provider=self.provider)
         except Exception as exc:
-            return SmsResult(success=False, provider=self.provider, error=str(exc))
+            return SmsResult(success=False, provider=self.provider, error=_scrub_error(exc))
 
 
 class WiGalDriver(SmsDriver):
@@ -190,7 +207,7 @@ class WiGalDriver(SmsDriver):
             resp.raise_for_status()
             return SmsResult(success=True, provider=self.provider)
         except Exception as exc:
-            return SmsResult(success=False, provider=self.provider, error=str(exc))
+            return SmsResult(success=False, provider=self.provider, error=_scrub_error(exc))
 
 
 class TwilioDriver(SmsDriver):
@@ -222,7 +239,7 @@ class TwilioDriver(SmsDriver):
             resp.raise_for_status()
             return SmsResult(success=True, provider=self.provider)
         except Exception as exc:
-            return SmsResult(success=False, provider=self.provider, error=str(exc))
+            return SmsResult(success=False, provider=self.provider, error=_scrub_error(exc))
 
 
 _DRIVER_MAP: dict[SmsProvider, type[SmsDriver]] = {

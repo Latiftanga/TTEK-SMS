@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.school import SmsProvider, SmsStatus
 
@@ -15,7 +15,11 @@ class SmsActivateRequest(BaseModel):
 
 
 class SmsSendRequest(BaseModel):
-    phones: list[str]
+    # Capped, not unbounded — a manual send is a synchronous, serially-
+    # awaited fan-out (see services/sms_notifications.py::send_manual), so
+    # an uncapped list is an unbounded-cost request even from an authorized
+    # school.manage_users caller.
+    phones: list[str] = Field(max_length=1000)
     message: str
 
     @field_validator("message")

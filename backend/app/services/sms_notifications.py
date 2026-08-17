@@ -92,6 +92,9 @@ async def _log_result(
     await db.flush()
 
 
+_MAX_RECIPIENT_LEN = 20  # matches SmsLog.recipient's String(20) column
+
+
 async def _deliver(
     driver: SmsDriver,
     to: str,
@@ -102,8 +105,19 @@ async def _deliver(
     db: AsyncSession,
 ) -> SmsResult:
     """Normalizes once, sends, and logs the normalized number — so SmsLog.recipient
-    always reflects the number actually dialed, not whatever format it was typed in."""
+    always reflects the number actually dialed, not whatever format it was typed in.
+
+    _normalize_phone() is best-effort: anything that doesn't match a
+    recognized Ghana pattern passes through unchanged, so garbage input
+    (e.g. a malformed manual-send entry) could normalize to a string longer
+    than the recipient column — a raw DataError on the flush below instead
+    of a clean failed result. Caught before ever calling the driver, so a
+    bad number never gets dialed at all and never crashes the caller."""
     normalized = _normalize_phone(to)
+    if len(normalized) > _MAX_RECIPIENT_LEN:
+        result = SmsResult(success=False, provider=driver.provider, error="Invalid phone number.")
+        await _log_result(result, normalized[:_MAX_RECIPIENT_LEN], message, school_id, entity_type, entity_id, db)
+        return result
     result = await driver.send(normalized, message)
     await _log_result(result, normalized, message, school_id, entity_type, entity_id, db)
     return result
@@ -300,7 +314,16 @@ async def send_manual(
     if not driver:
         raise ValueError("No active SMS provider configured for this school.")
     results: list[SmsResult] = []
+    # Per-item savepoint, matching this codebase's established bulk-operation
+    # convention (student_import/staff_import/bulk_promote/...): a DB-level
+    # failure logging one phone must not roll back the whole session and
+    # erase the audit trail of every message already sent — and already
+    # dispatched — earlier in the same batch.
     for phone in phones:
-        result = await _deliver(driver, phone, message, school_id, "MANUAL", None, db)
+        try:
+            async with db.begin_nested():
+                result = await _deliver(driver, phone, message, school_id, "MANUAL", None, db)
+        except Exception as exc:
+            result = SmsResult(success=False, provider=driver.provider, error=str(exc))
         results.append(result)
     return results

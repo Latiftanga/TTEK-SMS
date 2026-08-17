@@ -26,15 +26,27 @@
     TWILIO:          'Auth Token',
   };
 
+  const blankForm = (): SmsConfigPayload => ({ provider: 'AFRICAS_TALKING', api_key: '', api_secret: '', sender_id: '' });
+
   let showForm             = $state(false);
-  let form                 = $state<SmsConfigPayload>({ provider: 'AFRICAS_TALKING', api_key: '', api_secret: '', sender_id: '' });
+  let form                 = $state<SmsConfigPayload>(blankForm());
   let formError            = $state('');
   let confirmActivate      = $state<SmsProvider | null>(null);
   let confirmDelete        = $state<SmsProvider | null>(null);
+  let confirmDiscard       = $state(false);
+
+  // A caller who types a real API secret and fat-fingers Cancel shouldn't
+  // silently lose it — same guard shape as StaffForm.svelte (12ay).
+  const hasUnsaved = $derived(!!form.api_key || !!form.api_secret || !!form.sender_id);
+  function closeForm() { showForm = false; formError = ''; form = blankForm(); }
+  function requestCloseForm() {
+    if (hasUnsaved) confirmDiscard = true;
+    else closeForm();
+  }
 
   const upsertMut = createMutation({
     mutationFn: upsertSmsConfig,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sms-configs'] }); showForm = false; formError = ''; form = { provider: 'AFRICAS_TALKING', api_key: '', api_secret: '', sender_id: '' }; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sms-configs'] }); closeForm(); },
     onError: (e: unknown) => { formError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed.'; },
   });
   const activateMut = createMutation({
@@ -50,8 +62,8 @@
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <p class="text-sm text-[var(--fg-muted)]">Configure SMS providers for parent notifications. Only one can be active at a time.</p>
-    <button onclick={() => { showForm = !showForm; formError = ''; }}
-      class="flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style="background-color: var(--brand)">
+    <button onclick={() => { if (showForm) requestCloseForm(); else { showForm = true; formError = ''; } }}
+      class="flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style="background-color: var(--brand)">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
       Add provider
     </button>
@@ -72,30 +84,30 @@
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
             {form.provider === 'AFRICAS_TALKING' ? 'API Key' : form.provider === 'HUBTEL' ? 'Client ID' : form.provider === 'TWILIO' ? 'Account SID' : 'API Key'}
           </label>
-          <input bind:value={form.api_key} placeholder="Required"
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-mono text-[var(--fg)] placeholder:font-sans placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+          <input type="password" autocomplete="off" bind:value={form.api_key} placeholder="Required"
+            class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-mono text-[var(--fg)] placeholder:font-sans placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
         </div>
         {#if SMS_SECRET_LABEL[form.provider]}
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">{SMS_SECRET_LABEL[form.provider]}</label>
-            <input bind:value={form.api_secret} placeholder="Required"
-              class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-mono text-[var(--fg)] placeholder:font-sans placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+            <input type="password" autocomplete="off" bind:value={form.api_secret} placeholder="Required"
+              class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm font-mono text-[var(--fg)] placeholder:font-sans placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
           </div>
         {/if}
         <div>
           <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Sender ID</label>
           <input bind:value={form.sender_id} placeholder={form.provider === 'TWILIO' ? '+233XXXXXXXXX' : 'e.g. PRESEC'}
-            class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
+            class="w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none" />
         </div>
       </div>
       {#if formError}<p class="mt-2 text-xs text-red-500">{formError}</p>{/if}
       <div class="mt-4 flex gap-2">
         <button onclick={() => $upsertMut.mutate(form)} disabled={$upsertMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background-color: var(--brand)">
+          class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background-color: var(--brand)">
           {$upsertMut.isPending ? 'Saving…' : 'Save credentials'}
         </button>
-        <button onclick={() => { showForm = false; formError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">Cancel</button>
+        <button onclick={requestCloseForm}
+          class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--bg)]">Cancel</button>
       </div>
     </div>
   {/if}
@@ -118,12 +130,12 @@
             <span class="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-500"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Active</span>
           {:else}
             <button onclick={() => confirmActivate = cfg.provider} disabled={$activateMut.isPending}
-              class="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+              class="min-h-[44px] shrink-0 rounded-lg border border-[var(--border)] px-3 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
               Set active
             </button>
           {/if}
-          <button onclick={() => confirmDelete = cfg.provider} disabled={$deleteMut.isPending} title="Remove provider"
-            class="shrink-0 rounded-lg p-1.5 text-[var(--fg-muted)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-40">
+          <button onclick={() => confirmDelete = cfg.provider} disabled={$deleteMut.isPending} aria-label="Remove provider"
+            class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-40">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
           </button>
         </div>
@@ -174,4 +186,14 @@
   isPending={$deleteMut.isPending}
   onConfirm={() => { $deleteMut.mutate(confirmDelete!); confirmDelete = null; }}
   onCancel={() => confirmDelete = null}
+/>
+
+<ConfirmModal
+  open={confirmDiscard}
+  title="Discard credentials?"
+  message="You've entered a key or secret that hasn't been saved yet. Closing now will lose it."
+  confirmLabel="Discard"
+  variant="warning"
+  onConfirm={() => { confirmDiscard = false; closeForm(); }}
+  onCancel={() => confirmDiscard = false}
 />

@@ -288,3 +288,101 @@ async def test_list_sms_logs_empty(client: AsyncClient, auth: dict):
     resp = await client.get("/sms/logs", headers=auth)
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ── Credential leak / robustness (module review) ────────────────────────────────
+
+def test_scrub_error_strips_query_string():
+    from app.services.sms_driver import _scrub_error
+    exc = Exception(
+        "Client error '401 Unauthorized' for url "
+        "'https://smsc.hubtel.com/v1/messages/send?clientid=ID123&clientsecret=SECRET456&from=X'"
+    )
+    scrubbed = _scrub_error(exc)
+    assert "SECRET456" not in scrubbed
+    assert "ID123" not in scrubbed
+    assert "https://smsc.hubtel.com/v1/messages/send?<redacted>" in scrubbed
+
+
+@pytest.mark.asyncio
+async def test_send_failure_does_not_leak_credentials_in_log(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    """Regression: HubtelDriver/ArkeselDriver send credentials as GET query
+    params — an unscrubbed httpx.HTTPStatusError's str() embeds the full
+    request URL, so a failed send used to write the live api_key/api_secret
+    straight into SmsLog.error_message."""
+    from sqlalchemy import select
+    from app.models.school import SmsLog
+
+    config = SmsConfig(
+        school_id=school.id,
+        provider=SmsProvider.ARKESEL,
+        api_key="super-secret-arkesel-key",
+        sender_id="TESTSCHOOL",
+        is_active=True,
+    )
+    db_session.add(config)
+    await db_session.flush()
+
+    original_init = httpx.AsyncClient.__init__
+
+    class _Mock401Transport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return httpx.Response(401, json={"error": "unauthorized"})
+
+    import unittest.mock as mock
+    with mock.patch("httpx.AsyncClient.__init__", lambda self, **kw: original_init(
+        self, transport=_Mock401Transport(), **{k: v for k, v in kw.items() if k != "transport"}
+    )):
+        resp = await client.post("/sms/send", json={
+            "phones": ["0244123456"], "message": "Test",
+        }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["failed"] == 1
+
+    log = await db_session.scalar(select(SmsLog).where(SmsLog.school_id == school.id))
+    assert log is not None
+    assert log.error_message is not None
+    assert "super-secret-arkesel-key" not in log.error_message
+
+
+@pytest.mark.asyncio
+async def test_send_oversized_normalized_phone_does_not_crash(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    """Regression: _normalize_phone() is best-effort passthrough for anything
+    that doesn't match a recognized Ghana pattern — a garbage manual-send
+    entry could normalize to a string longer than SmsLog.recipient's
+    String(20) column, raising an unhandled DataError instead of a clean
+    failed result (and, before the per-item savepoint fix, rolling back
+    every already-logged send earlier in the same batch)."""
+    config = SmsConfig(
+        school_id=school.id, provider=SmsProvider.ARKESEL,
+        api_key="key", sender_id="TESTSCHOOL", is_active=True,
+    )
+    db_session.add(config)
+    await db_session.flush()
+
+    resp = await client.post("/sms/send", json={
+        "phones": ["not-a-real-phone-number-at-all-way-too-long"],
+        "message": "Test",
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_sms_config_oversized_sender_id_rejected(client: AsyncClient, auth: dict):
+    resp = await client.post("/sms/configs", json={
+        "provider": "ARKESEL", "api_key": "key", "sender_id": "X" * 21,
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_send_phones_list_capped(client: AsyncClient, auth: dict):
+    resp = await client.post("/sms/send", json={
+        "phones": ["0244123456"] * 1001, "message": "Test",
+    }, headers=auth)
+    assert resp.status_code == 422

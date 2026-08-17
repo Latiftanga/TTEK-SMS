@@ -52,7 +52,7 @@
     <div class="flex gap-1">
       {#each ([['ALL', 'All'], ['SENT', 'Sent'], ['FAILED', 'Failed']] as [Filter, string][]) as [f, label]}
         <button onclick={() => filter = f}
-          class="rounded-lg px-3 py-1 text-xs font-medium transition
+          class="min-h-[44px] rounded-lg px-3 py-1 text-xs font-medium transition
                  {filter === f ? 'bg-[var(--brand)] text-white' : 'border border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--hover)]'}">
           {label}
           {#if f === 'SENT' && sentCount}{' '}{sentCount}{/if}
@@ -109,7 +109,7 @@
                 <!-- Error detail (expandable) -->
                 {#if log.status === 'FAILED' && log.error_message}
                   <button onclick={() => toggleExpand(log.id)}
-                    class="mt-1 text-[10px] font-medium text-red-500 transition hover:underline">
+                    class="mt-1 inline-flex min-h-[44px] items-center text-[10px] font-medium text-red-500 transition hover:underline">
                     {expanded.has(log.id) ? '▲ Hide error' : '▼ Show error'}
                   </button>
                   {#if expanded.has(log.id)}
