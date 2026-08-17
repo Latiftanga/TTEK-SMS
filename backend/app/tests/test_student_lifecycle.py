@@ -414,3 +414,69 @@ async def test_reassign_to_class_reactivates_stale_assignment(
     assert resp.status_code == 201
     assert resp.json()["class_id"] == str(next_class.id)
     assert resp.json()["is_active"] is True
+
+
+# ── Cross-school ownership (module review) ──────────────────────────────────────
+
+async def _other_school_auth(client: AsyncClient, db_session: AsyncSession) -> tuple[dict, School]:
+    """Create a second school + superadmin and return (their auth headers, the school)."""
+    from app.models.school import GhanaDistrict, GhanaRegion, SchoolType
+
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    other_school = School(
+        name="Other Test School", school_code="OTHERLC1", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(other_school)
+    await db_session.flush()
+    user = User(
+        login_type=LoginType.EMAIL, email="other-admin-lc@test.gh",
+        password_hash=hash_password("pw"), is_active=True,
+        is_superadmin=True, school_id=other_school.id,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    resp = await client.post("/auth/superadmin-login", json={
+        "identifier": "other-admin-lc@test.gh", "password": "pw",
+    })
+    assert resp.status_code == 200
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}, other_school
+
+
+@pytest.mark.asyncio
+async def test_bulk_graduate_rejects_cross_school_student(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear,
+):
+    """Regression: process_bulk_graduation() never validated item.student_id
+    belonged to the caller's school before creating a GraduationRecord and
+    (with deactivate_students=True) calling deactivate_student() — which
+    itself fetched the Student row by id alone with no school_id check.
+    A caller from school A supplying a real student_id from school B could
+    silently deactivate that student and revoke their portal login."""
+    other_auth, other_school = await _other_school_auth(client, db_session)
+    victim_sid = await _create_student(client, other_auth, num="VICTIM01")
+
+    resp = await client.post("/students/graduation/bulk", json={
+        "academic_year_id": str(academic_year.id),
+        "records": [{"student_id": victim_sid, "graduation_type": "GRADUATED"}],
+        "deactivate_students": True,
+    }, headers=auth)
+    assert resp.status_code == 404
+
+    # The victim's real school confirms their student is untouched.
+    victim = (await client.get(f"/students/{victim_sid}", headers=other_auth)).json()
+    assert victim["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_transfer_request_rejects_bogus_requesting_school(
+    client: AsyncClient, auth: dict,
+):
+    import uuid as _uuid
+    sid = await _create_student(client, auth)
+    resp = await client.post(f"/students/{sid}/transfers", json={
+        "requesting_school_id": str(_uuid.uuid4()), "reason": "Relocation",
+    }, headers=auth)
+    assert resp.status_code == 404

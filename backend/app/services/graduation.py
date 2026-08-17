@@ -3,11 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.documents import GraduationRecord
+from app.models.students import Student
 from app.schemas.student_lifecycle import (
     BulkGraduateRequest, BulkGraduateResult, GraduationRecordRead,
 )
@@ -30,6 +32,24 @@ async def process_bulk_graduation(
     assignment/term enrollment, and their portal login are all deactivated
     (see student_lifecycle.deactivate_student).
     """
+    # Validated up front, whole batch — a cross-school or bogus student_id
+    # here is not a legitimate "already processed" case like the duplicate-
+    # GraduationRecord skip below, it's illegitimate input (a bug or a
+    # cross-tenant probe): GraduationRecord.student_id has no FK-level
+    # guarantee of belonging to this school_id, and deactivate_student()
+    # would otherwise silently deactivate another school's real student
+    # and revoke their portal login. No partial writes on a mixed batch,
+    # matching this codebase's promotion-validation precedent.
+    student_ids = {item.student_id for item in req.records}
+    valid_ids = set(await db.scalars(
+        select(Student.id).where(Student.id.in_(student_ids), Student.school_id == school_id)
+    ))
+    invalid_ids = student_ids - valid_ids
+    if invalid_ids:
+        raise HTTPException(
+            404, f"Student(s) not found in this school: {', '.join(str(i) for i in invalid_ids)}",
+        )
+
     now = datetime.now(timezone.utc)
     records: list[GraduationRecord] = []
     skipped = 0

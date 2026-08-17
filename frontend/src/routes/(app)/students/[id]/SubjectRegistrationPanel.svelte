@@ -211,11 +211,13 @@
   <p class="mt-2 text-xs text-[var(--fg-muted)]">No subjects registered yet.</p>
 {:else}
   {#each $subjectRegsQ.data ?? [] as reg (reg.id)}
-    <div class="flex items-center justify-between py-1 group">
+    <div class="flex items-center justify-between py-1">
       <span class="text-sm text-[var(--fg)]">{subjectName(reg.subject_id)}</span>
       <div class="flex items-center gap-2">
         {#if !$subjTeachersQ.isPending && !subjectsWithTeacher.has(reg.subject_id)}
-          <span class="text-amber-500" title="No teacher assigned to this subject yet">⚠</span>
+          <span class="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+            <span aria-hidden="true">⚠</span> No teacher assigned
+          </span>
         {/if}
         {#if showElectiveConcept}
           <span class="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide {
@@ -227,9 +229,9 @@
         <button
           onclick={() => handleRemove(reg.id)}
           disabled={$removeMut.isPending && removeTarget === reg.id}
-          class="rounded p-0.5 text-[var(--fg-subtle)] opacity-0 group-hover:opacity-100 transition
-                 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30"
-          title="Remove subject">
+          aria-label="Remove subject"
+          class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-[var(--fg-subtle)] transition
+                 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 disabled:opacity-30">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
           </svg>
@@ -256,5 +258,5 @@
 
 <style>
   @reference "tailwindcss";
-  .sel { @apply rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .sel { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

@@ -182,8 +182,8 @@
             <p class="mt-1 text-xs text-[var(--fg-subtle)]">{r.incident_date}</p>
           </div>
           {#if canManage}
-            <button onclick={() => deleteTarget = r} title="Delete"
-              class="shrink-0 rounded-lg border border-[var(--border)] p-1.5 text-[var(--fg-subtle)] transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/30">
+            <button onclick={() => deleteTarget = r} aria-label="Delete behaviour record"
+              class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--fg-subtle)] transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-800 dark:hover:bg-red-950/30">
               <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
@@ -221,7 +221,7 @@
 
 <style>
   @reference "tailwindcss";
-  .sel { @apply rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .sel { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
   .inp { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
   .lx  { @apply block text-xs font-medium text-[var(--fg-muted)]; }
 </style>

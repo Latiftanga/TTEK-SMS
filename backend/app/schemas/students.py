@@ -1,7 +1,7 @@
 from __future__ import annotations
 import uuid
 from datetime import date, datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from app.models.staff import Gender
 from app.models.students import EnrollmentType, TransferStatus
 
@@ -13,21 +13,21 @@ class StudentCreate(BaseModel):
     # Omit or leave blank to auto-generate as {SCHOOL_CODE}/{YEAR}/{SEQ} (see
     # services/student.py::_next_admission_number). Supply a value to keep an
     # existing numbering scheme (bulk import, mid-year onboarding, etc.).
-    admission_number: str | None = None
-    first_name: str
-    middle_name: str | None = None
-    last_name: str
+    admission_number: str | None = Field(default=None, max_length=50)
+    first_name: str = Field(max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str = Field(max_length=100)
     date_of_birth: date | None = None
     gender: Gender | None = None
-    nationality: str | None = None
-    religion: str | None = None
-    hometown: str | None = None
+    nationality: str | None = Field(default=None, max_length=50)
+    religion: str | None = Field(default=None, max_length=50)
+    hometown: str | None = Field(default=None, max_length=100)
     residential_address: str | None = None
-    nhis_number: str | None = None
-    ghana_card_number: str | None = None
+    nhis_number: str | None = Field(default=None, max_length=50)
+    ghana_card_number: str | None = Field(default=None, max_length=50)
     is_boarding: bool = False
-    orphan_status: str = "NONE"
-    disability: str | None = None
+    orphan_status: str = Field(default="NONE", max_length=20)
+    disability: str | None = Field(default=None, max_length=200)
 
     @field_validator("admission_number")
     @classmethod
@@ -43,20 +43,20 @@ class StudentCreate(BaseModel):
 
 
 class StudentUpdate(BaseModel):
-    first_name: str | None = None
-    middle_name: str | None = None
-    last_name: str | None = None
+    first_name: str | None = Field(default=None, max_length=100)
+    middle_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
     date_of_birth: date | None = None
     gender: Gender | None = None
-    nationality: str | None = None
-    religion: str | None = None
-    hometown: str | None = None
+    nationality: str | None = Field(default=None, max_length=50)
+    religion: str | None = Field(default=None, max_length=50)
+    hometown: str | None = Field(default=None, max_length=100)
     residential_address: str | None = None
-    nhis_number: str | None = None
-    ghana_card_number: str | None = None
+    nhis_number: str | None = Field(default=None, max_length=50)
+    ghana_card_number: str | None = Field(default=None, max_length=50)
     is_boarding: bool | None = None
-    orphan_status: str | None = None
-    disability: str | None = None
+    orphan_status: str | None = Field(default=None, max_length=20)
+    disability: str | None = Field(default=None, max_length=200)
     is_active: bool | None = None
 
 
@@ -71,7 +71,7 @@ class MedicalRecordRead(BaseModel):
 
 
 class MedicalRecordUpsert(BaseModel):
-    blood_group: str | None = None
+    blood_group: str | None = Field(default=None, max_length=10)
     allergies: str | None = None
     chronic_conditions: str | None = None
     medications: str | None = None
@@ -92,24 +92,24 @@ class StudentGuardianRead(BaseModel):
 
 
 class GuardianCreate(BaseModel):
-    first_name: str
-    last_name: str
-    phone: str
-    email: str | None = None
-    occupation: str | None = None
+    first_name: str = Field(max_length=100)
+    last_name: str = Field(max_length=100)
+    phone: str = Field(max_length=20)
+    email: str | None = Field(default=None, max_length=200)
+    occupation: str | None = Field(default=None, max_length=100)
     address: str | None = None
-    relation_type: str
+    relation_type: str = Field(max_length=50)
     is_primary: bool = False
 
 
 class GuardianUpdate(BaseModel):
-    first_name: str | None = None
-    last_name: str | None = None
-    phone: str | None = None
-    email: str | None = None
-    occupation: str | None = None
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=20)
+    email: str | None = Field(default=None, max_length=200)
+    occupation: str | None = Field(default=None, max_length=100)
     address: str | None = None
-    relation_type: str | None = None
+    relation_type: str | None = Field(default=None, max_length=50)
     is_primary: bool | None = None
 
 

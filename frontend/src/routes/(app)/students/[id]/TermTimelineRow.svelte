@@ -72,10 +72,13 @@
 
       {#if isRegistered}
         {#if !term.is_current}
-          <span class="text-amber-500" title="Not the current term — adding or removing subjects here needs a reason, and is only possible for staff who can approve scores">⚠</span>
+          <span class="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400"
+            title="Adding or removing subjects here needs a reason, and is only possible for staff who can approve scores">
+            <span aria-hidden="true">⚠</span> Not current term
+          </span>
         {/if}
         <button onclick={() => expanded = !expanded}
-          class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+          class="flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
           {subjectCount === undefined ? '…' : `${subjectCount} subject${subjectCount === 1 ? '' : 's'}`}
           <svg class="h-3.5 w-3.5 transition-transform duration-150 {expanded ? 'rotate-90' : ''}"
             fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -86,7 +89,7 @@
         <span class="text-xs text-[var(--fg-subtle)]">{enrollment ? 'Withdrawn from this term' : 'Not registered'}</span>
         {#if canEdit}
           <button onclick={onRegister} disabled={isRegistering}
-            class="rounded-lg px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
+            class="min-h-[44px] rounded-lg px-3 py-1 text-xs font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
             style="background: var(--brand)">
             {isRegistering ? '…' : 'Register'}
           </button>

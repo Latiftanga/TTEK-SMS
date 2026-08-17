@@ -88,6 +88,30 @@ async def test_create_student_with_middle_name(client: AsyncClient, auth: dict):
 
 
 @pytest.mark.asyncio
+async def test_create_student_oversized_first_name_rejected(client: AsyncClient, auth: dict):
+    """Regression: StudentCreate had no max_length anywhere, so an oversized
+    value hit an unhandled DB-level error instead of a clean 422 — the same
+    gap already closed for Academic (12bu) and Documents (12bs), missed here."""
+    resp = await client.post("/students", json=_student(first_name="X" * 101), headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_student_oversized_admission_number_rejected(client: AsyncClient, auth: dict):
+    resp = await client.post("/students", json=_student(num="X" * 51), headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_add_guardian_oversized_phone_rejected(client: AsyncClient, auth: dict):
+    sid = (await client.post("/students", json=_student(), headers=auth)).json()["id"]
+    resp = await client.post(f"/students/{sid}/guardians", json={
+        "first_name": "Kofi", "last_name": "Mensah", "phone": "0" * 21, "relation_type": "Parent",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_duplicate_admission_number_rejected(client: AsyncClient, auth: dict):
     await client.post("/students", json=_student(), headers=auth)
     resp = await client.post("/students", json=_student(), headers=auth)

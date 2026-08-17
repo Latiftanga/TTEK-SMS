@@ -137,23 +137,23 @@
 
         <div class="flex flex-wrap items-center gap-2 sm:justify-end">
           <button onclick={downloadTranscript} disabled={downloadingTranscript}
-            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+            class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
             {downloadingTranscript ? 'Generating…' : 'Download transcript'}
           </button>
           {#if s.can_manage}
             {#if s.is_active}
               <button onclick={() => confirmDeactivate = true}
-                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+                class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
                 Deactivate
               </button>
             {:else if hasApprovedTransfer}
               <button onclick={() => confirmReactivate = true}
-                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+                class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
                 Reactivate
               </button>
             {:else}
               <button onclick={() => $toggleMut.mutate()} disabled={$toggleMut.isPending}
-                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+                class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
                 {$toggleMut.isPending ? '…' : 'Reactivate'}
               </button>
             {/if}

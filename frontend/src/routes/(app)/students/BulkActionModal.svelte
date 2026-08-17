@@ -83,11 +83,12 @@
       <div class="mx-2 h-4 w-px bg-[var(--border)]"></div>
       {#each (['promote', 'repeat', 'demote'] as const) as a}
         <button onclick={() => openAction(a)}
-          class="rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-[var(--hover)]">
+          class="min-h-[44px] rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-[var(--hover)]">
           {a === 'promote' ? 'Promote ↑' : a === 'repeat' ? 'Repeat ↺' : 'Demote ↓'}
         </button>
       {/each}
-      <button onclick={onClear} class="ml-1 text-sm text-[var(--fg-muted)] transition hover:text-[var(--fg)]">✕</button>
+      <button onclick={onClear} aria-label="Clear selection"
+        class="ml-1 flex min-h-[44px] min-w-[44px] items-center justify-center text-sm text-[var(--fg-muted)] transition hover:text-[var(--fg)]">✕</button>
     </div>
   </div>
 {/if}
@@ -95,38 +96,42 @@
 <!-- Action modal -->
 {#if action}
   <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
-      <h2 class="text-lg font-bold text-[var(--fg)]">{LABELS[action].title} Students</h2>
-      <p class="mb-5 mt-1 text-sm text-[var(--fg-muted)]">
-        {count} student{count !== 1 ? 's' : ''} selected. {LABELS[action].desc}
-      </p>
-
-      <div class="space-y-3">
-        <label class="block">
-          <span class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Target class</span>
-          <select bind:value={targetClassId} class="sel">
-            <option value="">Select class…</option>
-            {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
-          </select>
-        </label>
-        <label class="block">
-          <span class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Target term</span>
-          <select bind:value={targetTermId} class="sel">
-            <option value="">Select term…</option>
-            {#each terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
-          </select>
-        </label>
+    <div class="flex max-h-[90vh] w-full max-w-md flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+      <div class="shrink-0 p-6 pb-0">
+        <h2 class="text-lg font-bold text-[var(--fg)]">{LABELS[action].title} Students</h2>
+        <p class="mb-5 mt-1 text-sm text-[var(--fg-muted)]">
+          {count} student{count !== 1 ? 's' : ''} selected. {LABELS[action].desc}
+        </p>
       </div>
 
-      {#if error}<p class="mt-3 text-xs text-red-500">{error}</p>{/if}
+      <div class="min-h-0 flex-1 overflow-y-auto px-6">
+        <div class="space-y-3">
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Target class</span>
+            <select bind:value={targetClassId} class="sel">
+              <option value="">Select class…</option>
+              {#each classes as c}<option value={c.id}>{c.display_name}</option>{/each}
+            </select>
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Target term</span>
+            <select bind:value={targetTermId} class="sel">
+              <option value="">Select term…</option>
+              {#each terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
+            </select>
+          </label>
+        </div>
 
-      <div class="mt-6 flex justify-end gap-3">
+        {#if error}<p class="mt-3 text-xs text-red-500">{error}</p>{/if}
+      </div>
+
+      <div class="mt-6 flex shrink-0 justify-end gap-3 p-6 pt-0">
         <button onclick={closeModal}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+          class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
           Cancel
         </button>
         <button onclick={confirm} disabled={$bulkMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
+          class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
           style="background: var(--brand)">
           {$bulkMut.isPending ? 'Processing…' : `${LABELS[action].title} ${count}`}
         </button>
@@ -146,5 +151,5 @@
 
 <style>
   @reference "tailwindcss";
-  .sel { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .sel { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

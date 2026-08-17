@@ -2,6 +2,8 @@
   // Shared by GuardiansTab.svelte's "add guardian" panel and its per-row
   // inline edit — both used to be separate ~35-line copies of the same
   // field set with duplicated required-field validation.
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+
   export interface GuardianFormData {
     first_name: string; last_name: string; phone: string; email: string;
     occupation: string; address: string; relation_type: string; is_primary: boolean;
@@ -23,6 +25,19 @@
   let form = $state<GuardianFormData>({ ...initial });
   let localError = $state('');
   const error = $derived(localError || serverError);
+
+  // Compared against `initial` (not blank) since this same component is
+  // reused for both "add guardian" (initial is blank) and inline per-row
+  // edit (initial is the existing values) — guarding the Cancel button
+  // here covers both call sites for free.
+  const hasUnsaved = $derived(
+    (Object.keys(initial) as (keyof GuardianFormData)[]).some(k => form[k] !== initial[k])
+  );
+  let confirmDiscard = $state(false);
+  function requestCancel() {
+    if (hasUnsaved) confirmDiscard = true;
+    else onCancel();
+  }
 
   function submit() {
     localError = '';
@@ -63,17 +78,27 @@
 {#if error}<p class="mt-2 text-xs text-red-500">{error}</p>{/if}
 <div class="mt-3 flex gap-2">
   <button onclick={submit} disabled={pending}
-    class="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
+    class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90" style="background: var(--brand)">
     {pending ? 'Saving…' : submitLabel}
   </button>
-  <button onclick={onCancel}
-    class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
+  <button onclick={requestCancel}
+    class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
     Cancel
   </button>
 </div>
 
+<ConfirmModal
+  open={confirmDiscard}
+  title="Discard changes?"
+  message="You've made changes that haven't been saved yet. Closing now will lose them."
+  confirmLabel="Discard"
+  variant="warning"
+  onConfirm={() => { confirmDiscard = false; onCancel(); }}
+  onCancel={() => confirmDiscard = false}
+/>
+
 <style>
   @reference "tailwindcss";
   .label { @apply block text-xs font-medium text-[var(--fg-muted)] mb-1; }
-  .input  { @apply w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .input  { @apply w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

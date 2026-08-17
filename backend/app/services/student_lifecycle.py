@@ -39,9 +39,17 @@ async def deactivate_student(
     the cascade to that year only (graduation, which only ends this year's
     membership).
     """
+    # Defense-in-depth for every current and future caller: this is a
+    # shared cascade (transfer/withdrawal/graduation all route through it)
+    # and, unlike the StudentClassAssignment/TermEnrollment updates below,
+    # the Student row itself was previously fetched by id alone with no
+    # school_id check — a caller from a different school supplying a real
+    # foreign student_id could silently deactivate that student and revoke
+    # their portal login.
     student = await db.get(Student, student_id)
-    if student:
-        student.is_active = False
+    if not student or student.school_id != school_id:
+        raise HTTPException(status_code=404, detail="Student not found.")
+    student.is_active = False
 
     assignment_where = [
         StudentClassAssignment.student_id == student_id,

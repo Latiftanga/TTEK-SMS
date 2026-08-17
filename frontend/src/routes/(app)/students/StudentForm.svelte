@@ -6,6 +6,7 @@
   import { resolveDefaultYear } from '$lib/academicPeriod';
   import { listHouses, createAssignment } from '$lib/api/housing';
   import { portal } from '$lib/actions/portal';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   interface Props { open: boolean; onClose: () => void; }
   const { open, onClose }: Props = $props();
@@ -52,8 +53,18 @@
     { value: 'FULL_ORPHAN', label: 'Full orphan' },
   ];
 
-  const INPUT = 'w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition';
+  const INPUT = 'w-full min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition';
   const LABEL = 'mb-1 block text-xs font-medium text-[var(--fg-muted)]';
+
+  // An 18-field drawer, more than StaffForm.svelte (which got this guard in
+  // 12ay) — compares against blankStudent()'s own defaults, not plain
+  // emptiness, since nationality/orphan_status start pre-filled.
+  function isBlank(f: StudentCreate): boolean {
+    const b = blankStudent();
+    return (Object.keys(b) as (keyof StudentCreate)[]).every(k => f[k] === b[k]);
+  }
+  const hasUnsaved = $derived(!isBlank(form) || !!classId || !!houseId || !!roomId);
+  let confirmDiscard = $state(false);
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const mut = createMutation({
@@ -86,7 +97,11 @@
     form = blankStudent(); classId = ''; houseId = ''; roomId = ''; error = '';
   }
   function close() { onClose(); reset(); }
-  function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') close(); }
+  function requestClose() {
+    if (hasUnsaved) confirmDiscard = true;
+    else close();
+  }
+  function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') requestClose(); }
 
   function handleSubmit() {
     error = '';
@@ -113,7 +128,7 @@
 <div use:portal>
   {#if open}
     <div class="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm"
-         onclick={close} role="presentation" aria-hidden="true"></div>
+         onclick={requestClose} role="presentation" aria-hidden="true"></div>
   {/if}
 
   <div class="fixed inset-y-0 right-0 z-[60] flex w-full max-w-md flex-col border-l border-[var(--border)] bg-[var(--card)] shadow-2xl transition-transform duration-300"
@@ -125,7 +140,7 @@
         <h2 class="text-base font-semibold text-[var(--fg)]">Add student</h2>
         <p class="mt-0.5 text-xs text-[var(--fg-muted)]">Required fields only — more can be added from the profile.</p>
       </div>
-      <button onclick={close} class="rounded-xl p-2 text-[var(--fg-muted)] hover:bg-[var(--hover)] transition" aria-label="Close">
+      <button onclick={requestClose} class="rounded-xl p-2 text-[var(--fg-muted)] hover:bg-[var(--hover)] transition" aria-label="Close">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -284,10 +299,20 @@
         style="background: var(--brand)">
         {$mut.isPending ? 'Saving…' : 'Add student & open profile'}
       </button>
-      <button onclick={close}
+      <button onclick={requestClose}
         class="mt-2 w-full rounded-xl border border-[var(--border)] py-2.5 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
         Cancel
       </button>
     </div>
   </div>
 </div>
+
+<ConfirmModal
+  open={confirmDiscard}
+  title="Discard new student?"
+  message="You've entered details that haven't been saved yet. Closing now will lose them."
+  confirmLabel="Discard"
+  variant="warning"
+  onConfirm={() => { confirmDiscard = false; close(); }}
+  onCancel={() => confirmDiscard = false}
+/>

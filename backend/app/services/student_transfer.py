@@ -29,6 +29,11 @@ async def create_transfer_request(
     if not student or student.school_id != school_id:
         raise HTTPException(status_code=404, detail="Student not found.")
 
+    if req.requesting_school_id is not None:
+        requesting_school = await db.get(School, req.requesting_school_id)
+        if not requesting_school:
+            raise HTTPException(status_code=404, detail="Requesting school not found.")
+
     existing_pending = await db.scalar(
         select(TransferRequest).where(
             TransferRequest.student_id == student_id,
