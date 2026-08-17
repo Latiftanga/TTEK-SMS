@@ -87,7 +87,7 @@
   <p class="text-sm font-semibold text-[var(--fg)]">Houses</p>
   {#if canAdmin}
     <button onclick={() => { showForm = !showForm; formErr = ''; }}
-      class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+      class="flex min-h-[44px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
       style="background: var(--brand)">
       <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
@@ -119,7 +119,7 @@
       </div>
       <div>
         <label class="label">Capacity</label>
-        <input type="number" min="1" bind:value={form.capacity} placeholder="e.g. 120" class="input" />
+        <input type="number" min="1" inputmode="numeric" bind:value={form.capacity} placeholder="e.g. 120" class="input" />
       </div>
       <div>
         <label class="label">Colour (hex)</label>
@@ -172,7 +172,7 @@
           <span>{h.rooms.length} room{h.rooms.length === 1 ? '' : 's'}</span>
           {#if !h.is_active}<span class="text-amber-500">Inactive</span>{/if}
         </div>
-        <div class="mt-2 flex items-center gap-1 text-[10px] text-[var(--brand)] opacity-0 transition group-hover:opacity-100">
+        <div class="mt-2 flex items-center gap-1 text-[10px] text-[var(--brand)]">
           <span>Manage exeats, rooms, students →</span>
         </div>
       </button>

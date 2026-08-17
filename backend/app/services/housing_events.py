@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.housing_scope import assert_house_in_scope, current_year_id, resolve_house_scope
+from app.core.housing_scope import assert_house_active, assert_house_in_scope, current_year_id, resolve_house_scope
 from app.models.attendance import SchoolCalendar
 from app.models.housing import Exeat, ExeatStatus, House, NightRollCall, StudentHouseAssignment
 from app.models.students import Student
@@ -59,6 +59,7 @@ async def record_roll_call(
     )
     if not house:
         raise HTTPException(404, "House not found.")
+    assert_house_active(house)
     await assert_house_in_scope(req.house_id, user_id, school_id, await current_year_id(school_id, db), db)
     cal = await db.scalar(
         select(SchoolCalendar).where(

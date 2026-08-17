@@ -1,16 +1,16 @@
 from __future__ import annotations
 import uuid
 from datetime import date, datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from app.models.housing import ExeatStatus, ExeatType, HouseGender
 
 
 class HouseCreate(BaseModel):
-    name: str
-    code: str
+    name: str = Field(max_length=100)
+    code: str = Field(max_length=20)
     gender: HouseGender
-    capacity: int | None = None
-    color: str | None = None
+    capacity: int | None = Field(default=None, gt=0)
+    color: str | None = Field(default=None, max_length=20)
 
     @field_validator("name", "code")
     @classmethod
@@ -21,9 +21,9 @@ class HouseCreate(BaseModel):
 
 
 class HouseUpdate(BaseModel):
-    name: str | None = None
-    capacity: int | None = None
-    color: str | None = None
+    name: str | None = Field(default=None, max_length=100)
+    capacity: int | None = Field(default=None, gt=0)
+    color: str | None = Field(default=None, max_length=20)
     is_active: bool | None = None
 
 
@@ -44,9 +44,9 @@ class HouseDetail(HouseRead):
 
 
 class RoomCreate(BaseModel):
-    room_number: str
-    capacity: int | None = None
-    room_type: str = "DORMITORY"
+    room_number: str = Field(max_length=20)
+    capacity: int | None = Field(default=None, gt=0)
+    room_type: str = Field(default="DORMITORY", max_length=50)
 
     @field_validator("room_number")
     @classmethod
@@ -57,9 +57,9 @@ class RoomCreate(BaseModel):
 
 
 class RoomUpdate(BaseModel):
-    room_number: str | None = None
-    capacity: int | None = None
-    room_type: str | None = None
+    room_number: str | None = Field(default=None, max_length=20)
+    capacity: int | None = Field(default=None, gt=0)
+    room_type: str | None = Field(default=None, max_length=50)
 
 
 class RoomRead(BaseModel):
@@ -139,7 +139,7 @@ class ExeatCreate(BaseModel):
     student_id: uuid.UUID
     exeat_type: ExeatType = ExeatType.EXTERNAL
     reason: str
-    destination: str
+    destination: str = Field(max_length=200)
     departure_date: date
     return_date: date
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.housing_scope import assert_house_in_scope, current_year_id, resolve_house_scope
+from app.core.housing_scope import assert_house_active, assert_house_in_scope, current_year_id, resolve_house_scope
 from app.models.housing import House, HouseGender, Room, StudentHouseAssignment
 from app.models.students import Student
 from app.schemas.housing import (
@@ -30,7 +30,13 @@ async def assign_student(
     )
     if not house:
         raise HTTPException(404, "House not found.")
-    await assert_house_in_scope(req.house_id, user_id, school_id, req.academic_year_id, db)
+    assert_house_active(house)
+    # Scope is checked against the caller's real CURRENT-year housemaster
+    # status, not req.academic_year_id — same reasoning as
+    # services/housing.py::assign_house_master: a scoped housemaster could
+    # otherwise assign a student into a house they don't manage simply by
+    # naming an academic year they hold no HouseMaster row for at all.
+    await assert_house_in_scope(req.house_id, user_id, school_id, await current_year_id(school_id, db), db)
     if house.gender != HouseGender.MIXED:
         if student.gender is None:
             raise HTTPException(
@@ -61,6 +67,33 @@ async def assign_student(
     )
     if existing:
         raise HTTPException(409, "Student already has an active house assignment for this academic year.")
+
+    # Capacity is a real physical constraint (beds in a room, beds in a
+    # house), independent of which academic year the assignment record is
+    # for — "currently resident" (vacated_at IS NULL) is what fills a bed,
+    # not which year's paperwork it's filed under. capacity is optional
+    # (None = not tracked for this house/room), so only enforced when set.
+    if house.capacity is not None:
+        occupied = await db.scalar(
+            select(func.count(StudentHouseAssignment.id)).where(
+                StudentHouseAssignment.house_id == req.house_id,
+                StudentHouseAssignment.school_id == school_id,
+                StudentHouseAssignment.vacated_at.is_(None),
+            )
+        ) or 0
+        if occupied >= house.capacity:
+            raise HTTPException(409, f"{house.name} is at full capacity ({house.capacity}).")
+    if req.room_id and room.capacity is not None:
+        occupied_room = await db.scalar(
+            select(func.count(StudentHouseAssignment.id)).where(
+                StudentHouseAssignment.room_id == req.room_id,
+                StudentHouseAssignment.school_id == school_id,
+                StudentHouseAssignment.vacated_at.is_(None),
+            )
+        ) or 0
+        if occupied_room >= room.capacity:
+            raise HTTPException(409, f"Room {room.room_number} is at full capacity ({room.capacity}).")
+
     assignment = StudentHouseAssignment(
         school_id=school_id,
         student_id=req.student_id,
@@ -115,8 +148,12 @@ async def get_student_current_assignment(
         return None
     # A scoped housemaster looking up a student outside their own house gets
     # the same "nothing to see" response as no assignment at all — never a
-    # signal that the student is (or was) assigned somewhere else.
-    scope = await resolve_house_scope(user_id, school_id, year_id, db)
+    # signal that the student is (or was) assigned somewhere else. Scope is
+    # resolved against the CURRENT year, not the caller-supplied `year_id`
+    # (which just selects which year's assignment to fetch) — otherwise a
+    # housemaster could reveal any student's placement by simply asking
+    # about a year they hold no HouseMaster row for at all.
+    scope = await resolve_house_scope(user_id, school_id, await current_year_id(school_id, db), db)
     if scope is not None and assignment.house_id not in scope:
         return None
     return _to_assignment(assignment)

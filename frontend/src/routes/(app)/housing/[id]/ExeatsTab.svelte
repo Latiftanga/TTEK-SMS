@@ -6,6 +6,7 @@
   } from '$lib/api/housing';
   import { listStudents } from '$lib/api/students';
   import { toast } from '$lib/stores/toast';
+  import { portal } from '$lib/actions/portal';
   import ExeatsTable from '../ExeatsTable.svelte';
 
   interface Props { houseId: string; canManage: boolean; }
@@ -91,7 +92,10 @@
 
 <!-- Return date modal -->
 {#if returningId}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div use:portal role="dialog" aria-modal="true"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    onkeydown={(e) => { if (e.key === 'Escape') returningId = null; }}>
     <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-xl">
       <p class="mb-1 font-semibold text-[var(--fg)]">Record return</p>
       <p class="mb-4 text-xs text-[var(--fg-muted)]">Enter the actual date the student returned.</p>
@@ -99,12 +103,12 @@
       <input type="date" bind:value={returnDate} class="input mb-4" />
       <div class="flex gap-2">
         <button onclick={() => $returnMut.mutate()} disabled={$returnMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+          class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           style="background: var(--brand)">
           {$returnMut.isPending ? 'Saving…' : 'Confirm return'}
         </button>
         <button onclick={() => returningId = null}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
+          class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
           Cancel
         </button>
       </div>
@@ -116,7 +120,7 @@
 {#if canManage}
   <div class="mb-5 flex justify-end">
     <button onclick={() => { showForm = !showForm; efErr = ''; }}
-      class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+      class="flex min-h-[44px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
       style="background: var(--brand)">
       <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
@@ -187,12 +191,12 @@
       {#if efErr}<p class="mt-2 text-xs text-red-500">{efErr}</p>{/if}
       <div class="mt-3 flex gap-2">
         <button onclick={handleCreate} disabled={$createMut.isPending}
-          class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+          class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
           style="background: var(--brand)">
           {$createMut.isPending ? 'Issuing…' : 'Issue exeat'}
         </button>
         <button onclick={() => { showForm = false; efErr = ''; }}
-          class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
+          class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">
           Cancel
         </button>
       </div>

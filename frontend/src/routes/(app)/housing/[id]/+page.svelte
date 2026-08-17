@@ -104,7 +104,7 @@
         </div>
         {#if canAdmin}
           <button onclick={() => editing = true}
-            class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold
+            class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold
                    text-[var(--fg-muted)] hover:bg-[var(--hover)] transition">Edit</button>
         {/if}
       </div>
@@ -116,7 +116,7 @@
         </div>
         <div>
           <label class="label">Capacity</label>
-          <input type="number" min="1" bind:value={ef.capacity} class="input" />
+          <input type="number" min="1" inputmode="numeric" bind:value={ef.capacity} class="input" />
         </div>
         <div>
           <label class="label">Colour (hex)</label>

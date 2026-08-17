@@ -28,7 +28,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.housing import HouseMaster
+from app.models.housing import House, HouseMaster
 
 
 async def _staff_member_id_for(user_id: uuid.UUID, db: AsyncSession) -> uuid.UUID | None:
@@ -100,6 +100,16 @@ async def assert_unrestricted(
     all (a real housemaster), not just "isn't this specific house."""
     if await resolve_house_scope(user_id, school_id, academic_year_id, db) is not None:
         raise HTTPException(403, detail)
+
+
+def assert_house_active(house: House) -> None:
+    """422 if the house has been retired (House.is_active=False) — mirrors
+    academic_class.py::get_active_class()'s same guard for Class. Only wired
+    into WRITE paths (assigning a student/housemaster, adding a room,
+    recording a roll call) — reads (get_house, list_rooms, ...) stay visible
+    for a retired house, same "reads stay open, writes don't" convention."""
+    if not house.is_active:
+        raise HTTPException(422, "This house is inactive.")
 
 
 async def current_year_id(school_id: uuid.UUID, db: AsyncSession) -> uuid.UUID | None:

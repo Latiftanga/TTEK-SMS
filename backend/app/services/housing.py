@@ -7,7 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.housing_scope import assert_house_in_scope, assert_unrestricted, current_year_id, resolve_house_scope
+from app.core.housing_scope import (
+    assert_house_active, assert_house_in_scope, assert_unrestricted, current_year_id, resolve_house_scope,
+)
 from app.models.academic import AcademicYear
 from app.models.housing import House, HouseMaster, Room
 from app.models.staff import StaffMember
@@ -107,7 +109,8 @@ async def update_house(
 async def add_room(
     house_id: uuid.UUID, req: RoomCreate, user_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession
 ) -> RoomRead:
-    await _fetch_house(house_id, user_id, school_id, db)
+    house = await _fetch_house(house_id, user_id, school_id, db)
+    assert_house_active(house)
     room = Room(
         school_id=school_id,
         house_id=house_id,
@@ -157,14 +160,21 @@ async def assign_house_master(
 ) -> HouseMasterRead:
     # Deciding WHO manages a house is an administrative appointment, not
     # day-to-day house management — even a caller who already manages a
-    # different house can't reassign themselves or anyone else.
+    # different house can't reassign themselves or anyone else. The check
+    # is against the caller's real CURRENT-year housemaster status, never
+    # req.academic_year_id — an actual housemaster could otherwise evade
+    # this entirely by naming an off-year they hold no HouseMaster row for
+    # (resolve_house_scope's "zero rows this year = unrestricted" rule was
+    # meant for the "not a housemaster at all" case, not "picked a year I
+    # don't manage").
     await assert_unrestricted(
-        user_id, school_id, req.academic_year_id, db,
+        user_id, school_id, await current_year_id(school_id, db), db,
         "Only a school administrator can assign a housemaster.",
     )
     house = await db.scalar(select(House).where(House.id == house_id, House.school_id == school_id))
     if not house:
         raise HTTPException(404, "House not found.")
+    assert_house_active(house)
     staff = await db.scalar(
         select(StaffMember).where(
             StaffMember.id == req.staff_member_id,
@@ -211,9 +221,12 @@ async def remove_house_master(
     unassigning it. Same administrative-appointment gate as assigning one
     (removing is the same tier of decision). Returns the outgoing
     staff_member_id so the caller can invalidate their permission cache
-    (they lose the HOUSEMASTER derived role)."""
+    (they lose the HOUSEMASTER derived role). `academic_year_id` (which year's
+    HouseMaster row to remove) is still caller-supplied for the actual query
+    below — only the *authorization* check is pinned to the real current
+    year, same reasoning as assign_house_master."""
     await assert_unrestricted(
-        user_id, school_id, academic_year_id, db,
+        user_id, school_id, await current_year_id(school_id, db), db,
         "Only a school administrator can remove a housemaster.",
     )
     hm = await db.scalar(

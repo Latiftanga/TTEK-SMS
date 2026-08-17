@@ -371,6 +371,95 @@ async def test_assign_house_master_403_for_scoped_housemaster(
 
 
 @pytest.mark.asyncio
+async def test_assign_house_master_403_even_naming_an_off_year(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, academic_year: AcademicYear, redis_permissions: None,
+):
+    """Regression: assert_unrestricted() was checked against the CALLER-
+    SUPPLIED academic_year_id (req.academic_year_id) rather than the real
+    current year — resolve_house_scope's "zero HouseMaster rows this year =
+    unrestricted" rule (meant for "not a housemaster at all") let a genuine
+    scoped housemaster bypass the 403 above entirely just by naming an
+    academic year they hold zero HouseMaster rows for, even though they ARE
+    a real housemaster of house_a in the actual current year."""
+    house_a = await _make_house_api(client, auth, "INTD3")
+    house_b = await _make_house_api(client, auth, "INTD4")
+    staff, _user = await _make_housemaster_staff(db_session, school, "OFFYEARHM")
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house_a["id"], staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    off_year = AcademicYear(
+        school_id=school.id, name="2098/2099",
+        start_date=date(2098, 9, 1), end_date=date(2099, 7, 31), is_current=False,
+    )
+    db_session.add(off_year)
+    await db_session.flush()
+    hm_auth = await _login(client, "hmscope-offyearhm@presec-test.edu.gh", school)
+
+    r = await client.post(f"/housing/houses/{house_b['id']}/master", json={
+        "staff_member_id": str(staff.id), "academic_year_id": str(off_year.id),
+    }, headers=hm_auth)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_remove_house_master_403_even_naming_an_off_year(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, academic_year: AcademicYear, redis_permissions: None,
+):
+    house_a = await _make_house_api(client, auth, "INTD5")
+    house_b = await _make_house_api(client, auth, "INTD6")
+    staff, _other_staff_id = await _make_housemaster_staff(db_session, school, "OFFYEARRM")
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house_a["id"], staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    off_year = AcademicYear(
+        school_id=school.id, name="2097/2098",
+        start_date=date(2097, 9, 1), end_date=date(2098, 7, 31), is_current=False,
+    )
+    db_session.add(off_year)
+    other_staff = StaffMember(school_id=school.id, staff_number="VICTIM1", first_name="Victim", last_name="One")
+    db_session.add(other_staff)
+    await db_session.flush()
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house_b["id"], staff_member_id=other_staff.id,
+        academic_year_id=off_year.id, is_active=True,
+    ))
+    await db_session.flush()
+    hm_auth = await _login(client, "hmscope-offyearrm@presec-test.edu.gh", school)
+
+    r = await client.delete(f"/housing/houses/{house_b['id']}/master?year_id={off_year.id}", headers=hm_auth)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assign_student_403_even_naming_an_off_year(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, academic_year: AcademicYear, redis_permissions: None,
+):
+    house_a = await _make_house_api(client, auth, "INTD7", gender="FEMALE")
+    house_b = await _make_house_api(client, auth, "INTD8", gender="FEMALE")
+    staff, _user = await _make_housemaster_staff(db_session, school, "OFFYEARSTU")
+    db_session.add(HouseMaster(
+        school_id=school.id, house_id=house_a["id"], staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    off_year = AcademicYear(
+        school_id=school.id, name="2096/2097",
+        start_date=date(2096, 9, 1), end_date=date(2097, 7, 31), is_current=False,
+    )
+    db_session.add(off_year)
+    await db_session.flush()
+    hm_auth = await _login(client, "hmscope-offyearstu@presec-test.edu.gh", school)
+    student = await _make_student_api(client, auth, "OFFYRSTU1", gender="FEMALE")
+
+    r = await client.post("/housing/assignments", json={
+        "student_id": student["id"], "house_id": house_b["id"],
+        "academic_year_id": str(off_year.id), "assigned_at": str(off_year.start_date),
+    }, headers=hm_auth)
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_rooms_and_house_students_scoped(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, academic_year: AcademicYear, redis_permissions: None,
 ):

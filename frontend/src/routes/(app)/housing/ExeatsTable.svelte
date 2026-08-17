@@ -54,12 +54,12 @@
               <td class="px-4 py-3">
                 <div class="flex gap-2">
                   <button onclick={() => onApprove(e.id)} disabled={actionPending}
-                    class="rounded-lg bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 transition
+                    class="min-h-[44px] rounded-lg bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 transition
                            hover:bg-green-100 dark:bg-green-950/40 dark:text-green-400 disabled:opacity-50">
                     Approve
                   </button>
                   <button onclick={() => onReject(e.id)} disabled={actionPending}
-                    class="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 transition
+                    class="min-h-[44px] rounded-lg bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 transition
                            hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400 disabled:opacity-50">
                     Reject
                   </button>
@@ -100,7 +100,7 @@
               </td>
               <td class="px-4 py-3 text-right">
                 <button onclick={() => onReturn(e.id)}
-                  class="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold
+                  class="min-h-[44px] rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold
                          text-[var(--fg)] hover:bg-[var(--hover)] transition">
                   Record return
                 </button>

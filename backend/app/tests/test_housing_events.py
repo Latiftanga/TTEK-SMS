@@ -48,6 +48,21 @@ async def test_record_roll_call(
 
 
 @pytest.mark.asyncio
+async def test_record_roll_call_rejected_on_inactive_house(
+    client: AsyncClient, auth: dict, school_calendar: SchoolCalendar,
+):
+    h = await _make_house(client, auth, code="RCH3")
+    await client.patch(f"/housing/houses/{h['id']}", json={"is_active": False}, headers=auth)
+
+    r = await client.post("/housing/roll-calls", json={
+        "house_id": h["id"],
+        "school_calendar_id": str(school_calendar.id),
+        "total_expected": 50, "total_present": 48,
+    }, headers=auth)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_list_roll_calls(
     client: AsyncClient, auth: dict, school_calendar: SchoolCalendar,
 ):

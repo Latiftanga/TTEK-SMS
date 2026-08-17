@@ -103,6 +103,22 @@ async def test_duplicate_house_code_rejected(client: AsyncClient, auth: dict):
     assert r.status_code == 409
 
 
+@pytest.mark.asyncio
+async def test_house_capacity_must_be_positive(client: AsyncClient, auth: dict):
+    r = await client.post("/housing/houses", json={
+        "name": "Zero Cap Hall", "code": "ZEROCAP", "gender": "MALE", "capacity": 0,
+    }, headers=auth)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_house_name_oversized_rejected(client: AsyncClient, auth: dict):
+    r = await client.post("/housing/houses", json={
+        "name": "X" * 101, "code": "OVERSZ", "gender": "MALE",
+    }, headers=auth)
+    assert r.status_code == 422
+
+
 # ── Rooms ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -149,6 +165,15 @@ async def test_update_room(client: AsyncClient, auth: dict):
     )
     assert r.status_code == 200
     assert r.json()["capacity"] == 6
+
+
+@pytest.mark.asyncio
+async def test_add_room_rejected_on_inactive_house(client: AsyncClient, auth: dict):
+    h = await _make_house(client, auth, code="RH5")
+    await client.patch(f"/housing/houses/{h['id']}", json={"is_active": False}, headers=auth)
+
+    r = await client.post(f"/housing/houses/{h['id']}/rooms", json={"room_number": "1A"}, headers=auth)
+    assert r.status_code == 422
 
 
 # ── HouseMaster ───────────────────────────────────────────────────────────────
@@ -222,6 +247,19 @@ async def test_remove_house_master_404_when_nothing_to_remove(
         f"/housing/houses/{h['id']}/master?year_id={academic_year.id}", headers=auth,
     )
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_assign_house_master_rejected_on_inactive_house(
+    client: AsyncClient, auth: dict, staff_member: StaffMember, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="HMH6")
+    await client.patch(f"/housing/houses/{h['id']}", json={"is_active": False}, headers=auth)
+
+    r = await client.post(f"/housing/houses/{h['id']}/master", json={
+        "staff_member_id": str(staff_member.id), "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -333,6 +371,68 @@ async def test_assign_student_sets_is_boarding(
     }, headers=auth)
     r = await client.get(f"/students/{s['id']}", headers=auth)
     assert r.json()["is_boarding"] is True
+
+
+@pytest.mark.asyncio
+async def test_assign_student_rejected_on_inactive_house(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="SAH9")
+    s = await _make_student(client, auth, adm="HSTU009")
+    await client.patch(f"/housing/houses/{h['id']}", json={"is_active": False}, headers=auth)
+
+    r = await client.post("/housing/assignments", json={
+        "student_id": s["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_assign_student_house_capacity_enforced(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="SAHCAP1")
+    await client.patch(f"/housing/houses/{h['id']}", json={"capacity": 1}, headers=auth)
+    s1 = await _make_student(client, auth, adm="HSTUCAP1")
+    s2 = await _make_student(client, auth, adm="HSTUCAP2")
+
+    ok = await client.post("/housing/assignments", json={
+        "student_id": s1["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert ok.status_code == 201
+
+    full = await client.post("/housing/assignments", json={
+        "student_id": s2["id"], "house_id": h["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert full.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_assign_student_room_capacity_enforced(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    h = await _make_house(client, auth, code="SAHCAP2")
+    room_r = await client.post(
+        f"/housing/houses/{h['id']}/rooms", json={"room_number": "1A", "capacity": 1}, headers=auth,
+    )
+    room = room_r.json()
+    s1 = await _make_student(client, auth, adm="HSTUCAP3")
+    s2 = await _make_student(client, auth, adm="HSTUCAP4")
+
+    ok = await client.post("/housing/assignments", json={
+        "student_id": s1["id"], "house_id": h["id"], "room_id": room["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert ok.status_code == 201
+
+    full = await client.post("/housing/assignments", json={
+        "student_id": s2["id"], "house_id": h["id"], "room_id": room["id"],
+        "academic_year_id": str(academic_year.id), "assigned_at": "2024-09-01",
+    }, headers=auth)
+    assert full.status_code == 409
 
 
 @pytest.mark.asyncio
