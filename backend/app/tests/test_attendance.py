@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.academic import AcademicTerm, Class, ClassTeacher
-from app.models.attendance import DayType, SchoolCalendar
+from app.models.attendance import AttendanceAuditLog, DayType, SchoolCalendar
 from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
-from app.models.students import Student
+from app.models.students import Student, StudentClassAssignment
 from app.tests.legacy_position_perms import LEGACY_POSITION_PERMISSIONS
 
 
@@ -684,3 +684,181 @@ async def test_mark_attendance_unrestricted_for_attendance_approve_holder(
         "records": [{"student_id": str(student.id), "status": "PRESENT"}],
     }, headers=head_auth)
     assert resp.status_code == 201
+
+
+# ── Duplicate-in-request / audit log (module review follow-up) ────────────────
+
+@pytest.mark.asyncio
+async def test_mark_attendance_rejects_duplicate_student_in_request(
+    client: AsyncClient, auth: dict,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+):
+    """Regression: two records for the same student in one payload previously
+    both saw no existing row (autoflush is off) and both tried to INSERT,
+    surfacing as a raw 500 on the unique constraint instead of a clean 422."""
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [
+            {"student_id": str(student.id), "status": "PRESENT"},
+            {"student_id": str(student.id), "status": "ABSENT"},
+        ],
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert str(student.id) in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_mark_attendance_locked_term_override_writes_audit_log(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    """Regression: check_term_lock_override()'s resolved reason was validated
+    then discarded — a locked-term override left zero record of who did it
+    or why, unlike every sibling flow (Scoring/Assessment/Behaviour)."""
+    academic_term.results_locked = True
+    await db_session.flush()
+
+    hod_auth, hod_staff_id = await _login_as_position(client, auth, db_session, school, "HOD")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=hod_staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+        "override_reason": "Late correction approved",
+    }, headers=hod_auth)
+    assert resp.status_code == 201
+    record_id = resp.json()[0]["id"]
+
+    logs = (await db_session.scalars(
+        select(AttendanceAuditLog).where(AttendanceAuditLog.student_id == student.id)
+    )).all()
+    assert len(logs) == 1
+    assert logs[0].reason == "Late correction approved"
+    assert logs[0].status.value == "PRESENT"
+    assert str(logs[0].attendance_record_id) == record_id
+    assert str(logs[0].class_id) == str(school_class.id)
+
+
+@pytest.mark.asyncio
+async def test_mark_attendance_no_audit_log_when_term_not_locked(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+):
+    resp = await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "PRESENT"}],
+    }, headers=auth)
+    assert resp.status_code == 201
+
+    logs = (await db_session.scalars(
+        select(AttendanceAuditLog).where(AttendanceAuditLog.student_id == student.id)
+    )).all()
+    assert logs == []
+
+
+# ── Attendance-rate formula consistency ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_attendance_summary_rate_counts_present_only(
+    client: AsyncClient, auth: dict,
+    school_calendar: SchoolCalendar, school_class: Class,
+    student: Student, academic_term: AcademicTerm,
+):
+    """Regression: get_summary() previously counted LATE/EXCUSED toward the
+    rate numerator, disagreeing with attendance_stats.py::compute_attendance_
+    stats() (the single definition report_card.py/transcript.py are built on,
+    which counts PRESENT only) — the same student's rate could genuinely
+    differ between the live Attendance page and their report card."""
+    await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "LATE"}],
+    }, headers=auth)
+    resp = await client.get(
+        f"/attendance/summary?student_id={student.id}&term_id={academic_term.id}",
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["days_late"] == 1
+    assert data["attendance_rate"] == 0.0
+
+
+# ── Cross-school / retired-entity ownership checks ──────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_summary_404_for_bogus_term(
+    client: AsyncClient, auth: dict, student: Student,
+):
+    import uuid as _uuid
+    resp = await client.get(
+        f"/attendance/summary?student_id={student.id}&term_id={_uuid.uuid4()}",
+        headers=auth,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_calendar_404_for_bogus_term(client: AsyncClient, auth: dict):
+    import uuid as _uuid
+    resp = await client.get(f"/attendance/calendar?term_id={_uuid.uuid4()}", headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_day_notes_oversized_rejected(
+    client: AsyncClient, auth: dict, school_calendar: SchoolCalendar,
+):
+    resp = await client.patch(f"/attendance/calendar/{school_calendar.id}", json={
+        "day_type": "SCHOOL_HOLIDAY", "notes": "x" * 301,
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_class_summaries_excludes_withdrawn_student(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+    academic_term: AcademicTerm,
+):
+    """Regression: get_class_summaries() never filtered
+    StudentClassAssignment.is_active — a student withdrawn/transferred out
+    of the class mid-term (row deactivated, not deleted) stayed visible in
+    their old class teacher's absence summary forever, the same stale-row
+    shape as the report-card ranking bug fixed in 12u."""
+    await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "ABSENT"}],
+    }, headers=auth)
+
+    assignment = StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    )
+    db_session.add(assignment)
+    await db_session.flush()
+
+    still_active = await client.get(
+        f"/attendance/class-summaries?class_id={school_class.id}&term_id={academic_term.id}",
+        headers=auth,
+    )
+    assert still_active.status_code == 200
+    assert len(still_active.json()) == 1
+
+    assignment.is_active = False
+    await db_session.flush()
+
+    withdrawn = await client.get(
+        f"/attendance/class-summaries?class_id={school_class.id}&term_id={academic_term.id}",
+        headers=auth,
+    )
+    assert withdrawn.status_code == 200
+    assert withdrawn.json() == []

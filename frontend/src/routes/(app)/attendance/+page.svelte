@@ -226,7 +226,7 @@
       {studentCount} student(s) · everyone starts Present — tap a student to change to Absent, Late, or Excused
     </p>
     <button onclick={handleSave} disabled={$markMut.isPending || studentCount === 0}
-      class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
+      class="min-h-[44px] rounded-xl px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
       {$markMut.isPending ? 'Saving…' : 'Save attendance'}
     </button>
   </div>

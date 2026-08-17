@@ -149,3 +149,36 @@ class AttendanceRecord(Base, UUIDPrimaryKey, SchoolScopedMixin):
     )
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AttendanceAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Immutable log of an attendance submission made against a locked term
+    (AcademicTerm.results_locked) — mirrors BehaviourAuditLog/AssessmentAuditLog's
+    same override-audit shape. Only written when check_term_lock_override()
+    actually resolves an override reason (i.e. the term was locked); an
+    ordinary submission against an unlocked term writes no row here.
+
+    attendance_record_id is SET NULL (not CASCADE) on delete so the log
+    survives the record it documents.
+    """
+    __tablename__ = "attendance_audit_log"
+
+    attendance_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("attendance_record.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("class.id"), nullable=False
+    )
+    status: Mapped[AttendanceStatus] = mapped_column(
+        SAEnum(AttendanceStatus, name="attendancestatus"), nullable=False
+    )
+    changed_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

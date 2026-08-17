@@ -170,6 +170,11 @@ async def generate_calendar(
 async def list_calendar(
     school_id: uuid.UUID, term_id: uuid.UUID, db: AsyncSession
 ) -> list[SchoolCalendar]:
+    term = await db.scalar(
+        select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.school_id == school_id)
+    )
+    if not term:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Academic term not found.")
     rows = await db.scalars(
         select(SchoolCalendar)
         .where(

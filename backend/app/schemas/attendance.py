@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.attendance import AttendanceStatus, DayOfWeek, DayType
 
@@ -42,7 +42,7 @@ class CalendarDayRead(BaseModel):
 
 class CalendarDayOverride(BaseModel):
     day_type: DayType
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=300)
 
 
 class AttendanceMark(BaseModel):

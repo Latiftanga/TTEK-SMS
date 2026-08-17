@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.teacher_scope import classes_for_scope, resolve_attendance_scope, year_for_term
+from app.models.academic import AcademicTerm
 from app.models.attendance import AttendanceRecord, SchoolCalendar
 from app.models.students import StudentClassAssignment
 from app.schemas.academic import ClassRead
@@ -30,6 +31,12 @@ async def get_summary(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> AttendanceSummaryRead:
+    term = await db.scalar(
+        select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.school_id == school_id)
+    )
+    if not term:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Academic term not found.")
+
     year_id = await year_for_term(term_id, db)
     if year_id is not None:
         scope = await resolve_attendance_scope(user_id, year_id, db)
@@ -76,7 +83,12 @@ async def get_summary(
     absent  = counts.get("ABSENT", 0)
     late    = counts.get("LATE", 0)
     excused = counts.get("EXCUSED", 0)
-    rate    = round((present + late + excused) / total * 100, 1) if total > 0 else 0.0
+    # PRESENT only — matches attendance_stats.py::compute_attendance_stats(),
+    # the single definition report_card.py/transcript.py are built on. This
+    # endpoint previously counted LATE/EXCUSED toward the numerator too,
+    # so the same student's rate could genuinely disagree between the live
+    # Attendance page and their report card for the same term.
+    rate    = round(present / total * 100, 1) if total > 0 else 0.0
 
     return AttendanceSummaryRead(
         student_id=student_id,
@@ -134,6 +146,11 @@ async def get_class_summaries(
     db: AsyncSession,
 ) -> list[StudentAbsenceSummary]:
     """Bulk per-student absence counts for a class (one query, for inline display)."""
+    term = await db.scalar(
+        select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.school_id == school_id)
+    )
+    if not term:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Academic term not found.")
     await check_class_in_attendance_scope(class_id, term_id, user_id, db)
 
     total_days = await db.scalar(
@@ -146,7 +163,22 @@ async def get_class_summaries(
         )
     ) or 0
 
-    rows = await db.execute(
+    # A student withdrawn/transferred out of this class mid-term (row
+    # deactivated, not deleted, by student_lifecycle.py) must not linger in
+    # their old class teacher's absence summary — same stale-row shape as
+    # the report-card ranking bug fixed in 12u.
+    year_id = await year_for_term(term_id, db)
+    active_student_ids: set[uuid.UUID] | None = None
+    if year_id is not None:
+        active_student_ids = set(await db.scalars(
+            select(StudentClassAssignment.student_id).where(
+                StudentClassAssignment.class_id == class_id,
+                StudentClassAssignment.academic_year_id == year_id,
+                StudentClassAssignment.is_active.is_(True),
+            )
+        ))
+
+    query = (
         select(AttendanceRecord.student_id, AttendanceRecord.status, func.count().label("n"))
         .join(SchoolCalendar, SchoolCalendar.id == AttendanceRecord.school_calendar_id)
         .where(
@@ -156,8 +188,10 @@ async def get_class_summaries(
             SchoolCalendar.day_type.in_([t.value for t in _MARKABLE_TYPES]),
             AttendanceRecord.period_id.is_(None),
         )
-        .group_by(AttendanceRecord.student_id, AttendanceRecord.status)
     )
+    if active_student_ids is not None:
+        query = query.where(AttendanceRecord.student_id.in_(active_student_ids))
+    rows = await db.execute(query.group_by(AttendanceRecord.student_id, AttendanceRecord.status))
 
     data: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
     for r in rows:
@@ -168,8 +202,8 @@ async def get_class_summaries(
         present = counts.get("PRESENT", 0)
         absent  = counts.get("ABSENT", 0)
         late    = counts.get("LATE", 0)
-        excused = counts.get("EXCUSED", 0)
-        rate    = round((present + late + excused) / total_days * 100, 1) if total_days > 0 else 0.0
+        # PRESENT only — see the matching comment in get_summary() above.
+        rate    = round(present / total_days * 100, 1) if total_days > 0 else 0.0
         result.append(StudentAbsenceSummary(
             student_id=sid,
             days_absent=absent,

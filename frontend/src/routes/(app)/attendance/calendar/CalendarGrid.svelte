@@ -66,7 +66,7 @@
         {@const dot = cal ? TYPE_DOT[cal.day_type] : ''}
         <button
           onclick={() => cal && canManage ? onDayClick(cal) : null}
-          class="relative flex min-h-[2.5rem] items-start justify-end rounded-lg p-1 text-right text-xs font-medium transition
+          class="relative flex min-h-[44px] items-start justify-end rounded-lg p-1 text-right text-xs font-medium transition
             {cal ? TYPE_STYLES[cal.day_type] : 'bg-[var(--hover)] text-[var(--fg-subtle)] opacity-40'}
             {canManage && cal ? 'cursor-pointer' : 'cursor-default'}
             {cal?.is_manual_override ? 'ring-1 ring-inset ring-[var(--fg-subtle)]' : ''}"

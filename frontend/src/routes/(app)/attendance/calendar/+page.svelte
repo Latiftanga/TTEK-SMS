@@ -113,23 +113,26 @@
   </div>
   {#if canManage && termId}
     <button onclick={() => $genMut.mutate(false)} disabled={$genMut.isPending}
-      class="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] disabled:opacity-50 transition">
+      class="min-h-[44px] rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] disabled:opacity-50 transition">
       {$genMut.isPending && !confirmRegen ? 'Generating…' : 'Generate calendar'}
     </button>
     {#if byMonth.length > 0}
       {#if !confirmRegen}
         <button onclick={() => confirmRegen = true}
-          class="rounded-xl border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30">
+          class="min-h-[44px] rounded-xl border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30">
           Regenerate
         </button>
       {:else}
-        <div class="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+        <div class="flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30">
           <span class="text-xs text-amber-700 dark:text-amber-300">Re-evaluate all days against the current schedule? Days you've manually overridden (marked <span aria-hidden="true">&#9679;</span>) are protected and won't change.</span>
           <button onclick={() => $genMut.mutate(true)} disabled={$genMut.isPending}
-            class="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition">
+            class="min-h-[44px] rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition">
             {$genMut.isPending ? '…' : 'Yes, regenerate'}
           </button>
-          <button onclick={() => confirmRegen = false} class="text-xs text-amber-700 hover:text-amber-900 dark:text-amber-400 transition">Cancel</button>
+          <button onclick={() => confirmRegen = false}
+            class="min-h-[44px] rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/50 transition">
+            Cancel
+          </button>
         </div>
       {/if}
     {/if}
@@ -173,30 +176,34 @@
   <div use:portal role="dialog" aria-modal="true"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     onkeydown={onModalKeydown}>
-    <div class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
-      <h2 class="text-base font-semibold text-[var(--fg)]">Override {overrideDay.date}</h2>
-      <p class="mt-1 text-sm text-[var(--fg-muted)]">This day will be protected from future "Regenerate" runs.</p>
-      <div class="mt-4 space-y-3">
-        <div>
-          <label class="label" for="ov-type">Day type</label>
-          <select id="ov-type" bind:value={overrideType} class="sel w-full">
-            {#each DAY_TYPES as t}
-              <option value={t}>{t.replace(/_/g, ' ')}</option>
-            {/each}
-          </select>
-        </div>
-        <div>
-          <label class="label" for="ov-note">Notes (optional)</label>
-          <input id="ov-note" bind:value={overrideNote} placeholder="e.g. Sports Day" class="sel w-full" />
+    <div class="flex max-h-[90vh] w-full max-w-sm flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+      <div class="shrink-0 p-6 pb-0">
+        <h2 class="text-base font-semibold text-[var(--fg)]">Override {overrideDay.date}</h2>
+        <p class="mt-1 text-sm text-[var(--fg-muted)]">This day will be protected from future "Regenerate" runs.</p>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto p-6">
+        <div class="space-y-3">
+          <div>
+            <label class="label" for="ov-type">Day type</label>
+            <select id="ov-type" bind:value={overrideType} class="sel w-full">
+              {#each DAY_TYPES as t}
+                <option value={t}>{t.replace(/_/g, ' ')}</option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <label class="label" for="ov-note">Notes (optional)</label>
+            <input id="ov-note" bind:value={overrideNote} placeholder="e.g. Sports Day" class="sel w-full" />
+          </div>
         </div>
       </div>
-      <div class="mt-5 flex justify-end gap-3">
+      <div class="flex shrink-0 justify-end gap-3 p-6 pt-0">
         <button onclick={closeOverride} disabled={$overrideMut.isPending}
-          class="rounded-lg px-4 py-2 text-sm text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
+          class="min-h-[44px] rounded-lg px-4 py-2 text-sm text-[var(--fg-muted)] transition hover:bg-[var(--hover)] disabled:opacity-50">
           Cancel
         </button>
         <button onclick={() => $overrideMut.mutate()} disabled={$overrideMut.isPending}
-          class="rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background:var(--brand)">
+          class="min-h-[44px] rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50" style="background:var(--brand)">
           {$overrideMut.isPending ? 'Saving…' : 'Save'}
         </button>
       </div>
@@ -207,5 +214,5 @@
 <style>
   @reference "tailwindcss";
   .label { @apply block text-xs font-medium text-[var(--fg-muted)] mb-1; }
-  .sel   { @apply rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .sel   { @apply min-h-[44px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

@@ -77,7 +77,7 @@
   <div class="mb-3 flex items-center justify-between gap-3">
     <p class="text-sm text-[var(--fg-muted)]">Configure which days are school days and their hours. Used when generating the school calendar for each term.</p>
     <button onclick={saveAll} disabled={savingAll}
-      class="shrink-0 rounded-xl px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
+      class="min-h-[44px] shrink-0 rounded-xl px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
       {savingAll ? 'Saving…' : 'Save all'}
     </button>
   </div>
@@ -97,8 +97,8 @@
       <div class="grid grid-cols-[6rem_1fr_1fr_1fr_5rem] items-center gap-px border-b border-[var(--border)] bg-[var(--border)] last:border-0">
         <div class="bg-[var(--card)] px-4 py-3 text-sm font-semibold text-[var(--fg)]">{DAY_LABELS[day].slice(0, 3)}</div>
         <div class="bg-[var(--card)] px-4 py-3">
-          <label class="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" bind:checked={f.is_school_day} class="h-4 w-4 rounded accent-[var(--brand)]" />
+          <label class="flex min-h-[44px] cursor-pointer items-center gap-2">
+            <input type="checkbox" bind:checked={f.is_school_day} class="h-5 w-5 rounded accent-[var(--brand)]" />
             <span class="text-sm {f.is_school_day ? 'text-[var(--fg)]' : 'text-[var(--fg-subtle)]'}">
               {f.is_school_day ? 'Yes' : 'No'}
             </span>
@@ -120,7 +120,7 @@
         </div>
         <div class="bg-[var(--card)] px-4 py-3">
           <button onclick={() => { saving = day; $saveMut.mutate(day); }} disabled={isSaving}
-            class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
+            class="min-h-[44px] rounded-lg px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
             {isSaving ? '…' : 'Save'}
           </button>
         </div>
@@ -131,5 +131,5 @@
 
 <style>
   @reference "tailwindcss";
-  .sel { @apply rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
+  .sel { @apply min-h-[44px] rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition; }
 </style>

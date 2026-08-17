@@ -23,11 +23,12 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
 from app.core.teacher_scope import enforce_current_term_for_attendance
-from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
+from app.models.attendance import AttendanceAuditLog, AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.school import School
 from app.models.students import Student
 from app.schemas.attendance import AttendanceMarkRequest, AttendanceRecordRead
@@ -57,7 +58,15 @@ async def mark_attendance(
     await check_class_in_attendance_scope(req.class_id, cal.academic_term_id, user_id, db)
     await enforce_current_term_for_attendance(user_id, cal.academic_term_id, db)
 
-    student_ids = {m.student_id for m in req.records}
+    submitted_ids = [m.student_id for m in req.records]
+    student_ids = set(submitted_ids)
+    if len(submitted_ids) != len(student_ids):
+        dupes = {sid for sid in submitted_ids if submitted_ids.count(sid) > 1}
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Duplicate student_id(s) in this request: {', '.join(str(i) for i in dupes)}",
+        )
+
     valid_ids = set(await db.scalars(
         select(Student.id).where(Student.id.in_(student_ids), Student.school_id == school_id)
     ))
@@ -68,8 +77,9 @@ async def mark_attendance(
             f"Student(s) not found in this school: {', '.join(str(i) for i in invalid_ids)}",
         )
 
+    override_reason: str | None = None
     if cal.academic_term_id is not None:
-        await check_term_lock_override(cal.academic_term_id, req.override_reason, user_id, db)
+        override_reason = await check_term_lock_override(cal.academic_term_id, req.override_reason, user_id, db)
 
     if cal.day_type not in _MARKABLE_TYPES:
         raise HTTPException(
@@ -81,37 +91,66 @@ async def mark_attendance(
     saved: list[AttendanceRecord] = []
     new_absent_ids: set = set()   # student_ids that are newly marked ABSENT (not re-marks)
 
-    for mark in req.records:
-        existing = await db.scalar(
-            select(AttendanceRecord).where(
-                AttendanceRecord.student_id == mark.student_id,
-                AttendanceRecord.school_calendar_id == req.school_calendar_id,
-                AttendanceRecord.period_id.is_(None),
-            )
+    # Nested transaction + IntegrityError catch: the duplicate-in-request
+    # check above closes the deterministic case, but two near-simultaneous
+    # submissions for the same student+day (a network retry, a double-tap
+    # before the UI disables the button) can still both see existing=None
+    # in separate transactions and both try to INSERT — uq_attendance_
+    # student_calendar_period would otherwise surface as a raw 500.
+    try:
+        async with db.begin_nested():
+            for mark in req.records:
+                existing = await db.scalar(
+                    select(AttendanceRecord).where(
+                        AttendanceRecord.student_id == mark.student_id,
+                        AttendanceRecord.school_calendar_id == req.school_calendar_id,
+                        AttendanceRecord.period_id.is_(None),
+                    )
+                )
+                if existing:
+                    existing.status = mark.status
+                    existing.notes = mark.notes
+                    existing.recorded_by_id = user_id
+                    existing.recorded_at = now
+                    saved.append(existing)
+                else:
+                    rec = AttendanceRecord(
+                        school_id=school_id,
+                        student_id=mark.student_id,
+                        school_calendar_id=req.school_calendar_id,
+                        class_id=req.class_id,
+                        status=mark.status,
+                        notes=mark.notes,
+                        recorded_by_id=user_id,
+                        recorded_at=now,
+                    )
+                    db.add(rec)
+                    saved.append(rec)
+                    if mark.status == AttendanceStatus.ABSENT:
+                        new_absent_ids.add(mark.student_id)
+            await db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Attendance for one or more of these students was just submitted by someone else — please reload and try again.",
         )
-        if existing:
-            existing.status = mark.status
-            existing.notes = mark.notes
-            existing.recorded_by_id = user_id
-            existing.recorded_at = now
-            saved.append(existing)
-        else:
-            rec = AttendanceRecord(
+
+    # Locked-term override — audit who did it and why, mirroring
+    # BehaviourAuditLog/AssessmentAuditLog's same shape for every other
+    # locked-term override in this codebase.
+    if override_reason:
+        for rec, mark in zip(saved, req.records):
+            db.add(AttendanceAuditLog(
                 school_id=school_id,
+                attendance_record_id=rec.id,
                 student_id=mark.student_id,
-                school_calendar_id=req.school_calendar_id,
                 class_id=req.class_id,
                 status=mark.status,
-                notes=mark.notes,
-                recorded_by_id=user_id,
-                recorded_at=now,
-            )
-            db.add(rec)
-            saved.append(rec)
-            if mark.status == AttendanceStatus.ABSENT:
-                new_absent_ids.add(mark.student_id)
-
-    await db.flush()
+                changed_by_id=user_id,
+                reason=override_reason,
+                changed_at=now,
+            ))
+        await db.flush()
 
     # Fire absence alerts only for NEW ABSENT marks — never on re-marks
     if new_absent_ids:
