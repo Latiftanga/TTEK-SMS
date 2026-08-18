@@ -28,6 +28,17 @@ submit_scores rejects any student not registered for the assessment's subject
 this term (services/subject_roster.py) — this is what stops a French
 assessment from silently accepting a score for a student actually registered
 for Literature in the same class.
+
+CURRENT TERM
+------------
+submit_scores requires the assessment's academic term to be the school's
+current one (core/teacher_scope.py::enforce_current_term_for_scoring),
+bypassed by assessments.approve_scores. approve_scores can't reuse that same
+check — it's already router-gated on assessments.approve_scores itself, so
+every caller already holds the bypass permission, making a plain bypass-
+check a no-op. Instead it requires an override_reason whenever the term
+isn't current (core/permissions.py::check_current_term_override), the same
+423 shape as the results_locked override just below it.
 """
 from __future__ import annotations
 import uuid
@@ -37,7 +48,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.permissions import check_term_lock_override
+from app.core.permissions import check_current_term_override, check_term_lock_override
 from app.core.teacher_scope import enforce_current_term_for_scoring, resolve_assessment_scope, year_for_term
 from app.models.assessments import Assessment, Score, ScoreAuditLog
 from app.models.students import Student
@@ -190,6 +201,12 @@ async def approve_scores(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Cannot approve scores on a published assessment.",
         )
+    # Not enforce_current_term_for_scoring here — this endpoint is already
+    # router-gated on assessments.approve_scores itself (routers/scoring.py),
+    # so every caller who reaches this already holds the bypass permission
+    # that check would look for, making it a silent no-op. Reason-gated
+    # instead — see check_current_term_override's own docstring.
+    await check_current_term_override(assessment.academic_term_id, req.override_reason, user_id, db)
     await check_term_lock_override(assessment.academic_term_id, req.override_reason, user_id, db)
 
     # Batch-load all requested scores at once

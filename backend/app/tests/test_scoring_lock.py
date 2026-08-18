@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
-from app.models.academic import AcademicTerm, Class
+from app.models.academic import AcademicTerm, AcademicYear, Class
 from app.models.assessments import Assessment, AssessmentAuditLog, AssessmentType, Score, ScoreAuditLog
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import School
@@ -382,3 +382,116 @@ async def test_update_assessment_due_date_outside_term_rejected(
         "due_date": "2026-01-15",
     }, headers=auth)
     assert resp.status_code == 422
+
+
+# ── Current-term enforcement (distinct from results_locked) ────────────────────
+# AcademicTerm.is_current — none of these terms are results_locked.
+
+@pytest.fixture
+async def noncurrent_term(db_session: AsyncSession, school: School, academic_year: AcademicYear) -> AcademicTerm:
+    term = AcademicTerm(
+        school_id=school.id, academic_year_id=academic_year.id,
+        term_number=2, name="Term 2 (not current)",
+        start_date=date(2024, 12, 21), end_date=date(2025, 4, 15), is_current=False,
+    )
+    db_session.add(term)
+    await db_session.flush()
+    return term
+
+
+@pytest.fixture
+async def noncurrent_assessment(
+    db_session: AsyncSession, school: School, school_class: Class,
+    subject, assessment_type: AssessmentType, noncurrent_term: AcademicTerm,
+) -> Assessment:
+    a = Assessment(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        assessment_type_id=assessment_type.id, academic_term_id=noncurrent_term.id,
+        description="Non-current Term Test", recorded_date=date.today(), max_score=Decimal("100.00"),
+    )
+    db_session.add(a)
+    await db_session.flush()
+    return a
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_blocked_outside_current_term(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    noncurrent_assessment: Assessment, noncurrent_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, teacher_staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    from app.models.academic import SubjectTeacher
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=noncurrent_assessment.class_id, subject_id=noncurrent_assessment.subject_id,
+        staff_member_id=teacher_staff_id, academic_year_id=noncurrent_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+    resp = await client.patch(f"/assessments/{noncurrent_assessment.id}", json={
+        "description": "Trying to edit a past term's assessment",
+    }, headers=teacher_auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_assessment_allowed_outside_current_term_for_approve_scores_holder(
+    client: AsyncClient, auth: dict, noncurrent_assessment: Assessment,
+):
+    resp = await client.patch(f"/assessments/{noncurrent_assessment.id}", json={
+        "description": "Correcting an old assessment",
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "Correcting an old assessment"
+
+
+@pytest.mark.asyncio
+async def test_delete_assessment_hard_blocked_outside_current_term_even_for_approve_scores_holder(
+    client: AsyncClient, auth: dict, noncurrent_assessment: Assessment, db_session: AsyncSession,
+):
+    """No bypass for anyone, including the unrestricted `auth` fixture —
+    unlike results_locked, this has no override path at all, matching
+    delete_assessment's existing no-safe-undo reasoning."""
+    resp = await client.delete(f"/assessments/{noncurrent_assessment.id}", headers=auth)
+    assert resp.status_code == 422
+    still_there = await db_session.get(Assessment, noncurrent_assessment.id)
+    assert still_there is not None
+
+
+@pytest.mark.asyncio
+async def test_approve_scores_blocked_outside_current_term_without_reason(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    noncurrent_assessment: Assessment, student: Student,
+):
+    """approve_scores is already router-gated on assessments.approve_scores,
+    so a bare permission-bypass check would be a no-op — every caller who
+    reaches this already holds it. Requires an override_reason instead."""
+    score = Score(
+        school_id=noncurrent_assessment.school_id, assessment_id=noncurrent_assessment.id, student_id=student.id,
+        raw_score=Decimal("70.00"), entered_by_id=(await db_session.scalar(select(User).limit(1))).id,
+    )
+    db_session.add(score)
+    await db_session.flush()
+
+    resp = await client.post(f"/assessments/{noncurrent_assessment.id}/scores/approve", json={
+        "score_ids": [str(score.id)],
+    }, headers=auth)
+    assert resp.status_code == 423
+
+
+@pytest.mark.asyncio
+async def test_approve_scores_allowed_outside_current_term_with_reason(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    noncurrent_assessment: Assessment, student: Student,
+):
+    score = Score(
+        school_id=noncurrent_assessment.school_id, assessment_id=noncurrent_assessment.id, student_id=student.id,
+        raw_score=Decimal("70.00"), entered_by_id=(await db_session.scalar(select(User).limit(1))).id,
+    )
+    db_session.add(score)
+    await db_session.flush()
+
+    resp = await client.post(f"/assessments/{noncurrent_assessment.id}/scores/approve", json={
+        "score_ids": [str(score.id)],
+        "override_reason": "Catching up on a delayed approval from last term.",
+    }, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()[0]["is_approved"] is True

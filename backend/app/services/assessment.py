@@ -24,6 +24,16 @@ locked term (see core/permissions.py::check_term_lock_override).
 create_assessment enforces the same term lock (a locked term shouldn't grow
 new assessments any more than it should let existing ones be edited) and logs
 an AssessmentAuditLog entry when the caller had to override it.
+
+CURRENT TERM
+------------
+create_assessment and update_assessment both require the academic term to be
+the school's current one (core/teacher_scope.py::enforce_current_term_for_
+scoring), same bypass as scoring (assessments.approve_scores). delete_assessment
+is the one exception: it hard-blocks deletion outside the current term for
+everyone, no bypass — deleting an assessment permanently removes its scores
+and their audit trail, so (same reasoning as its results_locked check) there's
+no safe "undo" to gate behind a permission.
 """
 from __future__ import annotations
 import uuid
@@ -227,6 +237,7 @@ async def update_assessment(
     await _check_assessment_scope(a, user_id, db)
     if a.is_published:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot edit a published assessment.")
+    await enforce_current_term_for_scoring(user_id, a.academic_term_id, db)
     override_reason = await check_term_lock_override(a.academic_term_id, req.override_reason, user_id, db)
     if req.due_date is not None:
         term = await db.get(AcademicTerm, a.academic_term_id)
@@ -282,6 +293,16 @@ async def delete_assessment(
             status.HTTP_423_LOCKED,
             "This term's results are locked. Unlock the term before deleting an assessment "
             "— deleting one permanently removes its scores.",
+        )
+    # Hard block, no override for anyone (unlike every other check in this
+    # module) — deleting an assessment permanently removes its scores and
+    # their audit trail, so there's no safe "undo" even for an
+    # assessments.approve_scores holder, same all-or-nothing reasoning as
+    # the results_locked check just above.
+    if term and not term.is_current:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot delete an assessment outside the current term.",
         )
     await db.delete(a)
     await db.flush()

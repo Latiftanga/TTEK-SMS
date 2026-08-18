@@ -22,6 +22,14 @@ delete for that term. Both endpoints require assessments.record_behaviour
 still needs the caller to separately hold assessments.approve_scores, same
 as scoring/subject-registration.
 
+CURRENT TERM
+------------
+Separately from results_locked, create/delete also require the term to be
+the school's current one (core/teacher_scope.py::enforce_current_term_for_
+behaviour) — an ordinary class teacher can't log or remove an incident
+against a past or future term at all; assessments.approve_scores bypasses
+this the same way it bypasses the term-lock override.
+
 Every create/delete is written to BehaviourAuditLog, independent of whether
 the term was locked (reason is only populated on a locked-term override).
 """
@@ -35,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override, user_has_permission
 from app.core.student_scope import current_class_assignment
-from app.core.teacher_scope import resolve_report_card_scope
+from app.core.teacher_scope import enforce_current_term_for_behaviour, resolve_report_card_scope
 from app.models.academic import AcademicTerm
 from app.models.assessments import BehaviourAuditLog, StudentBehaviourRecord
 from app.models.students import Student
@@ -79,6 +87,7 @@ async def create_behaviour_record(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"incident_date {req.incident_date} falls outside the term ({term.start_date} – {term.end_date}).",
         )
+    await enforce_current_term_for_behaviour(user_id, term.id, db)
     override_reason = await check_term_lock_override(term.id, req.override_reason, user_id, db)
 
     rec = StudentBehaviourRecord(
@@ -140,6 +149,7 @@ async def delete_behaviour_record(
     if not rec:
         raise HTTPException(404, "Behaviour record not found.")
     await _assert_in_scope(user_id, rec.student_id, db)
+    await enforce_current_term_for_behaviour(user_id, rec.academic_term_id, db)
     resolved_reason = await check_term_lock_override(rec.academic_term_id, override_reason, user_id, db)
 
     db.add(BehaviourAuditLog(

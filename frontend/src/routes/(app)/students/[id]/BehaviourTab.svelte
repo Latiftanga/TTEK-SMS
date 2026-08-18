@@ -2,6 +2,7 @@
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
   import { useTermSelector } from '$lib/termSelector.svelte';
+  import { findCurrentTerm } from '$lib/academicPeriod';
   import {
     listBehaviourRecords, createBehaviourRecord, deleteBehaviourRecord,
     SEVERITY_LABELS, type BehaviourRecord, type Severity,
@@ -22,17 +23,28 @@
   const canManage = $derived($userRole === 'admin' || $userRole === 'approver' || canEdit);
   const today = new Date().toISOString().slice(0, 10);
 
+  // Term picker: admin/approver may browse any term (matching the Assessments
+  // page's own convention — Behaviour records can only ever be created/removed
+  // against the school's current term server-side, per
+  // core/teacher_scope.py::enforce_current_term_for_behaviour, unless the
+  // caller holds assessments.approve_scores). An ordinary class teacher never
+  // even sees the picker — effectiveTermId is forced to the actual current
+  // term regardless of what the shared composable's own "current-else-latest"
+  // default would otherwise resolve to.
+  const isPrivileged = $derived($userRole === 'admin' || $userRole === 'approver');
   const term = useTermSelector();
-  const selectedTerm = $derived(term.terms.find(t => t.id === term.termId));
+  const currentTerm = $derived(findCurrentTerm(term.terms));
+  const effectiveTermId = $derived(isPrivileged ? term.termId : (currentTerm?.id ?? ''));
+  const selectedTerm = $derived(term.terms.find(t => t.id === effectiveTermId));
 
   const recordsQ = reactiveQuery(() => ({
-    queryKey: ['behaviour-records', studentId, term.termId] as const,
-    queryFn: () => listBehaviourRecords(studentId, term.termId),
-    enabled: !!term.termId,
+    queryKey: ['behaviour-records', studentId, effectiveTermId] as const,
+    queryFn: () => listBehaviourRecords(studentId, effectiveTermId),
+    enabled: !!effectiveTermId,
     staleTime: 30_000,
   }));
   function invalidateRecords() {
-    qc.invalidateQueries({ queryKey: ['behaviour-records', studentId, term.termId] });
+    qc.invalidateQueries({ queryKey: ['behaviour-records', studentId, effectiveTermId] });
   }
 
   function detailOf(e: unknown): string | undefined {
@@ -61,7 +73,7 @@
 
   const createMut = createMutation({
     mutationFn: (overrideReason: string | undefined) => createBehaviourRecord({
-      student_id: studentId, academic_term_id: term.termId,
+      student_id: studentId, academic_term_id: effectiveTermId,
       incident_type: cf.incident_type.trim(), description: cf.description.trim(),
       severity: cf.severity, action_taken: cf.action_taken.trim() || undefined,
       incident_date: cf.incident_date, override_reason: overrideReason,
@@ -106,16 +118,20 @@
 <!-- Term selector -->
 <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
   <div class="flex items-center gap-2">
-    <select bind:value={term.termId} class="sel">
-      {#each term.terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
-    </select>
+    {#if isPrivileged}
+      <select bind:value={term.termId} class="sel">
+        {#each term.terms as t}<option value={t.id}>{t.name}{t.is_current ? ' (current)' : ''}</option>{/each}
+      </select>
+    {:else if selectedTerm}
+      <span class="text-sm font-medium text-[var(--fg)]">{selectedTerm.name} (current)</span>
+    {/if}
     {#if selectedTerm?.results_locked}
       <span class="rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-950/30 dark:text-red-400">
         Term locked
       </span>
     {/if}
   </div>
-  {#if canManage && term.termId}
+  {#if canManage && effectiveTermId}
     <button onclick={() => { showCreate = !showCreate; resetCreate(); }}
       class="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
       style="background: var(--brand)">

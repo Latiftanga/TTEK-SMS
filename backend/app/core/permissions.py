@@ -340,3 +340,42 @@ async def check_term_lock_override(
             "can override by supplying an override_reason.",
         )
     return reason
+
+
+async def check_current_term_override(
+    academic_term_id: uuid.UUID,
+    requested_reason: str | None,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> str | None:
+    """
+    Reason-gated sibling of check_term_lock_override, for approve_scores
+    specifically. Every other "must be the current term" check in this
+    codebase (core/teacher_scope.py::enforce_current_term_for_*) bypasses on
+    assessments.approve_scores — that works because those actions are all
+    router-gated on a WEAKER permission (enter_scores/students.edit/
+    record_behaviour), so the bypass genuinely distinguishes a senior caller
+    from an ordinary one. approve_scores itself is router-gated on
+    assessments.approve_scores directly, so every caller who ever reaches
+    this function already holds it — a bare permission-bypass check would be
+    a silent no-op. Requiring a reason instead (same 423 + override_reason
+    shape as check_term_lock_override) keeps the check meaningful: approving
+    scores for a non-current term always needs justification, never a silent
+    pass, regardless of who's asking.
+
+    Returns None if the term is current (nothing to record). Otherwise
+    returns the stripped override reason, raising 423 without one.
+    """
+    from fastapi import HTTPException, status
+    from app.models.academic import AcademicTerm
+
+    term = await db.get(AcademicTerm, academic_term_id)
+    if not term or term.is_current:
+        return None
+    reason = (requested_reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status.HTTP_423_LOCKED,
+            "This is not the current term. Supply an override_reason to approve scores for it.",
+        )
+    return reason

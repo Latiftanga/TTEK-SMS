@@ -156,6 +156,26 @@ async def enforce_current_term_for_scoring(
         )
 
 
+async def enforce_current_term_for_behaviour(
+    user_id: uuid.UUID,
+    academic_term_id: uuid.UUID | None,
+    db: AsyncSession,
+) -> None:
+    """Same as enforce_current_term_for_attendance/_scoring, gated on
+    assessments.approve_scores — the same permission behaviour's own scope
+    resolver (resolve_report_card_scope) and term-lock override already use.
+    A class teacher only records/removes behaviour incidents for the term
+    that's currently running."""
+    if academic_term_id is None or await user_has_permission(user_id, "assessments", "approve_scores", db):
+        return
+    term = await db.get(AcademicTerm, academic_term_id)
+    if term and not term.is_current:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Behaviour records can only be entered for the current term.",
+        )
+
+
 async def enforce_current_term_for_subject_registration(
     user_id: uuid.UUID,
     academic_term_id: uuid.UUID | None,
