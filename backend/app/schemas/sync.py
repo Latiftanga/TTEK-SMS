@@ -18,7 +18,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OutboxScoreData(BaseModel):
@@ -29,15 +29,23 @@ class OutboxScoreData(BaseModel):
 
 
 class OutboxItem(BaseModel):
-    outbox_id: str
+    # Both map to String(100) DB columns (OfflineSyncConflict.outbox_id,
+    # OutboxProcessedItem.client_op_id) — bounded here so an oversized value
+    # is a clean 422 instead of a raw IntegrityError (500).
+    outbox_id: str = Field(max_length=100)
     # Client-generated (crypto.randomUUID()) once, when the write is first
     # queued — unlike outbox_id (a Dexie local auto-increment id, unique only
     # within one device), this is globally unique and safe to use as an
     # idempotency key (see OutboxProcessedItem).
-    client_op_id: str
+    client_op_id: str = Field(max_length=100)
     entity_type: Literal["score"]
     offline_session_started_at: datetime
     data: OutboxScoreData
+    # Only used/required when the assessment's term has results_locked=True —
+    # same contract as BulkScoreSubmit.override_reason, honoured only if the
+    # caller holds assessments.approve_scores (services/sync.py routes this
+    # through the same check_term_lock_override() submit_scores itself uses).
+    override_reason: str | None = None
 
 
 class OutboxSyncRequest(BaseModel):
@@ -67,3 +75,6 @@ class ConflictRead(BaseModel):
 class ConflictResolveRequest(BaseModel):
     resolution: Literal["CLIENT_WINS", "SERVER_WINS", "MERGED", "DISCARDED"]
     merged_data: OutboxScoreData | None = None
+    # Same contract as OutboxItem.override_reason — only needed when
+    # CLIENT_WINS/MERGED targets a locked term.
+    override_reason: str | None = None

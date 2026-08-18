@@ -139,7 +139,7 @@
           </p>
         </div>
         <button onclick={syncNow} disabled={syncing}
-          class="shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white
+          class="min-h-[44px] shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white
                  transition hover:bg-amber-700 disabled:opacity-50">
           {syncing ? 'Syncing…' : 'Sync now'}
         </button>
@@ -218,12 +218,12 @@
 
           {#if action === 'MERGED'}
             <div class="border-t border-[var(--border)] px-5 py-3">
-              <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
+              <label for="merge-score-{c.id}" class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">
                 Custom score {c.assessment ? `(0–${c.assessment.max_score})` : ''}
               </label>
-              <input type="number" min="0" max={c.assessment?.max_score ?? undefined} step="0.5"
+              <input id="merge-score-{c.id}" type="number" inputmode="decimal" min="0" max={c.assessment?.max_score ?? undefined} step="0.5"
                 bind:value={mergeInputs[c.id]} placeholder="Enter score…"
-                class="w-36 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
+                class="min-h-[44px] w-36 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm
                        text-[var(--fg)] transition focus:border-[var(--brand)] focus:outline-none" />
             </div>
           {/if}
@@ -231,19 +231,19 @@
           <div class="flex flex-wrap items-center gap-2 border-t border-[var(--border)] px-5 py-3">
             {#if action === null}
               <button onclick={() => setAction(c.id, 'CLIENT_WINS')}
-                class="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">
+                class="min-h-[44px] rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90">
                 Use mine ({c.client_data.raw_score})
               </button>
               <button onclick={() => setAction(c.id, 'SERVER_WINS')}
-                class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:bg-[var(--hover)]">
+                class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:bg-[var(--hover)]">
                 Keep server's ({c.server_data.raw_score})
               </button>
               <button onclick={() => setAction(c.id, 'MERGED')}
-                class="rounded-xl border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/20">
+                class="min-h-[44px] rounded-xl border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/20">
                 Custom score…
               </button>
               <button onclick={() => setAction(c.id, 'DISCARDED')}
-                class="ml-auto rounded-xl px-3 py-1.5 text-xs text-[var(--fg-subtle)] transition hover:text-red-500">
+                class="ml-auto min-h-[44px] rounded-xl px-3 py-1.5 text-xs text-[var(--fg-subtle)] transition hover:text-red-500">
                 Discard
               </button>
             {:else}
@@ -255,11 +255,11 @@
               </span>
               <div class="ml-auto flex gap-2">
                 <button onclick={() => setAction(c.id, null)}
-                  class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+                  class="min-h-[44px] rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
                   Cancel
                 </button>
                 <button onclick={() => resolve(c, action)} disabled={isPending}
-                  class="rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                  class="min-h-[44px] rounded-xl px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                   style="background: {action === 'DISCARDED' ? '#dc2626' : 'var(--brand)'}">
                   {isPending ? 'Applying…' : 'Confirm'}
                 </button>
