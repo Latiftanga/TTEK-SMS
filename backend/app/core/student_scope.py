@@ -33,7 +33,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import user_has_permission
 from app.models.academic import ClassTeacher, SubjectTeacher
 from app.models.housing import HouseMaster, StudentHouseAssignment
-from app.models.students import StudentClassAssignment
 from app.services.student_display import _active_class_assignment_subquery
 
 
@@ -60,8 +59,23 @@ async def resolve_student_view_scope(
     manage, housing.assign/manage, assessments.approve_scores — held by
     staff whose own job legitimately needs cross-class visibility).
     Otherwise the exact set of student_ids the caller is responsible for:
-    students in a class they're ClassTeacher/SubjectTeacher of, plus any
-    house they manage as HouseMaster."""
+    students in a class they're ClassTeacher of, plus any house they manage
+    as HouseMaster.
+
+    Deliberately ClassTeacher-only, NOT SubjectTeacher — a subject-only
+    teacher has no legitimate reason to browse the Students module at all
+    (profile, guardians, fees, documents, transcript all key off this same
+    resolver). Their entire job — "which students take my subject" — is
+    already fully served by the Assessments page's own roster/registration
+    flow, which is scoped independently via resolve_class_teacher_scope/
+    resolve_subject_teacher_scope and gated at the router by the flat
+    students.view/edit permission, not by this function. Confirmed live:
+    reported directly by the user (a Class Teacher of one class who is also
+    a Subject Teacher of a *different* class was seeing that other class's
+    students on the Students list) — a dual-role staff member's Students-
+    module visibility is scoped to their ClassTeacher class(es) only; their
+    subject-teaching work in other classes continues entirely through
+    Assessments, unaffected by this scope."""
     if await _is_unrestricted(user_id, db):
         return None
     broad_access_perms = (
@@ -78,21 +92,20 @@ async def resolve_student_view_scope(
     if any(perms.get(p, False) for p in broad_access_perms):
         return None
 
-    taught_class_ids = (
-        select(ClassTeacher.class_id).where(
-            ClassTeacher.staff_member_id == staff_id,
-            ClassTeacher.is_active == True,  # noqa: E712
-        )
-    ).union(
-        select(SubjectTeacher.class_id).where(
-            SubjectTeacher.staff_member_id == staff_id,
-            SubjectTeacher.is_active == True,  # noqa: E712
-        )
+    taught_class_ids = select(ClassTeacher.class_id).where(
+        ClassTeacher.staff_member_id == staff_id,
+        ClassTeacher.is_active == True,  # noqa: E712
     )
-    in_taught_class = select(StudentClassAssignment.student_id).where(
-        StudentClassAssignment.class_id.in_(taught_class_ids),
-        StudentClassAssignment.is_active == True,  # noqa: E712
-        StudentClassAssignment.school_id == school_id,
+    # A promoted (not graduated/withdrawn) student's *prior* class assignment
+    # row is never deactivated (student_display.py's own docstring on this),
+    # so a raw `StudentClassAssignment.is_active` match against taught_class_ids
+    # would leak every student who ever passed through a class this caller
+    # runs — including ones long since promoted to someone else's class. Must
+    # go through the same DISTINCT-ON "current assignment only" subquery every
+    # other roster read in this codebase uses.
+    active_sca = _active_class_assignment_subquery()
+    in_taught_class = select(active_sca.c.student_id).where(
+        active_sca.c.class_id.in_(taught_class_ids),
     )
     managed_house_ids = select(HouseMaster.house_id).where(
         HouseMaster.staff_member_id == staff_id,

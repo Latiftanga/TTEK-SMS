@@ -125,6 +125,120 @@ async def test_view_scope_empty_not_none_with_zero_assignments(
     assert scope == set()
 
 
+@pytest.mark.asyncio
+async def test_view_scope_excludes_student_promoted_out_of_taught_class(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, student: Student, redis_permissions: None,
+):
+    """Regression test: a promoted (not graduated/withdrawn) student's prior
+    StudentClassAssignment row is never deactivated (student_display.py's own
+    documented behaviour) — reported live as "making a staff_member a
+    class_teacher allows that teacher to see all students". A ClassTeacher of
+    `school_class` must not see a student whose *current* class is somewhere
+    else, even though a stale is_active=True row to school_class still exists.
+    (StudentClassAssignment has a UNIQUE(student_id, academic_year_id)
+    constraint, so this can only happen across two different years — same
+    shape as a real promotion.)"""
+    from datetime import date as _date
+
+    staff, user = await _make_staff_with_position(db_session, school, "CLASS_TEACHER", "CT-PROMO")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    other_class = Class(school_id=school.id, level="SHS", year_group=3, stream="B", is_active=True)
+    prior_year = AcademicYear(
+        school_id=school.id, name="2023/2024",
+        start_date=_date(2023, 9, 1), end_date=_date(2024, 7, 31), is_current=False,
+    )
+    db_session.add_all([other_class, prior_year])
+    await db_session.flush()
+
+    # Stale row from a prior year (promoted away from, but never deactivated).
+    await _assign_class(db_session, school, student, school_class, prior_year)
+    # Current row, current year — the student's real, present-day class.
+    await _assign_class(db_session, school, student, other_class, academic_year)
+
+    scope = await resolve_student_view_scope(user.id, school.id, db_session)
+    assert scope == set(), (
+        "student's current class is other_class, not school_class — the stale "
+        "row must not leak them into this class teacher's scope"
+    )
+
+
+@pytest.mark.asyncio
+async def test_view_scope_excludes_subject_teacher_only_students(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, student: Student, redis_permissions: None,
+):
+    """A pure subject-only teacher (SubjectTeacher row, no ClassTeacher row)
+    has no legitimate reason to browse the Students module — their job is
+    fully served by the Assessments page's own roster/registration flow,
+    scoped independently. Reported directly by the user."""
+    staff, user = await _make_staff_with_position(db_session, school, "TEACHER", "SUBJ-ONLY")
+    from app.models.academic import SubjectCatalogue, SubjectType, Subject, SchoolLevel
+
+    cat = SubjectCatalogue(name="Physics", code="PHY-SCOPE", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    subject = Subject(school_id=school.id, catalogue_id=cat.id, code="PHY-SCOPE", name="Physics", is_active=True)
+    db_session.add(subject)
+    await db_session.flush()
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=school_class.id, subject_id=subject.id,
+        staff_member_id=staff.id, academic_year_id=academic_year.id, is_active=True,
+    ))
+    await _assign_class(db_session, school, student, school_class, academic_year)
+
+    scope = await resolve_student_view_scope(user.id, school.id, db_session)
+    assert scope == set(), (
+        "a subject-only teacher must not see the Students module at all — "
+        "their roster access comes from Assessments, not this resolver"
+    )
+
+
+@pytest.mark.asyncio
+async def test_view_scope_dual_role_excludes_subject_taught_class(
+    db_session: AsyncSession, school: School, school_class: Class,
+    academic_year: AcademicYear, student: Student, redis_permissions: None,
+):
+    """The exact reported live shape: a staff member who is Class Teacher of
+    one class AND Subject Teacher of a *different* class must see only the
+    ClassTeacher class's students on the Students list — the SubjectTeacher
+    class's students stay reachable only through Assessments."""
+    from app.models.academic import SubjectCatalogue, SubjectType, Subject, SchoolLevel
+
+    staff, user = await _make_staff_with_position(db_session, school, "CLASS_TEACHER", "DUAL-ROLE")
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await _assign_class(db_session, school, student, school_class, academic_year)
+
+    other_class = Class(school_id=school.id, level="SHS", year_group=3, stream="C", is_active=True)
+    other_student = Student(
+        school_id=school.id, admission_number="DUAL-ROLE-STU",
+        first_name="Other", last_name="Student", is_active=True,
+    )
+    cat = SubjectCatalogue(name="Chemistry", code="CHEM-SCOPE", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add_all([other_class, other_student, cat])
+    await db_session.flush()
+    subject = Subject(school_id=school.id, catalogue_id=cat.id, code="CHEM-SCOPE", name="Chemistry", is_active=True)
+    db_session.add(subject)
+    await db_session.flush()
+    db_session.add(SubjectTeacher(
+        school_id=school.id, class_id=other_class.id, subject_id=subject.id,
+        staff_member_id=staff.id, academic_year_id=academic_year.id, is_active=True,
+    ))
+    await _assign_class(db_session, school, other_student, other_class, academic_year)
+
+    scope = await resolve_student_view_scope(user.id, school.id, db_session)
+    assert scope == {student.id}, (
+        "only the ClassTeacher-owned class's student should be visible — "
+        "the SubjectTeacher-only class's student must not leak in"
+    )
+
+
 # ── resolve_class_teacher_scope ────────────────────────────────────────────────
 
 @pytest.mark.asyncio
