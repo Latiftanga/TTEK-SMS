@@ -1,21 +1,37 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { getPlatformDomain } from '$lib/platformDomain';
+  import { schoolLoginUrl } from '$lib/platformDomain';
   import { getMySchool, updateMySchool, uploadMyLogo, applyBranding, type SchoolUpdatePayload, type SchoolRead } from '$lib/api/schools';
   import { school as schoolStore } from '$lib/stores/school';
 
   const qc = useQueryClient();
-  const platformDomain = getPlatformDomain();
 
   const schoolQ = createQuery({ queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000 });
 
+  // subdomain/custom_domain are read-only here — a school's sign-in link is
+  // how every staff/student bookmark, invite email, and (for a custom
+  // domain) real DNS/TLS record points at them, so self-service changes
+  // would silently break all of those. Only the platform superadmin can
+  // change it (superadmin/SchoolForm.svelte); backend rejects it with 403
+  // even if sent, this form just never sends it in the first place.
   let profileForm = $state<SchoolUpdatePayload & { name: string }>({
     name: '', short_name: '', phone: '', email: '',
-    address: '', motto: '', established_year: undefined, brand_color: '#1e40af', subdomain: '',
+    address: '', motto: '', established_year: undefined, brand_color: '#1e40af',
   });
   let profileDirty = $state(false);
   let profileError = $state('');
   let profileOk    = $state(false);
+  let linkCopied   = $state(false);
+
+  const signInUrl = $derived(schoolLoginUrl($schoolQ.data?.subdomain));
+
+  function copySignInUrl() {
+    if (!signInUrl) return;
+    navigator.clipboard.writeText(signInUrl).then(() => {
+      linkCopied = true;
+      setTimeout(() => linkCopied = false, 2000);
+    });
+  }
 
   $effect(() => {
     const s = $schoolQ.data;
@@ -29,7 +45,6 @@
         motto:            s.motto ?? '',
         established_year: s.established_year ?? undefined,
         brand_color:      s.brand_color,
-        subdomain:        s.subdomain ?? '',
       };
     }
   });
@@ -43,10 +58,6 @@
       address:          profileForm.address          || undefined,
       motto:            profileForm.motto            || undefined,
       established_year: profileForm.established_year || undefined,
-      // Blank never clears it — every school keeps a subdomain once it has
-      // one (auto-assigned at creation), same "don't send empty" pattern
-      // as every other optional field above.
-      subdomain:        profileForm.subdomain         || undefined,
     }),
     onSuccess: (updated: SchoolRead) => {
       qc.invalidateQueries({ queryKey: ['my-school'] });
@@ -165,20 +176,19 @@
         <h2 class="mb-1 text-sm font-semibold text-[var(--fg)]">Sign-in page</h2>
         <p class="mb-4 text-xs text-[var(--fg-muted)]">
           Staff and students use this link to reach your own branded sign-in page — no school code to remember.
-          Every school gets one automatically; change it here if you'd prefer a different address.
+          To change it, contact Tagnatek support.
         </p>
-        <div class="flex items-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] focus-within:border-[var(--brand)]">
-          <span class="shrink-0 pl-3 text-sm text-[var(--fg-muted)]">https://</span>
-          <input bind:value={profileForm.subdomain} oninput={() => profileDirty = true}
-            placeholder="yourschool" autocomplete="off" spellcheck={false}
-            class="min-w-0 flex-1 bg-transparent px-1 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] focus:outline-none lowercase" />
-          {#if platformDomain}
-            <span class="shrink-0 pr-3 text-sm text-[var(--fg-muted)]">.{platformDomain}</span>
-          {/if}
-        </div>
-        {#if !platformDomain}
-          <p class="mt-2 text-xs text-[var(--fg-subtle)]">
-            Platform domain not configured yet — this link will preview once it's set.
+        {#if signInUrl}
+          <div class="flex items-center justify-between gap-3 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] py-2 pl-3 pr-2">
+            <span class="min-w-0 truncate font-mono text-sm text-[var(--fg)]">{signInUrl}</span>
+            <button onclick={copySignInUrl} type="button"
+              class="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">
+              {linkCopied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+        {:else}
+          <p class="text-xs text-[var(--fg-subtle)]">
+            Platform domain not configured yet — this link will appear once it's set.
           </p>
         {/if}
       </div>

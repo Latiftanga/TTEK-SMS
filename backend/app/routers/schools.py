@@ -14,12 +14,13 @@ GET  /schools/public/{subdomain}   Public — branding for the login screen
 GET  /schools/my-branding          Authenticated — returns branding for caller's school
 GET  /schools/me                   Authenticated — full school profile for caller's school
 GET  /schools/me/positions         Authenticated — list positions for caller's school
-PATCH /schools/me                  Requires 'school.edit' permission
+PATCH /schools/me                  Requires 'school.edit' permission (subdomain/custom_domain rejected — superadmin only, see PATCH /schools/{id})
 POST /schools/me/logo              Requires 'school.edit' permission
 POST /schools                      Superadmin only (require_superadmin)
 GET  /schools                      Superadmin only — lists every school platform-wide
 GET  /schools/{id}                 Superadmin only (legacy — use /me for self-service)
 PATCH /schools/{id}                Superadmin only (legacy — use /me for self-service)
+DELETE /schools/{id}               Superadmin only — narrow cleanup tool, see services/school.py::delete_school
 POST /schools/{id}/logo            Superadmin only
 PUT  /schools/{id}/config          Superadmin only (legacy — use /me self-service where it exists)
 GET  /schools/{id}/config          Superadmin only
@@ -55,6 +56,7 @@ from app.schemas.school import (
     SchoolConfigSet,
     SchoolCreate,
     SchoolRead,
+    SchoolSummary,
     SchoolUpdate,
     SmsConfigCreate,
     SmsConfigRead,
@@ -181,7 +183,9 @@ async def update_my_school(
     ids: tuple = Depends(require_permission("school", "edit")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update the authenticated user's school profile fields."""
+    """Update the authenticated user's school profile fields. subdomain/
+    custom_domain are rejected here (403) even if included in the request —
+    only the superadmin route can change a school's sign-in link."""
     _user_id, school_id = ids
     return await school_svc.update_school(school_id, req, db)
 
@@ -221,17 +225,24 @@ async def create_school(
 
 # ── School queries (any authenticated user) ───────────────────────────────────
 
-@router.get("", response_model=list[SchoolRead])
+@router.get("", response_model=list[SchoolSummary])
 async def list_schools(
-    active_only: bool = Query(True, description="Exclude deactivated schools"),
+    active_only: bool = Query(False, description="Exclude deactivated schools"),
     limit: int = Query(100, ge=1, le=500, description="Maximum results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
+    search: str | None = Query(None, description="Partial match against name or school_code"),
     _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """List every school on the platform, paginated. Superadmin only — a
-    school's own users already have everything they need via /schools/me."""
-    return await school_svc.list_schools(db, active_only=active_only, limit=limit, offset=offset)
+    """List every school on the platform, paginated, with usage stats.
+    Superadmin only — a school's own users already have everything they
+    need via /schools/me. Defaults to showing disabled schools too (unlike
+    every other list endpoint's active_only default) since this is the
+    superadmin's own management view — they need to find a disabled school
+    to re-enable it, not just the ones currently in use."""
+    return await school_svc.list_schools(
+        db, active_only=active_only, limit=limit, offset=offset, search=search
+    )
 
 
 @router.get("/{school_id}", response_model=SchoolRead)
@@ -254,8 +265,23 @@ async def update_school(
     _ids: tuple = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update school profile fields.  school_code and school_type cannot be changed."""
-    return await school_svc.update_school(school_id, req, db)
+    """Update school profile fields.  school_code and school_type cannot be changed.
+    Only this superadmin-only route may change subdomain/custom_domain — see
+    services/school.py::update_school's own docstring for why."""
+    return await school_svc.update_school(school_id, req, db, allow_domain_change=True)
+
+
+@router.delete("/{school_id}", status_code=204)
+async def delete_school(
+    school_id: uuid.UUID,
+    _ids: tuple = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete a school — only ever safe for an already-disabled,
+    genuinely empty one (zero students, zero staff). See services/school.py
+    ::delete_school's own docstring for the full precondition list; there is
+    no override for either check, from any caller."""
+    await school_svc.delete_school(school_id, db)
 
 
 @router.post("/{school_id}/logo", response_model=SchoolRead)

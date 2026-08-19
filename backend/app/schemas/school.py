@@ -197,6 +197,18 @@ class SchoolRead(BaseModel):
         return _logo_url(self.logo_path, self.updated_at)
 
 
+class SchoolSummary(SchoolRead):
+    """
+    SchoolRead plus usage stats — GET /schools (the superadmin dashboard
+    list) only. Not used by GET/PATCH /schools/me or the create/update
+    responses, since those callers have no use for platform-wide aggregate
+    counts and computing them there would be wasted work.
+    """
+    student_count: int
+    staff_count: int
+    last_login_at: datetime | None
+
+
 class SchoolBranding(BaseModel):
     """
     Public branding data returned by GET /schools/public/{subdomain}.

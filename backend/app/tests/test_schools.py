@@ -14,6 +14,7 @@ from app.core.auth import hash_password
 from app.core.config import settings
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
+from app.models.students import Student
 
 
 async def _login_as_head(client: AsyncClient, auth: dict, db_session: AsyncSession, school: School) -> dict:
@@ -185,6 +186,80 @@ async def test_update_school_by_id_rejects_non_superadmin(
     assert other.name == "Other School Router Test"
 
 
+# ── No multi-tenancy leak on an unrecognized subdomain/custom domain ───────────
+# Both endpoints are public/unauthenticated (hit before login) — the raw
+# response is visible to anyone who opens their browser's network tab, not
+# just what the frontend chooses to render, so the 404 detail itself must
+# never confirm a per-tenant lookup exists ("no SCHOOL found" would).
+
+@pytest.mark.asyncio
+async def test_public_branding_404_does_not_reveal_school_lookup(client: AsyncClient):
+    resp = await client.get("/schools/public/wrong")
+    assert resp.status_code == 404
+    detail = resp.json()["detail"].lower()
+    assert "school" not in detail
+    assert "wrong" not in detail
+
+
+@pytest.mark.asyncio
+async def test_by_domain_404_does_not_reveal_school_lookup(client: AsyncClient):
+    resp = await client.get("/schools/by-domain", params={"h": "wrong.example.com"})
+    assert resp.status_code == 404
+    detail = resp.json()["detail"].lower()
+    assert "school" not in detail
+    assert "wrong.example.com" not in detail
+
+
+# ── Domain-change lockdown (PATCH /schools/me vs PATCH /schools/{id}) ──────────
+# A school's own sign-in link is how every staff/student bookmark, invite
+# email, and (for custom_domain) real DNS/TLS record points at them — only
+# the platform superadmin may change it, never a school's own admin.
+
+@pytest.mark.asyncio
+async def test_update_my_school_rejects_subdomain_change(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    original = school.subdomain
+    resp = await client.patch("/schools/me", json={"subdomain": "hijacked-slug"}, headers=head_auth)
+    assert resp.status_code == 403
+
+    await db_session.refresh(school)
+    assert school.subdomain == original
+
+
+@pytest.mark.asyncio
+async def test_update_my_school_rejects_custom_domain_change(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    resp = await client.patch("/schools/me", json={"custom_domain": "portal.example.com"}, headers=head_auth)
+    assert resp.status_code == 403
+
+    await db_session.refresh(school)
+    assert school.custom_domain is None
+
+
+@pytest.mark.asyncio
+async def test_update_my_school_allows_ordinary_fields(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """The domain lockdown must not block every other self-service field."""
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    resp = await client.patch("/schools/me", json={"name": "Renamed School"}, headers=head_auth)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Renamed School"
+
+
+@pytest.mark.asyncio
+async def test_update_school_by_id_allows_subdomain_change_for_superadmin(
+    client: AsyncClient, auth: dict, school: School,
+):
+    resp = await client.patch(f"/schools/{school.id}", json={"subdomain": "superadmin-renamed"}, headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["subdomain"] == "superadmin-renamed"
+
+
 @pytest.mark.asyncio
 async def test_list_schools_rejects_non_superadmin(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
@@ -317,3 +392,122 @@ async def test_email_login_requires_school_code(
         "login_type": "EMAIL", "identifier": "noschoolcode@presec-test.edu.gh", "password": "Whatever123!",
     })
     assert resp.status_code == 422, resp.text
+
+
+# ── GET /schools — usage stats, search, active_only default ────────────────────
+
+@pytest.mark.asyncio
+async def test_list_schools_includes_inactive_by_default(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    school.is_active = False
+    await db_session.flush()
+    resp = await client.get("/schools", headers=auth)
+    assert resp.status_code == 200
+    ids = [s["id"] for s in resp.json()]
+    assert str(school.id) in ids
+
+
+@pytest.mark.asyncio
+async def test_list_schools_active_only_excludes_disabled(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    school.is_active = False
+    await db_session.flush()
+    resp = await client.get("/schools", params={"active_only": True}, headers=auth)
+    assert resp.status_code == 200
+    ids = [s["id"] for s in resp.json()]
+    assert str(school.id) not in ids
+
+
+@pytest.mark.asyncio
+async def test_list_schools_search_matches_name_and_code(
+    client: AsyncClient, auth: dict, school: School,
+):
+    resp = await client.get("/schools", params={"search": school.school_code}, headers=auth)
+    assert resp.status_code == 200
+    ids = [s["id"] for s in resp.json()]
+    assert str(school.id) in ids
+
+    resp2 = await client.get("/schools", params={"search": "definitely-does-not-exist-xyz"}, headers=auth)
+    assert resp2.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_schools_reports_usage_stats(
+    client: AsyncClient, auth: dict, school: School, student: Student, staff_member,
+):
+    # The `auth` fixture itself is a school_admin User linked to `school`
+    # that just logged in to obtain its token — so last_login_at is
+    # expected to be populated, not null, by the time this runs.
+    resp = await client.get("/schools", params={"search": school.school_code}, headers=auth)
+    row = next(s for s in resp.json() if s["id"] == str(school.id))
+    assert row["student_count"] == 1
+    assert row["staff_count"] == 1
+    assert row["last_login_at"] is not None
+
+
+# ── DELETE /schools/{id} — narrow cleanup-only delete ───────────────────────────
+
+async def _empty_disabled_school(db_session: AsyncSession) -> School:
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    s = School(
+        name="Empty Disabled School", school_code="EMPTY_DISABLED", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=False,
+    )
+    db_session.add(s)
+    await db_session.flush()
+    return s
+
+
+@pytest.mark.asyncio
+async def test_delete_school_rejects_non_superadmin(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    head_auth = await _login_as_head(client, auth, db_session, school)
+    other = await _empty_disabled_school(db_session)
+    resp = await client.delete(f"/schools/{other.id}", headers=head_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_school_rejects_active_school(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    region = await db_session.scalar(select(GhanaRegion).limit(1))
+    district = await db_session.scalar(select(GhanaDistrict).limit(1))
+    s = School(
+        name="Still Active School", school_code="STILL_ACTIVE", school_type=SchoolType.SHS,
+        region_id=region.id, district_id=district.id, is_active=True,
+    )
+    db_session.add(s)
+    await db_session.flush()
+
+    resp = await client.delete(f"/schools/{s.id}", headers=auth)
+    assert resp.status_code == 422
+    assert (await db_session.get(School, s.id)) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_school_rejects_school_with_students_or_staff(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school: School, student: Student, staff_member,
+):
+    school.is_active = False
+    await db_session.flush()
+
+    resp = await client.delete(f"/schools/{school.id}", headers=auth)
+    assert resp.status_code == 422
+    assert "student" in resp.json()["detail"].lower()
+    assert (await db_session.get(School, school.id)) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_school_succeeds_for_empty_disabled_school(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    s = await _empty_disabled_school(db_session)
+    resp = await client.delete(f"/schools/{s.id}", headers=auth)
+    assert resp.status_code == 204
+    assert (await db_session.get(School, s.id)) is None

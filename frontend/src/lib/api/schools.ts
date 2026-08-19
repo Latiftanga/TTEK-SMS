@@ -33,6 +33,18 @@ export interface SchoolRead {
   brand_color: string;
 }
 
+/** SchoolRead plus usage stats — the superadmin dashboard list only. */
+export interface SchoolSummary extends SchoolRead {
+  student_count: number;
+  staff_count: number;
+  last_login_at: string | null;
+}
+
+/** PATCH /schools/me — self-service. Deliberately no subdomain/custom_domain
+ * field: the backend rejects them here with 403 regardless (services/
+ * school.py::update_school's allow_domain_change gate) — only a platform
+ * superadmin can change a school's sign-in link, via the separate
+ * superadmin school-edit form. */
 export interface SchoolUpdatePayload {
   name?: string;
   short_name?: string;
@@ -43,7 +55,6 @@ export interface SchoolUpdatePayload {
   established_year?: number;
   has_boarding?: boolean;
   brand_color?: string;
-  subdomain?: string;
 }
 
 /** Extends SchoolBranding with routing identifiers returned for custom domain resolution. */
@@ -147,11 +158,20 @@ export async function uploadMyLogo(file: File): Promise<SchoolRead> {
 // ── Superadmin — school onboarding ──────────────────────────────────────────
 
 /** List every school on the platform. Superadmin only. */
-export async function listSchools(params?: { active_only?: boolean }): Promise<SchoolRead[]> {
-  const { data } = await client.get<SchoolRead[]>('/schools', {
+export async function listSchools(
+  params?: { active_only?: boolean; search?: string },
+): Promise<SchoolSummary[]> {
+  const { data } = await client.get<SchoolSummary[]>('/schools', {
     params: { limit: 500, ...params },
   });
   return data;
+}
+
+/** Permanently delete a school. Superadmin only — the backend only ever
+ * allows this for an already-disabled, genuinely empty school (zero
+ * students, zero staff); see services/school.py::delete_school. */
+export async function deleteSchool(id: string): Promise<void> {
+  await client.delete(`/schools/${id}`);
 }
 
 /** Register a new school. Superadmin only — Tagnatek provisions each school. */

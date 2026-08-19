@@ -180,20 +180,11 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
           </svg>
         </div>
-        <h1 class="text-base font-bold text-[var(--fg)]">This sign-in page is specific to your school</h1>
+        <h1 class="text-base font-bold text-[var(--fg)]">Page not found</h1>
         <p class="mt-2 text-sm text-[var(--fg-muted)]">
-          Please use your school's own sign-in link. If you don't have it, check with your school's administration.
+          The page you're looking for doesn't exist.
         </p>
       </div>
-    {/if}
-
-    {#if !isSubdomain}
-      <p class="mt-6 text-center text-xs text-[var(--fg-subtle)]">
-        Platform admin?
-        <a href="/" class="font-semibold text-[var(--fg-muted)] underline-offset-2 hover:underline transition">
-          Sign in here →
-        </a>
-      </p>
     {/if}
 
   </div>

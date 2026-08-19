@@ -2,15 +2,17 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { getPlatformDomain, schoolLoginUrl } from '$lib/platformDomain';
-  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { auth, currentUser } from '$lib/stores/auth';
   import { logout } from '$lib/api/auth';
-  import { listSchools, type SchoolRead } from '$lib/api/schools';
+  import { listSchools, updateSchool, deleteSchool, type SchoolRead, type SchoolSummary } from '$lib/api/schools';
   import { get } from 'svelte/store';
   import { portal } from '$lib/actions/portal';
   import ChangePasswordForm from '$lib/components/ChangePasswordForm.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import SchoolForm from './SchoolForm.svelte';
+  import SchoolsTable from './SchoolsTable.svelte';
 
   onMount(() => {
     const user = get(currentUser);
@@ -27,18 +29,26 @@
   const qc = useQueryClient();
   const schoolsQuery = createQuery({ queryKey: ['schools'], queryFn: () => listSchools() });
 
+  let search = $state('');
+  const filteredSchools = $derived.by(() => {
+    const all = $schoolsQuery.data ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(s => s.name.toLowerCase().includes(q) || s.school_code.toLowerCase().includes(q));
+  });
+
   const platformDomain = getPlatformDomain();
   function loginUrl(subdomain: string | null): string | null {
     return schoolLoginUrl(subdomain);
   }
 
   let formOpen = $state(false);
-  let editingSchool = $state<SchoolRead | null>(null);
+  let editingSchool = $state<SchoolSummary | null>(null);
   let createdSchool = $state<SchoolRead | null>(null);
   let linkCopied = $state(false);
 
   function openCreate() { editingSchool = null; formOpen = true; }
-  function openEdit(s: SchoolRead) { editingSchool = s; formOpen = true; }
+  function openEdit(s: SchoolSummary) { editingSchool = s; formOpen = true; }
 
   function onFormSuccess(school: SchoolRead) {
     const wasEditing = !!editingSchool;
@@ -56,6 +66,45 @@
       setTimeout(() => linkCopied = false, 2000);
     });
   }
+
+  // ── Quick active/inactive toggle ─────────────────────────────────────────────
+  // Reactivating is the safe direction — fires immediately. Deactivating
+  // blocks every staff/student login at that school right away (services/
+  // auth_lookup.py::resolve_school_id), so it goes through a confirm step
+  // first, unlike the Edit form's own toggle (there, "Save changes" is
+  // itself already a deliberate, reviewable step — this one-click row
+  // toggle has no equivalent pause).
+  let togglingId = $state<string | null>(null);
+  let deactivateTarget = $state<SchoolSummary | null>(null);
+
+  const toggleMut = createMutation({
+    mutationFn: (s: SchoolSummary) => updateSchool(s.id, { is_active: !s.is_active }),
+    onMutate: (s) => { togglingId = s.id; },
+    onSettled: () => { togglingId = null; deactivateTarget = null; },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['schools'] }),
+  });
+
+  function handleToggleActive(s: SchoolSummary) {
+    if (s.is_active) deactivateTarget = s;
+    else $toggleMut.mutate(s);
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────────────────
+  let deleteTarget = $state<SchoolSummary | null>(null);
+  let deleteError = $state('');
+
+  const deleteMut = createMutation({
+    mutationFn: (s: SchoolSummary) => deleteSchool(s.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['schools'] });
+      deleteTarget = null;
+      deleteError = '';
+    },
+    onError: (e: unknown) => {
+      deleteError = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Could not delete this school.';
+    },
+  });
 
   let showPasswordModal = $state(false);
   function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') showPasswordModal = false; }
@@ -135,10 +184,14 @@
 
     <!-- Schools list -->
     <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      <div class="border-b border-[var(--border)] px-5 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-3">
         <p class="text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">
-          {$schoolsQuery.data?.length ?? 0} school{($schoolsQuery.data?.length ?? 0) !== 1 ? 's' : ''} on the platform
+          {filteredSchools.length} of {$schoolsQuery.data?.length ?? 0} school{($schoolsQuery.data?.length ?? 0) !== 1 ? 's' : ''}
         </p>
+        {#if ($schoolsQuery.data?.length ?? 0) > 0}
+          <input bind:value={search} type="search" placeholder="Search by name or code…"
+            class="min-h-[44px] w-full max-w-[220px] rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-xs text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none" />
+        {/if}
       </div>
 
       {#if $schoolsQuery.isPending}
@@ -152,60 +205,12 @@
             Onboard the first school
           </button>
         </div>
+      {:else if filteredSchools.length === 0}
+        <p class="px-6 py-10 text-center text-sm text-[var(--fg-muted)]">No school matches "{search}".</p>
       {:else}
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-[var(--border)] bg-[var(--hover)]/30 text-left text-[10px] font-semibold uppercase tracking-widest text-[var(--fg-subtle)]">
-                <th class="px-4 py-2.5">School</th>
-                <th class="hidden px-4 py-2.5 sm:table-cell">Code</th>
-                <th class="hidden px-4 py-2.5 sm:table-cell">Type</th>
-                <th class="px-4 py-2.5">Sign-in link</th>
-                <th class="px-4 py-2.5">Status</th>
-                <th class="px-4 py-2.5"><span class="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-[var(--border)]">
-              {#each $schoolsQuery.data ?? [] as s (s.id)}
-                <tr>
-                  <td class="px-4 py-3">
-                    <p class="font-medium text-[var(--fg)]">{s.name}</p>
-                    <p class="font-mono text-[10px] text-[var(--fg-subtle)] sm:hidden">{s.school_code}</p>
-                  </td>
-                  <td class="hidden px-4 py-3 font-mono text-xs text-[var(--fg-muted)] sm:table-cell">{s.school_code}</td>
-                  <td class="hidden px-4 py-3 text-xs text-[var(--fg-muted)] sm:table-cell">{s.school_type}</td>
-                  <td class="px-4 py-3">
-                    {#if loginUrl(s.subdomain)}
-                      <a href={loginUrl(s.subdomain)} target="_blank" rel="noopener noreferrer"
-                        class="font-mono text-xs text-[var(--brand)] hover:underline">
-                        {s.subdomain}.{platformDomain}
-                      </a>
-                    {:else if s.subdomain && !platformDomain}
-                      <span class="text-xs text-[var(--fg-subtle)]" title="Set PUBLIC_PLATFORM_DOMAIN to show a real link">
-                        {s.subdomain}.<em class="not-italic">(domain not set)</em>
-                      </span>
-                    {:else}
-                      <span class="text-xs text-[var(--fg-subtle)]">—</span>
-                    {/if}
-                  </td>
-                  <td class="px-4 py-3">
-                    <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold
-                      {s.is_active ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400' : 'bg-[var(--hover)] text-[var(--fg-muted)]'}">
-                      {s.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 text-right">
-                    <button onclick={() => openEdit(s)}
-                      class="min-h-[44px] rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--fg-muted)]
-                             transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+        <SchoolsTable schools={filteredSchools} {platformDomain} {loginUrl} {togglingId}
+          onEdit={openEdit} onToggleActive={handleToggleActive}
+          onDelete={(s) => { deleteTarget = s; deleteError = ''; }} />
       {/if}
     </div>
 
@@ -215,6 +220,28 @@
 
 <SchoolForm open={formOpen} school={editingSchool} onSuccess={onFormSuccess}
   onCancel={() => { formOpen = false; editingSchool = null; }} />
+
+<ConfirmModal
+  open={!!deactivateTarget}
+  title="Disable {deactivateTarget?.name}?"
+  message="Every staff member and student at this school will be signed out and blocked from logging in immediately. You can re-enable it here at any time."
+  confirmLabel="Disable"
+  variant="warning"
+  isPending={$toggleMut.isPending}
+  onConfirm={() => deactivateTarget && $toggleMut.mutate(deactivateTarget)}
+  onCancel={() => deactivateTarget = null}
+/>
+
+<ConfirmModal
+  open={!!deleteTarget}
+  title="Permanently delete {deleteTarget?.name}?"
+  message={deleteError || "This cannot be undone. The school record will be permanently removed."}
+  confirmLabel="Delete forever"
+  variant="danger"
+  isPending={$deleteMut.isPending}
+  onConfirm={() => deleteTarget && $deleteMut.mutate(deleteTarget)}
+  onCancel={() => { deleteTarget = null; deleteError = ''; }}
+/>
 
 {#if showPasswordModal}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
