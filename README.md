@@ -28,6 +28,8 @@ When it finishes:
 
 Default superadmin credentials are in `.env` (`SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD`). Change them before deploying.
 
+For a real production deployment, see [DEPLOY.md](DEPLOY.md) — this quick start uses `docker-compose.yml`, which is dev-only (hot reload, exposed DB/Redis ports, no reverse proxy).
+
 ## Day-to-day commands
 
 ```bash

@@ -25,6 +25,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _INSECURE_DEFAULTS: dict[str, str] = {
     "app_secret_key": "change-me",
     "hmac_secret_key": "change-me-hmac",
+    "postgres_password": "changeme",
+    "superadmin_password": "changeme",
 }
 
 

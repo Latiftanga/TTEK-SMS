@@ -1,0 +1,19 @@
+# Plain-HTTP routing for the production compose stack (docker-compose.prod.yml).
+# :80 (not a domain) means Caddy never attempts automatic HTTPS here — see
+# DEPLOY.md for how to point a real domain at this once one exists, at which
+# point replacing ":80" with the real domain is a one-line change that turns
+# on automatic Let's Encrypt HTTPS with no other code involved.
+:80 {
+	# handle_path (not handle) strips the /api prefix before proxying — the
+	# backend's own routes are registered without it (e.g. /attendance/...,
+	# not /api/attendance/...); in dev this stripping is done by Vite's own
+	# proxy (vite.config.ts: rewrite: path => path.replace(/^\/api/, '')),
+	# which has no equivalent once the frontend is a built adapter-node app.
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
