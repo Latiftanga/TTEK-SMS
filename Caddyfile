@@ -10,6 +10,17 @@
 	# proxy (vite.config.ts: rewrite: path => path.replace(/^\/api/, '')),
 	# which has no equivalent once the frontend is a built adapter-node app.
 	handle_path /api/* {
+		# Hard cap on request body size at the edge, before it ever reaches
+		# the backend — the app-level check in routers/documents.py can only
+		# reject an oversized upload after Content-Length is inspected (or,
+		# for a client that lies/omits it, after the body has already been
+		# received), so this is the one place a truly early abort is
+		# possible. 10 MB is the real per-file limit (documents.py's
+		# MAX_FILE_BYTES); the extra room here is multipart boundary/header
+		# overhead, not a separate policy.
+		request_body {
+			max_size 11MB
+		}
 		reverse_proxy api:8000
 	}
 

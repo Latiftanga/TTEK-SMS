@@ -204,7 +204,16 @@ async def queue_bulk_report(
 @router.get("/report-cards/bulk/{job_id}/download")
 async def download_bulk_report(
     job_id: str,
-    auth=Depends(require_permission("assessments", "view")),
+    # Same tier as queuing the job (approve_scores), not the weaker `view` —
+    # the zip contains a whole class's scores/grades for a term, and job_id
+    # is an unguessable UUID never listed anywhere, but if it ever leaked
+    # (logs, a shared link) a `view`-only caller could otherwise download
+    # data an admin needed the stronger permission to generate in the first
+    # place. No job-ownership binding needed beyond this — any staff member
+    # who could have generated it may download it, matching how every other
+    # school-wide report in this codebase is gated by capability, not by
+    # "did you personally request this one."
+    auth=Depends(require_permission("assessments", "approve_scores")),
 ):
     # Path is built from the CALLER's own school_id, never a client-supplied
     # one — bulk_report_job.py writes into this same school-namespaced

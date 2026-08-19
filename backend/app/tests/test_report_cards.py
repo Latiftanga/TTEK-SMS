@@ -557,3 +557,39 @@ async def test_my_report_classes_unrestricted_for_admin(
     resp = await client.get(f"/report-cards/my-classes?term_id={academic_term.id}", headers=auth)
     assert resp.status_code == 200
     assert any(c["id"] == str(school_class.id) for c in resp.json())
+
+
+# ── Bulk report download permission tier ────────────────────────────────────
+# Regression: download_bulk_report used to require only assessments.view —
+# weaker than the assessments.approve_scores queue_bulk_report itself needs —
+# so a caller who could never have generated the zip could still download it
+# if the (unguessable, but leakable via logs/a shared link) job_id ever
+# reached them.
+
+@pytest.mark.asyncio
+async def test_download_bulk_report_rejected_for_view_only_caller(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    resp = await client.get(f"/report-cards/bulk/{uuid.uuid4()}/download", headers=teacher_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_download_bulk_report_allowed_for_approve_scores_holder(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    head_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "HEAD")
+
+    from pathlib import Path
+    job_id = str(uuid.uuid4())
+    zip_dir = Path(settings.secure_upload_dir) / "bulk" / str(school.id)
+    zip_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = zip_dir / f"{job_id}.zip"
+    zip_path.write_bytes(b"PK\x03\x04fake-zip-contents")
+    try:
+        resp = await client.get(f"/report-cards/bulk/{job_id}/download", headers=head_auth)
+        assert resp.status_code == 200
+        assert resp.content == b"PK\x03\x04fake-zip-contents"
+    finally:
+        zip_path.unlink(missing_ok=True)

@@ -433,6 +433,25 @@ async def test_upload_rejects_oversized_document_type(
     assert resp.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_upload_rejects_declared_content_length_over_limit(
+    client: AsyncClient, auth: dict, student: Student,
+):
+    """Regression: the router used to have no size check at all ahead of
+    upload_document()'s own MAX_FILE_BYTES check, which only fires *after*
+    Starlette's multipart parser has already fully buffered the body — a
+    real DoS vector (memory/disk exhaustion from an oversized upload) with
+    no early abort. A caller declaring a Content-Length well past the limit
+    is now rejected before any of that buffering happens, regardless of
+    what's actually in the body."""
+    resp = await client.post(
+        f"/documents/student/{student.id}?document_type=certificate",
+        files={"file": ("cert.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+        headers={**auth, "Content-Length": str(50 * 1024 * 1024)},
+    )
+    assert resp.status_code == 413
+
+
 # ── Housemaster boarding-document scope ───────────────────────────────────────
 
 @pytest.mark.asyncio

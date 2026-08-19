@@ -135,17 +135,26 @@
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="block">
           <span class="lx">Document type <span class="text-red-500">*</span></span>
-          <input bind:value={documentType} list="doc-type-suggestions" placeholder="e.g. certificate" class="inp mt-1" />
+          <input bind:value={documentType} list="doc-type-suggestions" placeholder="e.g. certificate" class="inp mt-1 min-h-[44px]" />
           <datalist id="doc-type-suggestions">
             {#each DOC_TYPE_SUGGESTIONS as t}<option value={t}></option>{/each}
           </datalist>
         </label>
-        <label class="block">
+        <div>
           <span class="lx">File <span class="text-red-500">*</span> <span class="font-normal text-[var(--fg-subtle)]">(PDF, image, or Word — up to 10 MB)</span></span>
-          <input bind:this={fileInputEl} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
-            onchange={(e) => selectedFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null}
-            class="inp mt-1 file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--hover)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--fg)]" />
-        </label>
+          <!-- The raw file-input pseudo-button can't be sized reliably across
+               browsers, so it's visually hidden and a full-size label stands
+               in as the real tap target — same pattern as StaffImportModal/
+               StudentImportDrawer's own file pickers. -->
+          <label class="mt-1 flex min-h-[44px] cursor-pointer items-center gap-2 truncate rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] transition hover:border-[var(--brand)] hover:bg-[var(--hover)]">
+            <input bind:this={fileInputEl} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" class="sr-only"
+              onchange={(e) => selectedFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null} />
+            <svg class="h-4 w-4 shrink-0 text-[var(--fg-muted)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32a1.5 1.5 0 01-2.121-2.121l9.545-9.545"/>
+            </svg>
+            <span class="truncate {selectedFile ? '' : 'text-[var(--fg-subtle)]'}">{selectedFile ? selectedFile.name : 'Choose file'}</span>
+          </label>
+        </div>
       </div>
       {#if uploadError}<p class="mt-2 text-xs text-red-500">{uploadError}</p>{/if}
       <div class="mt-3 flex gap-2">
@@ -186,11 +195,19 @@
           </div>
           <div class="flex shrink-0 items-center gap-1">
             <button onclick={() => download(doc)} disabled={downloadingId === doc.id}
-              aria-label="Download {doc.file_name}" title="Download"
+              aria-label={downloadingId === doc.id ? `Downloading ${doc.file_name}…` : `Download ${doc.file_name}`}
+              title={downloadingId === doc.id ? 'Downloading…' : 'Download'}
               class="flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)] disabled:opacity-50">
-              <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-              </svg>
+              {#if downloadingId === doc.id}
+                <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+              {:else}
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+              {/if}
             </button>
             <button onclick={() => deleteTarget = doc}
               aria-label="Delete {doc.file_name}" title="Delete"
