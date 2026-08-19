@@ -76,5 +76,19 @@ export const handle: Handle = async ({ event, resolve }) => {
     throw redirect(302, '/login');
   }
 
+  // Mirror image: /login (the school-specific sign-in form) with NO
+  // resolved school context at all — bare platform root/localhost, or any
+  // hostname parseHost() couldn't match to a subdomain or custom domain —
+  // has nothing to log into. Send straight to `/` (the platform-admin
+  // form) instead of making the visitor read an interstitial card and
+  // click a link; there's nothing ambiguous about this case; unlike the
+  // customDomain branch left alone above, both being absent here is exactly
+  // parseHost()'s own "platform root" definition, not a guess. A real
+  // custom-domain school's own /login is unaffected — customDomain is set
+  // for that case, so this branch doesn't match.
+  if (!subdomain && !customDomain && event.url.pathname === '/login') {
+    throw redirect(302, '/');
+  }
+
   return resolve(event);
 };

@@ -107,12 +107,5 @@
         {loading ? 'Signing in…' : 'Sign in'}
       </button>
     </div>
-
-    <p class="mt-6 text-center text-xs text-[var(--fg-muted)]">
-      School staff?
-      <a href="/login" class="font-medium underline hover:text-[var(--fg)] transition">
-        Sign in here →
-      </a>
-    </p>
   </div>
 </div>

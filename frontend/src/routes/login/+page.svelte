@@ -59,8 +59,11 @@
 
     if (!isSubdomain) {
       // Bare/plain domain — never a functional login form, regardless of
-      // what's cached in localStorage from a previous visit.
-      resolving = false;
+      // what's cached in localStorage from a previous visit. hooks.server.ts
+      // already redirects a fresh request here to `/`; this is just the
+      // client-side backstop for the rare case this component mounts
+      // without a server round-trip (e.g. an in-app client-side navigation).
+      goto('/', { replaceState: true });
       return;
     }
 
