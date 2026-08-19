@@ -219,6 +219,21 @@ async def refresh(raw_token: str, db: AsyncSession) -> TokenResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account not found or has been deactivated.",
         )
+    # Mirrors core/dependencies.py::require_auth's own School.is_active
+    # check — without this, a disabled school's users could keep renewing
+    # their session indefinitely via refresh, since this endpoint has its
+    # own separate code path (a raw refresh-token flow, not an access-token
+    # Bearer request) and was never touched by that fix. Skipped for a
+    # superadmin even when school_id happens to be set (same reasoning as
+    # require_auth's own is_superadmin check) — a superadmin must never be
+    # locked out of managing a school by that school's own disabled state.
+    if user.school_id is not None and not user.is_superadmin:
+        school = await db.get(School, user.school_id)
+        if not school or not school.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="This school's access has been disabled.",
+            )
 
     # Revoke the old session and create a new one atomically.
     session.revoked_at = _utcnow()

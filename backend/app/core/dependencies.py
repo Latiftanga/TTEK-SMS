@@ -57,6 +57,7 @@ import uuid
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import decode_access_token
@@ -73,13 +74,35 @@ UserIdentity = tuple[uuid.UUID, uuid.UUID | None]
 
 async def require_auth(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
 ) -> UserIdentity:
     """
     Validate the Bearer token and return (user_id, school_id).
 
+    Also re-checks School.is_active on every call, not just at login —
+    without this, a school's already-issued access tokens (up to 15 minutes)
+    and refresh cycle (services/auth.py::refresh has the matching check)
+    would keep working normally after a superadmin disables the school,
+    since a JWT is otherwise self-contained and never touches the DB.
+    Disabling a school is meant to be a real, immediate access block for
+    everyone there (see services/auth_lookup.py::resolve_school_id's own
+    is_active filter, which already does this for new logins) — this is
+    the other half of that guarantee, for sessions that already exist.
+
+    Skipped entirely when school_id is None (the real production
+    superadmin — scripts/create_superadmin.py — is never tied to a school).
+    ALSO skipped for a superadmin whose token *does* carry a school_id —
+    conftest.py's own test fixture is deliberately shaped this way, and a
+    superadmin must never be locked out by a school they're actively trying
+    to manage (including the one being disabled/re-enabled). This costs one
+    extra indexed User lookup for a non-superadmin, school-scoped caller —
+    the overwhelming majority of requests — same "small, well-indexed query,
+    correctness over micro-optimization" tradeoff as the School check itself.
+
     Raises:
         403  if the Authorization: Bearer header is missing entirely
         401  if the token is expired, malformed, or has the wrong type
+        401  if the token's school has since been disabled
     """
     try:
         payload = decode_access_token(credentials.credentials)
@@ -89,6 +112,21 @@ async def require_auth(
             detail=f"Token validation failed: {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if payload.school_id is not None:
+        from app.models.auth import User
+        from app.models.school import School
+
+        user = await db.get(User, payload.user_id)
+        if user and not user.is_superadmin:
+            is_active = await db.scalar(
+                select(School.is_active).where(School.id == payload.school_id)
+            )
+            if not is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="This school's access has been disabled.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
     return payload.user_id, payload.school_id
 
 

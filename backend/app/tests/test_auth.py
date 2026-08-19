@@ -204,6 +204,85 @@ async def test_login_rejected_for_deactivated_school(
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_active_session_rejected_after_school_deactivated(
+    client: AsyncClient, active_user: User, school: School, db_session: AsyncSession,
+):
+    """The other half of "deactivating a school is a real, immediate access
+    block": test_login_rejected_for_deactivated_school (above) only proves
+    NEW logins are blocked. A JWT access token is otherwise self-contained
+    and never touches the DB (core/dependencies.py::require_auth used to be
+    pure token decode, no DB call at all) — so before this fix, a session
+    that was already live when the school got deactivated kept working
+    normally for its full remaining lifetime. This proves the exact same
+    still-valid token is rejected the moment the school is disabled, with
+    no new login and no token expiry needed."""
+    login_resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL",
+        "identifier": "teacher@testschool.edu.gh",
+        "password": "password123",
+        "school_code": school.school_code,
+    })
+    access_token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    still_active = await client.get("/auth/me", headers=headers)
+    assert still_active.status_code == 200
+
+    school.is_active = False
+    await db_session.flush()
+
+    resp = await client.get("/auth/me", headers=headers)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejected_after_school_deactivated(
+    client: AsyncClient, active_user: User, school: School, db_session: AsyncSession,
+):
+    """Mirrors test_active_session_rejected_after_school_deactivated for the
+    refresh-token flow — services/auth.py::refresh() is a completely
+    separate code path from require_auth (a raw refresh-token request, not
+    an access-token Bearer request) and needed its own matching check."""
+    login_resp = await client.post("/auth/login", json={
+        "login_type": "EMAIL",
+        "identifier": "teacher@testschool.edu.gh",
+        "password": "password123",
+        "school_code": school.school_code,
+    })
+    refresh_token = login_resp.json()["refresh_token"]
+
+    school.is_active = False
+    await db_session.flush()
+
+    resp = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_superadmin_unaffected_by_disabling_their_own_linked_school(
+    client: AsyncClient, school_admin: User, school: School, db_session: AsyncSession,
+):
+    """school_admin (conftest.py) is a superadmin whose token DOES carry a
+    real school_id — a shape distinct from the real production superadmin
+    (scripts/create_superadmin.py, always school_id=None), but a real one
+    nonetheless (and the exact shape that first exposed this as a genuine
+    edge case, not just a test-fixture quirk: a superadmin must never be
+    locked out of managing a school by that same school's own disabled
+    state — including the one they're actively trying to re-enable)."""
+    login_resp = await client.post("/auth/superadmin-login", json={
+        "identifier": "admin@presec-test.edu.gh", "password": "admin1234",
+    })
+    access_token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    school.is_active = False
+    await db_session.flush()
+
+    resp = await client.get("/auth/me", headers=headers)
+    assert resp.status_code == 200
+
+
 # ── Superadmin login — a fully separate endpoint ────────────────────────────────
 
 @pytest.mark.asyncio
