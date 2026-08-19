@@ -60,6 +60,7 @@ class ClassAttendanceLine(BaseModel):
     total: int
     present: int
     pct: float
+    marked: bool
 
 
 class AdminDashboard(DashboardExtras):

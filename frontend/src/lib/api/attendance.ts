@@ -62,6 +62,16 @@ export interface StudentAbsenceSummary {
   attendance_rate: number;
 }
 
+export interface ClassMarkingStatus {
+  class_id: string;
+  name: string;
+  student_count: number;
+  present: number;
+  absent: number;
+  marked: boolean;
+  class_teacher_name: string | null;
+}
+
 export const listSchedule = (): Promise<ScheduleDay[]> =>
   api.get('/attendance/schedule').then(r => r.data);
 
@@ -116,3 +126,8 @@ export const getAttendanceSummary = (
 // backend returns the full school-wide list for those callers instead).
 export const listMyAttendanceClasses = (termId: string): Promise<SchoolClass[]> =>
   api.get('/attendance/my-classes', { params: { term_id: termId } }).then(r => r.data);
+
+// Every visible class' marking status for one calendar day — "who's marked,
+// who hasn't," same scope as listMyAttendanceClasses.
+export const getMarkingStatus = (calendarId: string): Promise<ClassMarkingStatus[]> =>
+  api.get('/attendance/marking-status', { params: { calendar_id: calendarId } }).then(r => r.data);

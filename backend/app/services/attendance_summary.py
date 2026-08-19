@@ -12,12 +12,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.teacher_scope import classes_for_scope, resolve_attendance_scope, year_for_term
-from app.models.academic import AcademicTerm
-from app.models.attendance import AttendanceRecord, SchoolCalendar
+from app.models.academic import AcademicTerm, ClassTeacher
+from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
+from app.models.staff import StaffMember
 from app.models.students import StudentClassAssignment
 from app.schemas.academic import ClassRead
 from app.schemas.attendance import (
-    AttendanceSummaryRead, CalendarDayRead, StudentAbsenceSummary, TodayStatusRead,
+    AttendanceSummaryRead, CalendarDayRead, ClassMarkingStatusRead,
+    StudentAbsenceSummary, TodayStatusRead,
 )
 from app.services.attendance_shared import (
     _MARKABLE_TYPES, _status_str, check_class_in_attendance_scope,
@@ -210,6 +212,96 @@ async def get_class_summaries(
             days_late=late,
             attendance_rate=rate,
         ))
+    return result
+
+
+async def get_marking_status(
+    calendar_id: uuid.UUID,
+    school_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession,
+) -> list[ClassMarkingStatusRead]:
+    """Every class the caller can see, with this calendar day's marking
+    status — the school-wide "who's marked, who hasn't" oversight an admin
+    needs to know who to chase up, distinct from the single-class marking
+    flow the rest of this router serves. Scoped the same as list_my_classes
+    (every class if unrestricted, else the caller's own ClassTeacher
+    assignment(s)) — a scoped caller just sees their own class(es)."""
+    cal = await db.scalar(
+        select(SchoolCalendar).where(
+            SchoolCalendar.id == calendar_id, SchoolCalendar.school_id == school_id,
+        )
+    )
+    if not cal:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Calendar day not found.")
+
+    year_id = await year_for_term(cal.academic_term_id, db)
+    scope = await resolve_attendance_scope(user_id, year_id, db) if year_id is not None else None
+    classes = await classes_for_scope(scope, school_id, db)
+    if not classes:
+        return []
+    class_ids = [c.id for c in classes]
+
+    totals = await db.execute(
+        select(StudentClassAssignment.class_id, func.count(StudentClassAssignment.id).label("n"))
+        .where(
+            StudentClassAssignment.class_id.in_(class_ids),
+            StudentClassAssignment.school_id == school_id,
+            StudentClassAssignment.is_active.is_(True),
+        )
+        .group_by(StudentClassAssignment.class_id)
+    )
+    total_map = {r.class_id: r.n for r in totals}
+
+    # Every status counts toward "marked" — LATE/EXCUSED are neither present
+    # nor absent, but their presence still means the roster was marked, same
+    # convention as dashboard_staff.py::_class_snapshot.
+    att = await db.execute(
+        select(AttendanceRecord.class_id, AttendanceRecord.status, func.count(AttendanceRecord.id).label("n"))
+        .where(
+            AttendanceRecord.school_calendar_id == cal.id,
+            AttendanceRecord.class_id.in_(class_ids),
+            AttendanceRecord.period_id.is_(None),
+        )
+        .group_by(AttendanceRecord.class_id, AttendanceRecord.status)
+    )
+    present_map: dict[uuid.UUID, int] = {}
+    absent_map: dict[uuid.UUID, int] = {}
+    marked_map: dict[uuid.UUID, int] = {}
+    for r in att:
+        marked_map[r.class_id] = marked_map.get(r.class_id, 0) + r.n
+        if r.status == AttendanceStatus.PRESENT:
+            present_map[r.class_id] = r.n
+        elif r.status == AttendanceStatus.ABSENT:
+            absent_map[r.class_id] = r.n
+
+    teacher_map: dict[uuid.UUID, str] = {}
+    if year_id is not None:
+        teachers = await db.execute(
+            select(ClassTeacher.class_id, StaffMember.first_name, StaffMember.last_name)
+            .join(StaffMember, StaffMember.id == ClassTeacher.staff_member_id)
+            .where(
+                ClassTeacher.class_id.in_(class_ids),
+                ClassTeacher.academic_year_id == year_id,
+                ClassTeacher.is_active.is_(True),
+            )
+        )
+        teacher_map = {r.class_id: f"{r.first_name} {r.last_name}" for r in teachers}
+
+    result = [
+        ClassMarkingStatusRead(
+            class_id=c.id,
+            name=c.display_name,
+            student_count=total_map.get(c.id, 0),
+            present=present_map.get(c.id, 0),
+            absent=absent_map.get(c.id, 0),
+            marked=marked_map.get(c.id, 0) > 0,
+            class_teacher_name=teacher_map.get(c.id),
+        )
+        for c in classes
+    ]
+    # Unmarked first — the classes needing follow-up float to the top.
+    result.sort(key=lambda r: (r.marked, r.name))
     return result
 
 

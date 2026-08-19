@@ -231,6 +231,45 @@ async def test_admin_dashboard_excludes_present_count_for_withdrawn_assignment(
     assert data["attendance_pct"] == 0.0
 
 
+@pytest.mark.asyncio
+async def test_admin_dashboard_class_attendance_line_marked_flag(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear, academic_term: AcademicTerm,
+    school_class: Class, student: Student, school_admin: User, redis_permissions: None,
+):
+    """Regression: ClassAttendanceLine used to have no way to tell a class
+    with zero records ("not marked yet") apart from one marked with a
+    genuinely 0% presence rate — both rendered as an identical 0% bar."""
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    head_auth = await _login_as_position(client, auth, db_session, school, "HEAD")
+
+    before = await client.get("/dashboard", headers=head_auth)
+    line = next(c for c in before.json()["class_attendance"] if c["class_id"] == str(school_class.id))
+    assert line["marked"] is False
+
+    cal = SchoolCalendar(
+        school_id=school.id, date=date.today(), day_type=DayType.SCHOOL_DAY, academic_term_id=academic_term.id,
+    )
+    db_session.add(cal)
+    await db_session.flush()
+    db_session.add(AttendanceRecord(
+        school_id=school.id, student_id=student.id, school_calendar_id=cal.id,
+        class_id=school_class.id, status=AttendanceStatus.ABSENT, recorded_by_id=school_admin.id,
+        recorded_at=datetime.now(timezone.utc),
+    ))
+    await db_session.flush()
+
+    after = await client.get("/dashboard", headers=head_auth)
+    line = next(c for c in after.json()["class_attendance"] if c["class_id"] == str(school_class.id))
+    assert line["marked"] is True
+    assert line["present"] == 0
+
+
 # ── Teacher dashboard: same is_active gap, plus LATE/EXCUSED "marked" gap ─────
 # Both scenarios exercise dashboard_staff.py's _class_snapshot(); combined into
 # one dashboard call (one login) rather than two, to match the fixture shape.

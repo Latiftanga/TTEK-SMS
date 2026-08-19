@@ -17,6 +17,7 @@
   import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
   import AttendanceSelectors from './AttendanceSelectors.svelte';
   import AttendanceStudentRow from './AttendanceStudentRow.svelte';
+  import AttendanceMarkingOverview from './AttendanceMarkingOverview.svelte';
   setPageTitle('Attendance');
 
   function detailOf(e: unknown): string | undefined {
@@ -49,10 +50,11 @@
     staleTime: 5 * 60_000,
   }));
 
+  const classes = $derived($classesQ.data ?? []);
+
   // Auto-select when there's only one class — same courtesy as the class/
   // subject/category auto-selects on /assessments (assessments/+page.svelte).
   $effect(() => {
-    const classes = $classesQ.data ?? [];
     if (classes.length === 1 && !classId) classId = classes[0].id;
   });
 
@@ -175,16 +177,12 @@
     {...(canManage ? { action: () => goto('/admin/academic'), actionLabel: 'Go to setup' } : {})} />
 {:else}
 <AttendanceSelectors
-  {classId} classes={$classesQ.data ?? []} {today} {selectedDate} {calDay} {dayTypeColor}
+  {classId} {classes} {today} {selectedDate} {calDay} {dayTypeColor}
   onClassChange={(id) => classId = id}
   onDateChange={(date) => selectedDate = date}
 />
 
-{#if !classId}
-  <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
-    Select a class to mark attendance.
-  </div>
-{:else if $calendarQ.isPending}
+{#if $calendarQ.isPending}
   <div class="h-24 animate-pulse rounded-2xl bg-[var(--card)]"></div>
 {:else if !calDay}
   <div class="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] p-8 text-center">
@@ -203,6 +201,15 @@
     {:else}
       <p class="mt-1 text-xs text-amber-600 dark:text-amber-500">Contact your administrator to correct this calendar entry.</p>
     {/if}
+  </div>
+{:else if !classId && classes.length > 1}
+  <!-- The "who's marked, who hasn't" overview — an admin (or any caller with
+       more than one class in scope) lands here instead of a bare class
+       picker, so they can see who to chase up or mark on behalf of. -->
+  <AttendanceMarkingOverview calendarId={calDay.id} onSelectClass={(id) => classId = id} />
+{:else if !classId}
+  <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
+    Select a class to mark attendance.
   </div>
 {:else}
   <!-- Submission status banner -->

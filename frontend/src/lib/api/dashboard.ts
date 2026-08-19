@@ -51,6 +51,7 @@ export interface ClassAttendanceLine {
   total: number;
   present: number;
   pct: number;
+  marked: boolean;
 }
 
 export interface AdminDashboard extends DashboardExtras {

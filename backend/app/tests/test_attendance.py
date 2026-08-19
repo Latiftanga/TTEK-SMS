@@ -862,3 +862,118 @@ async def test_get_class_summaries_excludes_withdrawn_student(
     )
     assert withdrawn.status_code == 200
     assert withdrawn.json() == []
+
+
+# ── Marking status ("who's marked, who hasn't") ─────────────────────────────
+
+async def _assign_student_to_class(
+    db_session: AsyncSession, school: School, student: Student,
+    school_class: Class, academic_term: AcademicTerm,
+) -> None:
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_marking_status_unmarked_class(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+    academic_term: AcademicTerm,
+):
+    await _assign_student_to_class(db_session, school, student, school_class, academic_term)
+
+    resp = await client.get(
+        f"/attendance/marking-status?calendar_id={school_calendar.id}", headers=auth,
+    )
+    assert resp.status_code == 200
+    line = next(c for c in resp.json() if c["class_id"] == str(school_class.id))
+    assert line["marked"] is False
+    assert line["student_count"] == 1
+    assert line["present"] == 0
+    assert line["absent"] == 0
+    assert line["class_teacher_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_marking_status_flips_true_once_marked(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, student: Student,
+    academic_term: AcademicTerm,
+):
+    await _assign_student_to_class(db_session, school, student, school_class, academic_term)
+
+    await client.post("/attendance/mark", json={
+        "school_calendar_id": str(school_calendar.id),
+        "class_id": str(school_class.id),
+        "records": [{"student_id": str(student.id), "status": "ABSENT"}],
+    }, headers=auth)
+
+    resp = await client.get(
+        f"/attendance/marking-status?calendar_id={school_calendar.id}", headers=auth,
+    )
+    assert resp.status_code == 200
+    line = next(c for c in resp.json() if c["class_id"] == str(school_class.id))
+    assert line["marked"] is True
+    assert line["present"] == 0
+    assert line["absent"] == 1
+
+
+@pytest.mark.asyncio
+async def test_marking_status_reports_class_teacher_name(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, academic_term: AcademicTerm,
+):
+    staff_id = (await client.post("/staff", json={
+        "staff_number": "TST-CT", "first_name": "Ama", "last_name": "Mensah",
+    }, headers=auth)).json()["id"]
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/attendance/marking-status?calendar_id={school_calendar.id}", headers=auth,
+    )
+    assert resp.status_code == 200
+    line = next(c for c in resp.json() if c["class_id"] == str(school_class.id))
+    assert line["class_teacher_name"] == "Ama Mensah"
+
+
+@pytest.mark.asyncio
+async def test_marking_status_scoped_to_own_class_teacher_assignment(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_calendar: SchoolCalendar, school_class: Class, academic_term: AcademicTerm,
+    redis_permissions: None,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+
+    empty = await client.get(
+        f"/attendance/marking-status?calendar_id={school_calendar.id}", headers=teacher_auth,
+    )
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    db_session.add(ClassTeacher(
+        school_id=school.id, class_id=school_class.id, staff_member_id=staff_id,
+        academic_year_id=academic_term.academic_year_id, is_active=True,
+    ))
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/attendance/marking-status?calendar_id={school_calendar.id}", headers=teacher_auth,
+    )
+    assert resp.status_code == 200
+    assert [c["class_id"] for c in resp.json()] == [str(school_class.id)]
+
+
+@pytest.mark.asyncio
+async def test_marking_status_404_for_bogus_calendar(client: AsyncClient, auth: dict):
+    import uuid as _uuid
+    resp = await client.get(
+        f"/attendance/marking-status?calendar_id={_uuid.uuid4()}", headers=auth,
+    )
+    assert resp.status_code == 404

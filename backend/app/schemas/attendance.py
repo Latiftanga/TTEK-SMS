@@ -93,3 +93,13 @@ class StudentAbsenceSummary(BaseModel):
     days_absent: int
     days_late: int
     attendance_rate: float  # 0.0–100.0
+
+
+class ClassMarkingStatusRead(BaseModel):
+    class_id: uuid.UUID
+    name: str
+    student_count: int
+    present: int
+    absent: int
+    marked: bool
+    class_teacher_name: str | None

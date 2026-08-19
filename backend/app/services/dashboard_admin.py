@@ -118,21 +118,31 @@ async def admin_view(
     )
 
     present_map: dict[uuid.UUID, int] = {}
+    marked_map: dict[uuid.UUID, int] = {}
     if today_cal:
         att = await db.execute(
-            select(StudentClassAssignment.class_id, func.count(AttendanceRecord.id).label("n"))
+            select(
+                StudentClassAssignment.class_id,
+                AttendanceRecord.status,
+                func.count(AttendanceRecord.id).label("n"),
+            )
             .join(AttendanceRecord, AttendanceRecord.student_id == StudentClassAssignment.student_id)
             .where(
                 AttendanceRecord.school_calendar_id == today_cal.id,
-                AttendanceRecord.status == AttendanceStatus.PRESENT,
                 AttendanceRecord.period_id.is_(None),
                 StudentClassAssignment.academic_year_id == term.academic_year_id,
                 StudentClassAssignment.school_id == school_id,
                 StudentClassAssignment.is_active.is_(True),
             )
-            .group_by(StudentClassAssignment.class_id)
+            .group_by(StudentClassAssignment.class_id, AttendanceRecord.status)
         )
-        present_map = {r.class_id: r.n for r in att}
+        # Every status counts toward "marked" (a class marked all-absent is
+        # still marked) — distinct from present_map, which stays PRESENT-only
+        # for the existing pct bar.
+        for r in att:
+            marked_map[r.class_id] = marked_map.get(r.class_id, 0) + r.n
+            if r.status == AttendanceStatus.PRESENT:
+                present_map[r.class_id] = r.n
 
     # class_rows is capped to 12 for the "Attendance by class" widget list — the
     # headline present/total stat must not be derived from that same capped loop,
@@ -158,6 +168,7 @@ async def admin_view(
             name=_class_label(cls, prog_name),
             total=total, present=present,
             pct=round(present / total * 100, 1) if total else 0.0,
+            marked=marked_map.get(cls.id, 0) > 0,
         ))
 
     ft = (await db.execute(

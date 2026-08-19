@@ -109,27 +109,47 @@
       <div class="space-y-4">
         {#each data.class_attendance as cls}
           {@const pct = cls.total > 0 ? cls.pct : 0}
-          {@const low = pct < 70 && cls.total > 0}
-          <div>
-            <div class="mb-1.5 flex items-center justify-between">
-              <span class="text-[0.8125rem] font-medium text-[var(--fg)]">{cls.name}</span>
-              <div class="flex items-center gap-1.5">
-                {#if low}
-                  <svg class="h-3.5 w-3.5 text-red-500" fill="none" stroke="currentColor"
-                       stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          {@const low = cls.marked && pct < 70 && cls.total > 0}
+          <!-- A class with zero records ("not marked yet") is distinct from
+               one that was marked with a genuinely low presence rate — both
+               used to render as an identical 0% bar. -->
+          {#if !cls.marked}
+            <a href="/attendance"
+               class="group -mx-2 block rounded-lg px-2 py-1 transition hover:bg-amber-50 dark:hover:bg-amber-950/30">
+              <div class="mb-1.5 flex items-center justify-between gap-2">
+                <span class="text-[0.8125rem] font-medium text-[var(--fg)]">{cls.name}</span>
+                <span class="flex items-center gap-1 text-sm font-bold text-amber-600 dark:text-amber-400">
+                  Mark now
+                  <svg class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
                   </svg>
-                {/if}
-                <span class="text-sm font-bold {low ? 'text-red-600 dark:text-red-400' : 'text-[var(--fg)]'}">{pct}%</span>
+                </span>
               </div>
+              <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"></div>
+              <p class="mt-1 text-[11px] text-[var(--fg-muted)]">{cls.total} students · not marked yet</p>
+            </a>
+          {:else}
+            <div>
+              <div class="mb-1.5 flex items-center justify-between">
+                <span class="text-[0.8125rem] font-medium text-[var(--fg)]">{cls.name}</span>
+                <div class="flex items-center gap-1.5">
+                  {#if low}
+                    <svg class="h-3.5 w-3.5 text-red-500" fill="none" stroke="currentColor"
+                         stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                  {/if}
+                  <span class="text-sm font-bold {low ? 'text-red-600 dark:text-red-400' : 'text-[var(--fg)]'}">{pct}%</span>
+                </div>
+              </div>
+              <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                <div class="h-full rounded-full transition-all duration-700 {low ? 'bg-red-400' : ''}"
+                     style="width: {pct}%; {!low ? 'background-color: var(--brand)' : ''}"></div>
+              </div>
+              <p class="mt-1 text-[11px] text-[var(--fg-muted)]">{cls.present} of {cls.total} present</p>
             </div>
-            <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-              <div class="h-full rounded-full transition-all duration-700 {low ? 'bg-red-400' : ''}"
-                   style="width: {pct}%; {!low ? 'background-color: var(--brand)' : ''}"></div>
-            </div>
-            <p class="mt-1 text-[11px] text-[var(--fg-muted)]">{cls.present} of {cls.total} present</p>
-          </div>
+          {/if}
         {/each}
       </div>
     </div>

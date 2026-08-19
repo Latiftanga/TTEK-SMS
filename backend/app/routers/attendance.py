@@ -18,7 +18,8 @@ from app.schemas.academic import ClassRead
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
     CalendarDayOverride, CalendarDayRead, CalendarGenerateRequest,
-    ScheduleRead, ScheduleUpsert, StudentAbsenceSummary, TodayStatusRead,
+    ClassMarkingStatusRead, ScheduleRead, ScheduleUpsert, StudentAbsenceSummary,
+    TodayStatusRead,
 )
 from app.services import attendance as att_svc
 from app.services import attendance_calendar as cal_svc
@@ -139,6 +140,18 @@ async def get_summary(
 ):
     user_id, school_id = ids
     return await att_summary_svc.get_summary(student_id, term_id, school_id, user_id, db)
+
+
+@router.get("/marking-status", response_model=list[ClassMarkingStatusRead])
+async def get_marking_status(
+    calendar_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every visible class' marking status for one calendar day — the
+    "who's marked, who hasn't" oversight view."""
+    user_id, school_id = ids
+    return await att_summary_svc.get_marking_status(calendar_id, school_id, user_id, db)
 
 
 @router.get("/my-classes", response_model=list[ClassRead])
