@@ -27,15 +27,66 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import check_term_lock_override
-from app.core.teacher_scope import enforce_current_term_for_attendance
-from app.models.attendance import AttendanceAuditLog, AttendanceRecord, AttendanceStatus, SchoolCalendar
+from app.core.teacher_scope import enforce_current_term_for_attendance, year_for_term
+from app.models.academic import TimetableSlot
+from app.models.attendance import AttendanceAuditLog, AttendanceRecord, AttendanceStatus, DayOfWeek, SchoolCalendar, SchoolPeriod
 from app.models.school import School
 from app.models.students import Student
 from app.schemas.attendance import AttendanceMarkRequest, AttendanceRecordRead
+from app.services import attendance_risk as risk_svc
 from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
 from app.services.academic_class import get_active_class
-from app.services.attendance_shared import _MARKABLE_TYPES, _to_read, check_class_in_attendance_scope
+from app.services.attendance_shared import (
+    _MARKABLE_TYPES, _to_read, check_class_in_attendance_scope, check_period_attendance_scope,
+)
+
+_DAYS_IN_ORDER = list(DayOfWeek)
+
+
+async def _validate_period_marking(
+    req: AttendanceMarkRequest, cal: SchoolCalendar, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
+) -> None:
+    """Only called when req.period_id is set — the whole-day path never
+    reaches this. Confirms the school has opted in, the period is real and
+    actually falls on this calendar day's weekday (periods are a recurring
+    weekly template, so a mismatch means marking Monday's period against a
+    calendar row that's actually a Wednesday), and a subject is timetabled
+    for it — then defers the actual who-can-mark-it question to
+    check_period_attendance_scope."""
+    school = await db.get(School, school_id)
+    if not school or not school.has_period_attendance:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Period-level attendance is not enabled for this school.",
+        )
+
+    period = await db.get(SchoolPeriod, req.period_id)
+    if not period or period.school_id != school_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Period not found.")
+    if period.day_of_week != _DAYS_IN_ORDER[cal.date.weekday()]:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{period.name} is a {period.day_of_week.value} period — this calendar day falls on a different weekday.",
+        )
+
+    year_id = await year_for_term(cal.academic_term_id, db)
+    slot = None
+    if year_id is not None:
+        slot = await db.scalar(
+            select(TimetableSlot).where(
+                TimetableSlot.class_id == req.class_id,
+                TimetableSlot.period_id == req.period_id,
+                TimetableSlot.academic_year_id == year_id,
+            )
+        )
+    if not slot:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "No subject is timetabled for this period — nothing to take attendance for.",
+        )
+
+    await check_period_attendance_scope(req.class_id, slot.subject_id, cal.academic_term_id, user_id, db)
 
 
 async def mark_attendance(
@@ -55,7 +106,10 @@ async def mark_attendance(
 
     await get_active_class(req.class_id, school_id, db)
 
-    await check_class_in_attendance_scope(req.class_id, cal.academic_term_id, user_id, db)
+    if req.period_id is not None:
+        await _validate_period_marking(req, cal, school_id, user_id, db)
+    else:
+        await check_class_in_attendance_scope(req.class_id, cal.academic_term_id, user_id, db)
     await enforce_current_term_for_attendance(user_id, cal.academic_term_id, db)
 
     submitted_ids = [m.student_id for m in req.records]
@@ -104,7 +158,7 @@ async def mark_attendance(
                     select(AttendanceRecord).where(
                         AttendanceRecord.student_id == mark.student_id,
                         AttendanceRecord.school_calendar_id == req.school_calendar_id,
-                        AttendanceRecord.period_id.is_(None),
+                        AttendanceRecord.period_id == req.period_id,
                     )
                 )
                 if existing:
@@ -119,6 +173,7 @@ async def mark_attendance(
                         student_id=mark.student_id,
                         school_calendar_id=req.school_calendar_id,
                         class_id=req.class_id,
+                        period_id=req.period_id,
                         status=mark.status,
                         notes=mark.notes,
                         recorded_by_id=user_id,
@@ -152,8 +207,11 @@ async def mark_attendance(
             ))
         await db.flush()
 
+    # Guardian alerts and the chronic-absenteeism tracker key off the day's
+    # real (whole-day) record only — a school layering period-level marks on
+    # top of it shouldn't fire a second alert per lesson.
     # Fire absence alerts only for NEW ABSENT marks — never on re-marks
-    if new_absent_ids:
+    if req.period_id is None and new_absent_ids:
         school = await db.get(School, school_id)
         school_short = (school.short_name or school.name) if school else ""
         absence_date = cal.date.isoformat()
@@ -175,6 +233,23 @@ async def mark_attendance(
                     entity_id=rec.id,
                     db=db,
                 )
+                if await risk_svc.check_consecutive_absences(mark.student_id, req.school_calendar_id, school_id, db):
+                    await sms_svc.notify_consecutive_absence(
+                        student_id=mark.student_id, school_id=school_id,
+                        school_short=school_short, entity_id=rec.id, db=db,
+                    )
+                    await email_svc.notify_consecutive_absence_email(
+                        student_id=mark.student_id, school_id=school_id,
+                        school_short=school_short, entity_id=rec.id, db=db,
+                    )
+
+    # Chronic-absenteeism early warning — checked for EVERY student in the
+    # batch (not just new absences), since a LATE/EXCUSED-heavy pattern also
+    # erodes the term-to-date rate.
+    if req.period_id is None and cal.academic_term_id is not None:
+        await risk_svc.check_and_notify_risk(
+            [m.student_id for m in req.records], cal.academic_term_id, cal.date, school_id, db,
+        )
 
     return [_to_read(r) for r in saved]
 
@@ -185,16 +260,31 @@ async def list_attendance(
     school_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
+    period_id: uuid.UUID | None = None,
 ) -> list[AttendanceRecordRead]:
     cal = await db.get(SchoolCalendar, school_calendar_id)
     if cal and cal.school_id == school_id:
-        await check_class_in_attendance_scope(class_id, cal.academic_term_id, user_id, db)
+        if period_id is not None:
+            year_id = await year_for_term(cal.academic_term_id, db)
+            slot = await db.scalar(
+                select(TimetableSlot).where(
+                    TimetableSlot.class_id == class_id,
+                    TimetableSlot.period_id == period_id,
+                    TimetableSlot.academic_year_id == year_id,
+                )
+            ) if year_id is not None else None
+            if slot is not None:
+                await check_period_attendance_scope(class_id, slot.subject_id, cal.academic_term_id, user_id, db)
+            else:
+                await check_class_in_attendance_scope(class_id, cal.academic_term_id, user_id, db)
+        else:
+            await check_class_in_attendance_scope(class_id, cal.academic_term_id, user_id, db)
     rows = await db.scalars(
         select(AttendanceRecord).where(
             AttendanceRecord.school_calendar_id == school_calendar_id,
             AttendanceRecord.class_id == class_id,
             AttendanceRecord.school_id == school_id,
-            AttendanceRecord.period_id.is_(None),
+            AttendanceRecord.period_id == period_id,
         ).order_by(AttendanceRecord.recorded_at)
     )
     return [_to_read(r) for r in rows]

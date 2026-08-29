@@ -232,6 +232,60 @@ def require_permission(module: str, action: str):
     return _enforce
 
 
+def require_permission_any(pairs: list[tuple[str, str]]):
+    """
+    Return a FastAPI dependency that passes if the caller holds AT LEAST ONE
+    of the given (module, action) permissions — for an endpoint genuinely
+    shared by callers who each hold a different one of several permissions
+    (e.g. /sync/outbox admits both assessments.enter_scores holders and
+    attendance.record holders, since it's the shared online route into two
+    otherwise-separate write paths). Router-level, so it still rejects a
+    caller (e.g. a student/guardian portal login) before any item in the
+    request body is even inspected — the same defense-in-depth
+    require_permission provides, just OR'd across several permissions
+    instead of requiring exactly one.
+
+    Raises:
+        401  invalid / expired token or deactivated account
+        403  user holds none of the given permissions
+    """
+    async def _enforce(
+        ids: UserIdentity = Depends(require_auth),
+        db: AsyncSession = Depends(get_db),
+    ) -> UserIdentity:
+        from app.models.auth import User
+
+        user_id, _ = ids
+        user = await db.get(User, user_id)
+
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account not found or has been deactivated.",
+            )
+
+        if user.is_superadmin:
+            return ids
+
+        if not user.staff_member_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied: this action requires a staff account.",
+            )
+
+        perms = await resolve_permissions(user.staff_member_id, db)
+        if not any(perms.get(f"{module}.{action}", False) for module, action in pairs):
+            names = ", ".join(f"{m}.{a}" for m, a in pairs)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied: your role does not allow any of [{names}].",
+            )
+
+        return ids
+
+    return _enforce
+
+
 async def assert_self_or_permission(
     user_id: uuid.UUID,
     target_staff_id: uuid.UUID,

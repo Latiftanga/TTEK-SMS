@@ -1,4 +1,5 @@
 import client from './client';
+import type { ScheduleEntry } from './timetable';
 
 export interface RoleBadge {
   role: 'teacher' | 'subject_teacher' | 'housemaster' | 'approver' | 'finance';
@@ -107,6 +108,11 @@ export interface StaffDashboard extends DashboardExtras {
   pending_score_assessments: number;
   my_subjects: SubjectSnapshot[];
   my_houses: HouseSnapshot[];
+  // "What do I teach tomorrow?" — tomorrow_schedule is always [] when
+  // tomorrow_is_school_day is false (a real holiday/weekend), even if the
+  // caller's recurring weekly timetable would otherwise have entries.
+  tomorrow_schedule: ScheduleEntry[];
+  tomorrow_is_school_day: boolean;
 }
 
 export type DashboardData = StaffDashboard | AdminDashboard | ApproverDashboard | FinanceDashboard;

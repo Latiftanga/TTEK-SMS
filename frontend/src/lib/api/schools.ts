@@ -28,6 +28,7 @@ export interface SchoolRead {
   established_year: number | null;
   is_active: boolean;
   has_boarding: boolean;
+  has_period_attendance: boolean;
   subdomain: string | null;
   custom_domain: string | null;
   brand_color: string;
@@ -54,6 +55,7 @@ export interface SchoolUpdatePayload {
   motto?: string;
   established_year?: number;
   has_boarding?: boolean;
+  has_period_attendance?: boolean;
   brand_color?: string;
 }
 

@@ -218,6 +218,35 @@ class ClassTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
     class_: Mapped[Class] = relationship(back_populates="class_teachers")
 
 
+class TimetableSlot(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """A class's weekly timetable — "this class has this subject during this
+    bell period this year." day_of_week/start_time/end_time are deliberately
+    NOT duplicated here: they're read by joining SchoolPeriod
+    (models/attendance.py), and the teacher is read by joining SubjectTeacher
+    on (class_id, subject_id, academic_year_id) — never store data derivable
+    from an existing table (see CLAUDE.md). Answers "what do I teach
+    tomorrow?" (services/timetable.py::get_my_schedule)."""
+    __tablename__ = "timetable_slot"
+    __table_args__ = (
+        UniqueConstraint(
+            "class_id", "period_id", "academic_year_id", name="uq_timetable_slot_class_period_year"
+        ),
+    )
+
+    class_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("class.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subject.id", ondelete="CASCADE"), nullable=False
+    )
+    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("academic_year.id", ondelete="CASCADE"), nullable=False
+    )
+    period_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("school_period.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+
 class SubjectTeacher(Base, UUIDPrimaryKey, SchoolScopedMixin):
     """Who teaches a subject in a class — scoped to the academic year, like
     ClassTeacher, not the term: a subject-teacher assignment lasts the whole

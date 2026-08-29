@@ -14,6 +14,7 @@ PERMISSION_MATRIX: dict[str, list[str]] = {
     "housing":     ["view", "assign", "manage"],
     "reports":     ["view", "generate"],
     "documents":   ["view", "manage"],
+    "lesson_plans": ["view", "manage"],
 }
 
 VALID_PAIRS: set[tuple[str, str]] = {

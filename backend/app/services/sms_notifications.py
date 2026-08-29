@@ -8,8 +8,12 @@ NOTIFICATION TYPES
 ------------------
   notify_fee_receipt       → guardian after a fee payment is recorded
   notify_attendance_absent → guardian when a student is marked ABSENT
+  notify_attendance_risk   → guardian when a student crosses into AT_RISK/SEVERE
+                              term-to-date attendance (see attendance_risk.py)
+  notify_consecutive_absence → guardian after 3 consecutive ABSENT school days
   notify_report_published  → guardian when an assessment is published
   notify_transfer_decision → guardian when a transfer request is approved/rejected
+  notify_excuse_decision   → guardian when an absence excuse request is approved/rejected
   notify_staff_invite      → staff member with their invitation link
   notify_portal_access     → student or guardian confirming their own new portal login
   send_manual              → admin-initiated message to specified phones
@@ -28,6 +32,7 @@ Templates are kept short deliberately.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -39,6 +44,8 @@ from app.core.config import settings
 from app.models.school import SmsConfig, SmsLog, SmsStatus
 from app.models.students import Guardian, Student, StudentGuardian
 from app.services.sms_driver import SmsDriver, SmsResult, build_driver, _normalize_phone
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_active_driver(school_id: uuid.UUID, db: AsyncSession) -> SmsDriver | None:
@@ -178,7 +185,70 @@ async def notify_attendance_absent(
         )
         await _deliver(driver, phone, msg[:160], school_id, "ATTENDANCE", entity_id, db)
     except Exception:
-        pass
+        logger.exception("notify_attendance_absent failed for student %s", student_id)
+
+
+async def notify_attendance_risk(
+    student_id: uuid.UUID,
+    school_id: uuid.UUID,
+    school_short: str,
+    tier: str,
+    rate: float,
+    entity_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """SMS to primary guardian when a student's term-to-date attendance
+    crosses into AT_RISK (<90%) or SEVERE (<80%) — fired at most once per
+    tier per term, never for the softer WATCH tier (dashboard-only)."""
+    try:
+        driver = await _get_active_driver(school_id, db)
+        if not driver:
+            return
+        phone = await _primary_guardian_phone(student_id, school_id, db)
+        if not phone:
+            return
+        student = await db.get(Student, student_id)
+        name = f"{student.first_name} {student.last_name}" if student else "Your ward"
+        if tier == "SEVERE":
+            msg = (
+                f"{name}'s attendance at {school_short} has dropped to {rate:.0f}% this term. "
+                f"Please contact the school urgently."
+            )
+        else:
+            msg = (
+                f"{name}'s attendance at {school_short} is {rate:.0f}% this term, below the "
+                f"recommended level. Please help ensure regular attendance."
+            )
+        await _deliver(driver, phone, msg[:160], school_id, "ATTENDANCE_RISK", entity_id, db)
+    except Exception:
+        logger.exception("notify_attendance_risk failed for student %s", student_id)
+
+
+async def notify_consecutive_absence(
+    student_id: uuid.UUID,
+    school_id: uuid.UUID,
+    school_short: str,
+    entity_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """SMS to primary guardian after 3 consecutive markable school days all
+    marked ABSENT — an earlier, sharper signal than the cumulative tiers."""
+    try:
+        driver = await _get_active_driver(school_id, db)
+        if not driver:
+            return
+        phone = await _primary_guardian_phone(student_id, school_id, db)
+        if not phone:
+            return
+        student = await db.get(Student, student_id)
+        name = f"{student.first_name} {student.last_name}" if student else "Your ward"
+        msg = (
+            f"{name} has now been absent from {school_short} for 3 school days in a row. "
+            f"Please contact the school."
+        )
+        await _deliver(driver, phone, msg[:160], school_id, "ATTENDANCE_CONSECUTIVE", entity_id, db)
+    except Exception:
+        logger.exception("notify_consecutive_absence failed for student %s", student_id)
 
 
 async def notify_report_published(
@@ -237,6 +307,31 @@ async def notify_transfer_decision(
         await _deliver(driver, phone, msg[:160], school_id, "TRANSFER", entity_id, db)
     except Exception:
         pass
+
+
+async def notify_excuse_decision(
+    student_id: uuid.UUID,
+    school_id: uuid.UUID,
+    school_short: str,
+    approved: bool,
+    entity_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """SMS to primary guardian when an absence excuse request is approved or rejected."""
+    try:
+        driver = await _get_active_driver(school_id, db)
+        if not driver:
+            return
+        phone = await _primary_guardian_phone(student_id, school_id, db)
+        if not phone:
+            return
+        student = await db.get(Student, student_id)
+        name = f"{student.first_name} {student.last_name}" if student else "Your ward"
+        outcome = "approved" if approved else "not approved"
+        msg = f"The absence excuse request for {name} was {outcome}. -{school_short}"
+        await _deliver(driver, phone, msg[:160], school_id, "EXCUSE_REQUEST", entity_id, db)
+    except Exception:
+        logger.exception("notify_excuse_decision failed for student %s", student_id)
 
 
 async def notify_staff_invite(

@@ -1,5 +1,7 @@
 import { api } from './client';
 import type { SchoolClass } from './academic';
+import type { ExcuseRequest } from './portal';
+export type { ExcuseRequest } from './portal';
 
 export type DayType =
   | 'SCHOOL_DAY' | 'PUBLIC_HOLIDAY' | 'SCHOOL_HOLIDAY'
@@ -13,8 +15,6 @@ export interface ScheduleDay {
   id: string;
   day_of_week: DayOfWeek;
   is_school_day: boolean;
-  start_time: string | null;
-  end_time: string | null;
 }
 
 export interface CalendarDay {
@@ -31,10 +31,26 @@ export interface AttendanceRecord {
   student_id: string;
   school_calendar_id: string;
   class_id: string;
+  period_id: string | null;
   status: AttendanceStatus;
   notes: string | null;
   recorded_by_id: string;
   recorded_at: string;
+}
+
+// One row of the period picker on the Mark Attendance page — additive to
+// the always-available "Whole day" option, never shown at all unless the
+// school has opted into period-level attendance.
+export interface MarkablePeriod {
+  period_id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  subject_id: string;
+  subject_name: string;
+  teacher_name: string | null;
+  can_mark: boolean;
+  already_marked: boolean;
 }
 
 export interface AttendanceSummary {
@@ -78,8 +94,6 @@ export const listSchedule = (): Promise<ScheduleDay[]> =>
 export const upsertSchedule = (data: {
   day_of_week: string;
   is_school_day: boolean;
-  start_time?: string | null;
-  end_time?: string | null;
 }): Promise<ScheduleDay> =>
   api.post('/attendance/schedule', data).then(r => r.data);
 
@@ -95,19 +109,39 @@ export const overrideCalendarDay = (calId: string, data: {
 }): Promise<CalendarDay> =>
   api.patch(`/attendance/calendar/${calId}`, data).then(r => r.data);
 
+// Mark every already-generated calendar day in a date range at once — e.g.
+// a week-long mid-term break — instead of one overrideCalendarDay() call
+// per day.
+export const overrideCalendarRange = (data: {
+  start_date: string;
+  end_date: string;
+  day_type: string;
+  notes?: string | null;
+}): Promise<CalendarDay[]> =>
+  api.patch('/attendance/calendar/range', data).then(r => r.data);
+
 export const markAttendance = (data: {
   school_calendar_id: string;
   class_id: string;
   records: { student_id: string; status: string; notes?: string }[];
   override_reason?: string;
+  period_id?: string | null;
 }): Promise<AttendanceRecord[]> =>
   api.post('/attendance/mark', data).then(r => r.data);
 
 export const listAttendanceRecords = (
   calendarId: string,
   classId: string,
+  periodId?: string | null,
 ): Promise<AttendanceRecord[]> =>
-  api.get('/attendance/records', { params: { calendar_id: calendarId, class_id: classId } }).then(r => r.data);
+  api.get('/attendance/records', {
+    params: { calendar_id: calendarId, class_id: classId, ...(periodId ? { period_id: periodId } : {}) },
+  }).then(r => r.data);
+
+// Periods the caller can mark attendance for on this class+day — [] when
+// the school hasn't enabled period-level attendance, or the day has none.
+export const getMarkablePeriods = (classId: string, calendarId: string): Promise<MarkablePeriod[]> =>
+  api.get('/attendance/markable-periods', { params: { class_id: classId, calendar_id: calendarId } }).then(r => r.data);
 
 export const getTodayStatus = (classId: string): Promise<TodayStatus> =>
   api.get('/attendance/today', { params: { class_id: classId } }).then(r => r.data);
@@ -131,3 +165,52 @@ export const listMyAttendanceClasses = (termId: string): Promise<SchoolClass[]> 
 // who hasn't," same scope as listMyAttendanceClasses.
 export const getMarkingStatus = (calendarId: string): Promise<ClassMarkingStatus[]> =>
   api.get('/attendance/marking-status', { params: { calendar_id: calendarId } }).then(r => r.data);
+
+// ── Chronic-absenteeism early warning ───────────────────────────────────────
+
+export type RiskTier = 'WATCH' | 'AT_RISK' | 'SEVERE';
+
+export interface AtRiskStudent {
+  student_id: string;
+  name: string;
+  class_id: string | null;
+  class_name: string | null;
+  present: number;
+  total: number;
+  rate: number;
+  tier: RiskTier;
+}
+
+export const getAtRiskStudents = (termId: string): Promise<AtRiskStudent[]> =>
+  api.get('/attendance/at-risk', { params: { term_id: termId } }).then(r => r.data);
+
+// ── Guardian/student absence excuse requests (staff side) ──────────────────
+
+export const listPendingExcuseRequests = (): Promise<ExcuseRequest[]> =>
+  api.get('/attendance/excuse-requests').then(r => r.data);
+
+export const reviewExcuseRequest = (
+  requestId: string,
+  data: { status: 'APPROVED' | 'REJECTED'; review_notes?: string; override_reason?: string },
+): Promise<ExcuseRequest> =>
+  api.patch(`/attendance/excuse-requests/${requestId}/review`, data).then(r => r.data);
+
+// ── Trends + export ──────────────────────────────────────────────────────────
+
+export interface AttendanceTrendPoint {
+  date: string;
+  present: number;
+  total: number;
+  rate: number;
+}
+
+export const getAttendanceTrend = (termId: string, classId?: string): Promise<AttendanceTrendPoint[]> =>
+  api.get('/attendance/trends', { params: { term_id: termId, ...(classId ? { class_id: classId } : {}) } }).then(r => r.data);
+
+export const getAttendanceExportBlob = (
+  termId: string, fmt: 'csv' | 'excel' | 'pdf', classId?: string,
+): Promise<Blob> =>
+  api.get('/attendance/export', {
+    params: { term_id: termId, fmt, ...(classId ? { class_id: classId } : {}) },
+    responseType: 'blob',
+  }).then(r => r.data);

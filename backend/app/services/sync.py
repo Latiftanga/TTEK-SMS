@@ -1,6 +1,10 @@
 """
 Offline sync processing — outbox ingestion and conflict resolution.
 
+Score sync lives here; Attendance sync lives in services/sync_attendance.py
+(its own scope/term-lock rules are entirely different from Score's) — both
+share the idempotency/clock-skew helpers in services/sync_shared.py.
+
 CONFLICT DETECTION
 ------------------
 For entity_type="score":
@@ -16,7 +20,7 @@ RESOLUTION ACTIONS
 """
 from __future__ import annotations
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -31,17 +35,10 @@ from app.models.documents import ConflictResolution, OfflineSyncConflict, Outbox
 from app.models.students import Student
 from app.schemas.sync import (
     ConflictRead, ConflictResolveRequest,
-    OutboxItem, OutboxItemResult, OutboxScoreData,
+    OutboxAttendanceData, OutboxItem, OutboxItemResult, OutboxScoreData,
 )
 from app.services.subject_roster import filter_eligible_for_subject
-
-# A client can't have been "offline" starting in the future — capping here
-# stops offline_session_started_at being used to defeat conflict detection
-# (a far-future value would make `existing.submitted_at > offline_ts`
-# evaluate False for any real submitted_at, silently skipping the conflict
-# check). Some clock skew between client and server is expected and
-# harmless, so this clamps rather than rejecting outright.
-_MAX_FUTURE_SKEW = timedelta(minutes=5)
+from app.services.sync_shared import clamp_session_start, find_processed_item
 
 
 def _conflict_read(c: OfflineSyncConflict) -> ConflictRead:
@@ -197,16 +194,7 @@ async def _sync_score(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> OutboxItemResult:
-    # Idempotency: a retried or duplicated submission of the same client_op_id
-    # (two drain triggers racing, or a client retry after a dropped response)
-    # returns the recorded outcome instead of reprocessing it.
-    processed = await db.scalar(
-        select(OutboxProcessedItem).where(
-            OutboxProcessedItem.school_id == school_id,
-            OutboxProcessedItem.user_id == user_id,
-            OutboxProcessedItem.client_op_id == item.client_op_id,
-        )
-    )
+    processed = await find_processed_item(school_id, user_id, item.client_op_id, db)
     if processed:
         return OutboxItemResult(
             outbox_id=item.outbox_id,
@@ -215,13 +203,7 @@ async def _sync_score(
         )
 
     data = item.data
-    offline_ts = item.offline_session_started_at
-    if offline_ts.tzinfo is None:
-        from datetime import timezone as tz
-        offline_ts = offline_ts.replace(tzinfo=tz.utc)
-    now_for_clamp = datetime.now(timezone.utc)
-    if offline_ts > now_for_clamp + _MAX_FUTURE_SKEW:
-        offline_ts = now_for_clamp
+    offline_ts = clamp_session_start(item.offline_session_started_at)
 
     # Validated once, up front — before the conflict/apply branch below —
     # so an out-of-scope caller is rejected outright rather than being able
@@ -289,7 +271,15 @@ async def process_outbox(
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[OutboxItemResult]:
-    return [await _sync_score(item, school_id, user_id, db) for item in items]
+    from app.services import sync_attendance as att_sync_svc
+
+    results: list[OutboxItemResult] = []
+    for item in items:
+        if item.entity_type == "attendance":
+            results.append(await att_sync_svc._sync_attendance(item, school_id, user_id, db))
+        else:
+            results.append(await _sync_score(item, school_id, user_id, db))
+    return results
 
 
 async def list_conflicts(
@@ -336,11 +326,29 @@ async def resolve_conflict(
 
     now = datetime.now(timezone.utc)
 
-    if req.resolution == "CLIENT_WINS":
-        client_data = OutboxScoreData(**conflict.client_data)
-        await _apply_score(client_data, school_id, user_id, db, req.override_reason)
-    elif req.resolution == "MERGED" and req.merged_data:
-        await _apply_score(req.merged_data, school_id, user_id, db, req.override_reason)
+    if conflict.entity_type == "attendance":
+        from app.services import sync_attendance as att_sync_svc
+        if req.resolution == "CLIENT_WINS":
+            client_data = OutboxAttendanceData(**conflict.client_data)
+            await att_sync_svc._apply_attendance(client_data, school_id, user_id, db, req.override_reason)
+        elif req.resolution == "MERGED":
+            if not isinstance(req.merged_data, OutboxAttendanceData):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "merged_data must match this conflict's entity type (attendance).",
+                )
+            await att_sync_svc._apply_attendance(req.merged_data, school_id, user_id, db, req.override_reason)
+    else:
+        if req.resolution == "CLIENT_WINS":
+            client_data = OutboxScoreData(**conflict.client_data)
+            await _apply_score(client_data, school_id, user_id, db, req.override_reason)
+        elif req.resolution == "MERGED":
+            if not isinstance(req.merged_data, OutboxScoreData):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "merged_data must match this conflict's entity type (score).",
+                )
+            await _apply_score(req.merged_data, school_id, user_id, db, req.override_reason)
 
     conflict.resolution = ConflictResolution(req.resolution)
     conflict.resolved_at = now

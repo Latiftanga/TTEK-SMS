@@ -10,6 +10,7 @@
   import { setPageTitle } from '$lib/stores/title';
   import StudentsTab from './StudentsTab.svelte';
   import SubjectsTab from './SubjectsTab.svelte';
+  import TimetableTab from './TimetableTab.svelte';
 
   const qc      = useQueryClient();
   const classId = $derived($page.params.id!);
@@ -80,8 +81,8 @@
   $effect(() => setPageTitle($classQ.data?.display_name ?? 'Class'));
 
   // ── Tab navigation ────────────────────────────────────────────────────────────
-  type Tab = 'students' | 'subjects';
-  const VALID_TABS: Tab[] = ['subjects'];
+  type Tab = 'students' | 'subjects' | 'timetable';
+  const VALID_TABS: Tab[] = ['subjects', 'timetable'];
   const initialTab = $page.url.searchParams.get('tab');
   let activeTab = $state<Tab>(VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : 'students');
 </script>
@@ -226,13 +227,22 @@
         <span class="tab-badge {activeTab === 'subjects' ? 'tab-badge-active' : ''}">{subjectCount}</span>
       {/if}
     </button>
+    <button onclick={() => activeTab = 'timetable'} title="Timetable"
+      class="tab {activeTab === 'timetable' ? 'tab-active' : ''}">
+      <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+      </svg>
+      <span class="hidden sm:inline">Timetable</span>
+    </button>
   </div>
 
   <!-- Tab panels -->
   {#if activeTab === 'students'}
     <StudentsTab {classId} capacity={c.capacity} classActive={c.is_active} />
-  {:else}
+  {:else if activeTab === 'subjects'}
     <SubjectsTab {classId} classActive={c.is_active} />
+  {:else}
+    <TimetableTab {classId} classActive={c.is_active} />
   {/if}
 {/if}
 

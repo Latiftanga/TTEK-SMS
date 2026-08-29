@@ -4,6 +4,8 @@ from typing import Literal, Annotated
 from pydantic import BaseModel, Field
 import uuid
 
+from app.schemas.timetable import ScheduleEntry
+
 
 class RoleBadge(BaseModel):
     role: Literal["teacher", "subject_teacher", "housemaster", "approver", "finance"]
@@ -118,6 +120,11 @@ class StaffDashboard(DashboardExtras):
     pending_score_assessments: int = 0
     my_subjects: list[SubjectSnapshot] = []
     my_houses: list[HouseSnapshot] = []
+    # "What do I teach tomorrow?" — tomorrow_schedule is always [] when
+    # tomorrow_is_school_day is False (a real holiday/weekend), even if the
+    # caller's recurring weekly timetable would otherwise have entries.
+    tomorrow_schedule: list[ScheduleEntry] = []
+    tomorrow_is_school_day: bool = True
 
 
 DashboardData = Annotated[

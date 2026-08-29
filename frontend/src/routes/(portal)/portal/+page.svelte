@@ -8,6 +8,7 @@
   import { ghs } from '$lib/api/fees';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
+  import ExcuseRequestPanel from './ExcuseRequestPanel.svelte';
 
   setPageTitle('My Portal');
 
@@ -174,4 +175,6 @@
       {/each}
     </div>
   {/if}
+
+  <ExcuseRequestPanel studentId={isGuardian ? selectedChildId ?? undefined : undefined} />
 {/if}

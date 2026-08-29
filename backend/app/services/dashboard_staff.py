@@ -9,18 +9,22 @@ teacher who's also a housemaster gets both sections, not one.
 """
 from __future__ import annotations
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import AcademicTerm, Class, ClassTeacher, SHSProgramme, Subject, SubjectTeacher
 from app.models.assessments import Assessment
-from app.models.attendance import AttendanceRecord, AttendanceStatus, SchoolCalendar
-from app.models.housing import Exeat, ExeatStatus, ExeatType, House, HouseMaster, StudentHouseAssignment
+from app.models.attendance import AttendanceRecord, AttendanceStatus, DayOfWeek, DayType, SchoolCalendar
 from app.models.students import Student, StudentClassAssignment
-from app.schemas.dashboard import AbsentStudent, ClassSnapshot, HouseSnapshot, StaffDashboard, SubjectSnapshot
+from app.schemas.dashboard import AbsentStudent, ClassSnapshot, StaffDashboard, SubjectSnapshot
 from app.services.academic_year import get_current_term
+from app.services.dashboard_housing import my_houses as _my_houses
 from app.services.student_display import _class_display_name
+from app.services.timetable import get_my_schedule
+
+_NON_SCHOOL_DAY_TYPES = {DayType.WEEKEND, DayType.PUBLIC_HOLIDAY, DayType.SCHOOL_HOLIDAY}
+_DAYS_IN_ORDER = list(DayOfWeek)
 
 
 def _class_label(cls: Class, prog_name: str | None) -> str:
@@ -185,65 +189,26 @@ async def _my_subjects(
     return snapshots
 
 
-async def _house_snapshot(house: House, school_id: uuid.UUID, db: AsyncSession) -> HouseSnapshot:
-    total_residents = await db.scalar(
-        select(func.count(StudentHouseAssignment.id)).where(
-            StudentHouseAssignment.house_id == house.id,
-            StudentHouseAssignment.school_id == school_id,
-            StudentHouseAssignment.vacated_at.is_(None),
-        )
-    ) or 0
-
-    active_students = (
-        select(StudentHouseAssignment.student_id).where(
-            StudentHouseAssignment.house_id == house.id,
-            StudentHouseAssignment.school_id == school_id,
-            StudentHouseAssignment.vacated_at.is_(None),
-        )
+async def _tomorrow_schedule(
+    school_id: uuid.UUID, staff_id: uuid.UUID, academic_year_id: uuid.UUID | None, db: AsyncSession,
+) -> tuple[list, bool]:
+    """(tomorrow_schedule, tomorrow_is_school_day) — tomorrow_schedule is
+    always [] when tomorrow isn't a real school day (a holiday/weekend),
+    even if the caller's recurring weekly timetable would otherwise have
+    entries for that weekday."""
+    tomorrow = date.today() + timedelta(days=1)
+    cal = await db.scalar(
+        select(SchoolCalendar).where(SchoolCalendar.school_id == school_id, SchoolCalendar.date == tomorrow)
     )
-    pending_exeats = await db.scalar(
-        select(func.count(Exeat.id)).where(
-            Exeat.school_id == school_id,
-            Exeat.status == ExeatStatus.PENDING,
-            Exeat.student_id.in_(active_students),
-        )
-    ) or 0
-    off_campus = await db.scalar(
-        select(func.count(Exeat.id)).where(
-            Exeat.school_id == school_id,
-            Exeat.status == ExeatStatus.APPROVED,
-            Exeat.exeat_type == ExeatType.EXTERNAL,
-            Exeat.student_id.in_(active_students),
-        )
-    ) or 0
+    # No calendar row generated that far ahead yet is treated the same as a
+    # known non-school day — there's nothing to reliably tell the teacher.
+    is_school_day = bool(cal and cal.day_type not in _NON_SCHOOL_DAY_TYPES)
+    if not is_school_day or academic_year_id is None:
+        return [], is_school_day
 
-    return HouseSnapshot(
-        id=house.id,
-        name=house.name,
-        capacity=house.capacity,
-        total_residents=total_residents,
-        pending_exeats=pending_exeats,
-        off_campus_count=off_campus,
-    )
-
-
-async def _my_houses(staff_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> list[HouseSnapshot]:
-    hms = (await db.scalars(
-        select(HouseMaster).where(
-            HouseMaster.staff_member_id == staff_id,
-            HouseMaster.school_id == school_id,
-            HouseMaster.is_active.is_(True),
-        )
-    )).all()
-    if not hms:
-        return []
-
-    house_ids = [hm.house_id for hm in hms]
-    houses = (await db.scalars(select(House).where(House.id.in_(house_ids)))).all()
-
-    my_houses = [await _house_snapshot(house, school_id, db) for house in houses]
-    my_houses.sort(key=lambda h: h.name)
-    return my_houses
+    tomorrow_day_of_week = _DAYS_IN_ORDER[tomorrow.weekday()]
+    full_week = await get_my_schedule(staff_id, academic_year_id, school_id, db)
+    return [e for e in full_week if e.day_of_week == tomorrow_day_of_week], is_school_day
 
 
 async def staff_view(
@@ -264,6 +229,9 @@ async def staff_view(
         my_subjects = await _my_subjects(staff_id, term, own_class_ids, db)
 
     my_houses = await _my_houses(staff_id, school_id, db)
+    tomorrow_schedule, tomorrow_is_school_day = await _tomorrow_schedule(
+        school_id, staff_id, term.academic_year_id if term else None, db
+    )
 
     return StaffDashboard(
         greeting_name=greeting_name,
@@ -272,4 +240,6 @@ async def staff_view(
         pending_score_assessments=pending,
         my_subjects=my_subjects,
         my_houses=my_houses,
+        tomorrow_schedule=tomorrow_schedule,
+        tomorrow_is_school_day=tomorrow_is_school_day,
     )

@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.limiter import RateLimitMiddleware
 from app.core.redis import close_redis, init_redis
-from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, auth, dashboard, documents, email, fees, grading, housing, permissions, portal, programme_summary, report_cards, schools, scoring, sms, staff, staff_admin, staff_category, staff_photo, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync
+from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, auth, dashboard, documents, email, fees, grading, holidays, housing, lesson_plans, permissions, portal, programme_summary, report_cards, school_periods, schools, scoring, sms, staff, staff_admin, staff_category, staff_photo, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync, timetable
 
 # ── Sentry ───────────────────────────────────────────────────────────────────
 if settings.sentry_dsn and settings.sentry_dsn.startswith("https://"):
@@ -93,8 +93,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(auth.router)
 app.include_router(schools.router)
 app.include_router(attendance.router)
+app.include_router(school_periods.router)
 app.include_router(academic.router)
 app.include_router(academic_structure.router)
+app.include_router(timetable.router)
 app.include_router(subject_summary.router)
 app.include_router(programme_summary.router)
 app.include_router(grading.router)
@@ -115,6 +117,7 @@ app.include_router(housing.router)
 app.include_router(fees.router)
 app.include_router(report_cards.router)
 app.include_router(documents.router)
+app.include_router(lesson_plans.router)
 app.include_router(portal.router)
 app.include_router(sync.router)
 app.include_router(sms.router)
@@ -122,6 +125,7 @@ app.include_router(email.router)
 app.include_router(permissions.router)
 app.include_router(ai.router)
 app.include_router(dashboard.router)
+app.include_router(holidays.router)
 
 # ── Static file serving (local storage only) ──────────────────────────────────
 # In production with R2, logo_path becomes a full CDN URL and this mount

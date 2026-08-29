@@ -122,6 +122,11 @@ class School(Base, UUIDPrimaryKey, TimestampMixin):
     established_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     has_boarding: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Daily (whole-day) attendance is always available and is the default —
+    # this flag opts a school into the ADDITIONAL, richer per-period marking
+    # layer (services/attendance_periods.py); the daily record stays the one
+    # every report/dashboard/risk-alert reads either way.
+    has_period_attendance: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # ── Branding ──────────────────────────────────────────────────────────────
     # subdomain: URL-safe slug used for per-school routing, e.g. "presec" →

@@ -373,6 +373,12 @@ STAFF_POSITIONS = [
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
         ("reports", "view"), ("reports", "generate"),
         ("documents", "view"), ("documents", "manage"),
+        # Granted here for the same reason as assessments.approve_scores
+        # above — the router's require_permission() check is flat, so HEAD
+        # needs the module explicitly to reach core/teacher_scope.py::
+        # resolve_assessment_scope()'s own unrestricted bypass for
+        # approve_scores holders (services/lesson_plans.py reuses it as-is).
+        ("lesson_plans", "view"), ("lesson_plans", "manage"),
     ]),
     ("CLASS_TEACHER", "Class Teacher", [
         ("school", "view"),
@@ -405,12 +411,12 @@ STAFF_POSITIONS = [
         ("academic", "view"),
         ("assessments", "view"), ("assessments", "enter_scores"),
         ("reports", "view"),
+        ("lesson_plans", "view"), ("lesson_plans", "manage"),
     ]),
     ("HOUSEMASTER", "Housemaster / Housemistress", [
         ("school", "view"),
         ("students", "view"),
         ("housing", "view"), ("housing", "assign"), ("housing", "manage"),
-        ("attendance", "view"), ("attendance", "record"),
         ("reports", "view"),
         ("documents", "view"), ("documents", "manage"),
     ]),

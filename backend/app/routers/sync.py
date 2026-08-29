@@ -1,15 +1,15 @@
 """
 Offline sync router — outbox ingestion and conflict resolution.
 
-Gated on assessments.enter_scores — the same minimum bar submit_scores
-itself requires (routers/scoring.py) — not just require_auth. This is the
-single online route into services/scoring.py's write logic, so it must be
-at least as restrictive as the endpoint it stands in for: a bare "logged in"
-check would let a student/guardian portal login (which authenticates fine
-but holds no staff permissions at all) POST directly to /sync/outbox and
-write arbitrary Score rows. services/sync.py itself then further scopes each
-individual write to the caller's own ClassTeacher/SubjectTeacher assignment,
-exactly like submit_scores does.
+Gated on require_permission_any([("assessments","enter_scores"),
+("attendance","record")]) — the shared minimum bar for either write path
+this endpoint stands in for (submit_scores / mark_attendance), not just
+require_auth. A bare "logged in" check would let a student/guardian portal
+login (which authenticates fine but holds no staff permissions at all)
+POST directly to /sync/outbox and write arbitrary Score/AttendanceRecord
+rows. services/sync.py and services/sync_attendance.py each then further
+scope every individual write to the caller's own ClassTeacher/SubjectTeacher
+assignment, exactly like the online submit_scores/mark_attendance do.
 
 Conflict list is scoped to the authenticated user — teachers only see their
 own conflicts; admins use the same endpoint but are shown only theirs too.
@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission_any
 from app.schemas.sync import (
     ConflictRead, ConflictResolveRequest,
     OutboxItemResult, OutboxSyncRequest,
@@ -30,11 +30,13 @@ from app.services import sync as sync_svc
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
+_SYNC_PERMISSIONS = [("assessments", "enter_scores"), ("attendance", "record")]
+
 
 @router.post("/outbox", response_model=list[OutboxItemResult], status_code=200)
 async def process_outbox(
     req: OutboxSyncRequest,
-    ids=Depends(require_permission("assessments", "enter_scores")),
+    ids=Depends(require_permission_any(_SYNC_PERMISSIONS)),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -43,7 +45,7 @@ async def process_outbox(
 
 @router.get("/conflicts", response_model=list[ConflictRead])
 async def list_conflicts(
-    ids=Depends(require_permission("assessments", "enter_scores")),
+    ids=Depends(require_permission_any(_SYNC_PERMISSIONS)),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
@@ -54,7 +56,7 @@ async def list_conflicts(
 async def resolve_conflict(
     conflict_id: uuid.UUID,
     req: ConflictResolveRequest,
-    ids=Depends(require_permission("assessments", "enter_scores")),
+    ids=Depends(require_permission_any(_SYNC_PERMISSIONS)),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids

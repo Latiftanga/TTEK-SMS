@@ -109,6 +109,7 @@ class SchoolUpdate(BaseModel):
     established_year: int | None = None
     is_active: bool | None = None
     has_boarding: bool | None = None
+    has_period_attendance: bool | None = None
     subdomain: str | None = None
     custom_domain: str | None = None
     brand_color: str | None = None
@@ -177,6 +178,7 @@ class SchoolRead(BaseModel):
     established_year: int | None
     is_active: bool
     has_boarding: bool
+    has_period_attendance: bool
     subdomain: str | None
     custom_domain: str | None
     brand_color: str

@@ -59,20 +59,37 @@ class DayOfWeek(str, enum.Enum):
 
 
 class SchoolSchedule(Base, UUIDPrimaryKey, SchoolScopedMixin):
-    """Defines which days of the week are school days and their hours."""
+    """Defines which days of the week are school days — read by
+    generate_calendar() (services/attendance_calendar.py) to decide
+    SCHOOL_DAY vs WEEKEND. Deliberately does NOT carry a start/end time for
+    the day: SchoolPeriod (this same module) is the sole source of a day's
+    time structure now, with real per-period granularity instead of one
+    start/end pair for the whole day — a school that never adopts
+    period-level timetabling still only needs this open/closed flag."""
     __tablename__ = "school_schedule"
     __table_args__ = (
         UniqueConstraint("school_id", "day_of_week", name="uq_school_schedule_day"),
     )
 
     day_of_week: Mapped[DayOfWeek] = mapped_column(SAEnum(DayOfWeek, name="dayofweek"), nullable=False)
-    start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
-    end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     is_school_day: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class GhanaPublicHoliday(Base, UUIDPrimaryKey):
-    """System-wide Ghana public holidays — no school_id."""
+    """
+    System-wide Ghana public holidays — no school_id. Managed exclusively by
+    superadmin (services/attendance_holidays.py), since this is shared
+    reference data every school's calendar generation reads from.
+
+    is_recurring=True  → a fixed-date holiday (Independence Day, Labour Day,
+                          Christmas, ...) — generate_calendar() matches it by
+                          (month, day) every year, not just the year it was
+                          originally seeded for.
+    is_recurring=False → a moveable-date holiday (Easter/Good Friday, Eid
+                          ul-Fitr, Eid ul-Adha) whose date shifts every year —
+                          matched by exact date only, so a new row must be
+                          added for each year it applies.
+    """
     __tablename__ = "ghana_public_holiday"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -103,10 +120,20 @@ class SchoolCalendar(Base, UUIDPrimaryKey, SchoolScopedMixin):
 
 
 class SchoolPeriod(Base, UUIDPrimaryKey, SchoolScopedMixin):
-    """Bell schedule — named periods within a school day."""
+    """Bell schedule — named periods within a school day. Within the same
+    school+day, name/start_time/end_time are each independently unique (not
+    just period_number) — two periods can't share a label or a start/end
+    clock time on the same day, which would either be a duplicate entry or
+    two periods double-booked at the same instant. The same name/start/end
+    repeating on a DIFFERENT day is completely normal (e.g. an identical
+    Monday/Tuesday bell schedule via copy_periods_to_days), so these
+    constraints are scoped per day_of_week, not school-wide."""
     __tablename__ = "school_period"
     __table_args__ = (
         UniqueConstraint("school_id", "day_of_week", "period_number", name="uq_school_period"),
+        UniqueConstraint("school_id", "day_of_week", "name", name="uq_school_period_name"),
+        UniqueConstraint("school_id", "day_of_week", "start_time", name="uq_school_period_start"),
+        UniqueConstraint("school_id", "day_of_week", "end_time", name="uq_school_period_end"),
     )
 
     name: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -151,6 +178,30 @@ class AttendanceRecord(Base, UUIDPrimaryKey, SchoolScopedMixin):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class CalendarOverrideLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Audit trail for override_calendar_day() — every manual day_type change is
+    recorded here, since SchoolCalendar itself only ever holds the current
+    state (is_manual_override is a boolean flag, not a history).
+
+    calendar_id is SET NULL (not CASCADE) so the log survives the calendar
+    row it documents, matching AttendanceAuditLog's own convention.
+    """
+    __tablename__ = "calendar_override_log"
+
+    calendar_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("school_calendar.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    old_day_type: Mapped[DayType] = mapped_column(SAEnum(DayType, name="daytype"), nullable=False)
+    new_day_type: Mapped[DayType] = mapped_column(SAEnum(DayType, name="daytype"), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    changed_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user.id"), nullable=False
+    )
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AttendanceAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     """
     Immutable log of an attendance submission made against a locked term
@@ -182,3 +233,37 @@ class AttendanceAuditLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AttendanceRiskTier(str, enum.Enum):
+    """Chronic-absenteeism early-warning tiers — see services/attendance_risk.py
+    for the exact thresholds and the research they're based on."""
+    WATCH = "WATCH"
+    AT_RISK = "AT_RISK"
+    SEVERE = "SEVERE"
+
+
+class AttendanceRiskAlert(Base, UUIDPrimaryKey, SchoolScopedMixin):
+    """
+    Tracks the HIGHEST AttendanceRiskTier a student has already been alerted
+    for, per term — so crossing into AT_RISK once doesn't re-fire a guardian
+    SMS on every subsequent absence within that same tier. A tier increase
+    (e.g. AT_RISK → SEVERE) fires again and bumps this row; it is never
+    lowered by a later PRESENT mark within the same term (the alert already
+    sent is a fact, not a live gauge).
+    """
+    __tablename__ = "attendance_risk_alert"
+    __table_args__ = (
+        UniqueConstraint("student_id", "academic_term_id", name="uq_attendance_risk_alert"),
+    )
+
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("student.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    academic_term_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("academic_term.id"), nullable=False
+    )
+    tier: Mapped[AttendanceRiskTier] = mapped_column(
+        SAEnum(AttendanceRiskTier, name="attendancerisktier"), nullable=False
+    )
+    alerted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -13,7 +13,7 @@ one "winning" view, which is the whole point of this file.
 
 Run inside Docker: docker compose exec api pytest app/tests/test_dashboard.py -v
 """
-from datetime import date
+from datetime import date, time, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -21,8 +21,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
-from app.models.academic import AcademicTerm, AcademicYear, Class, ClassTeacher, Subject, SubjectTeacher
+from app.models.academic import AcademicTerm, AcademicYear, Class, ClassSubject, ClassTeacher, Subject, SubjectTeacher, TimetableSlot
 from app.models.assessments import Assessment, AssessmentType
+from app.models.attendance import DayOfWeek, DayType, SchoolCalendar, SchoolPeriod
 from app.models.auth import LoginType, StaffPosition, User
 from app.models.housing import House, HouseGender, HouseMaster
 from app.models.school import School
@@ -331,3 +332,78 @@ async def test_plain_class_teacher_has_no_other_roles(
     assert data["view"] == "staff"
     assert data["is_class_teacher"] is True
     assert data["other_roles"] == []
+
+
+# ── Tomorrow's schedule — "what do I teach tomorrow?" ────────────────────────
+
+async def _make_tomorrow_slot(
+    db_session: AsyncSession, school: School, cls: Class, subject: Subject,
+    year: AcademicYear, staff: StaffMember,
+) -> None:
+    tomorrow = date.today() + timedelta(days=1)
+    day_of_week = list(DayOfWeek)[tomorrow.weekday()]
+    period = SchoolPeriod(
+        school_id=school.id, name="Period 1", day_of_week=day_of_week,
+        period_number=1, start_time=time(10, 0), end_time=time(10, 45),
+    )
+    db_session.add(period)
+    await db_session.flush()
+    db_session.add(TimetableSlot(
+        school_id=school.id, class_id=cls.id, subject_id=subject.id,
+        academic_year_id=year.id, period_id=period.id,
+    ))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_tomorrow_schedule_shows_real_lesson(
+    client: AsyncClient, db_session: AsyncSession, school: School, staff_member: StaffMember,
+    academic_year: AcademicYear, academic_term: AcademicTerm, school_class: Class, redis_permissions: None,
+):
+    subject = await _add_subject_teacher(
+        db_session, school, school_class, staff_member, academic_year, code="COMP", name="Computing",
+    )
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subject.id, is_active=True))
+    await db_session.flush()
+    await _make_tomorrow_slot(db_session, school, school_class, subject, academic_year, staff_member)
+
+    tomorrow = date.today() + timedelta(days=1)
+    db_session.add(SchoolCalendar(
+        school_id=school.id, date=tomorrow, day_type=DayType.SCHOOL_DAY, academic_term_id=academic_term.id,
+    ))
+    await db_session.flush()
+
+    auth = await _teacher_login(client, db_session, school, staff_member)
+    resp = await client.get("/dashboard", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["tomorrow_is_school_day"] is True
+    assert len(data["tomorrow_schedule"]) == 1
+    assert data["tomorrow_schedule"][0]["subject_id"] == str(subject.id)
+    assert data["tomorrow_schedule"][0]["class_id"] == str(school_class.id)
+
+
+@pytest.mark.asyncio
+async def test_tomorrow_schedule_empty_on_holiday(
+    client: AsyncClient, db_session: AsyncSession, school: School, staff_member: StaffMember,
+    academic_year: AcademicYear, academic_term: AcademicTerm, school_class: Class, redis_permissions: None,
+):
+    subject = await _add_subject_teacher(
+        db_session, school, school_class, staff_member, academic_year, code="ART", name="Art",
+    )
+    db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subject.id, is_active=True))
+    await db_session.flush()
+    await _make_tomorrow_slot(db_session, school, school_class, subject, academic_year, staff_member)
+
+    tomorrow = date.today() + timedelta(days=1)
+    db_session.add(SchoolCalendar(
+        school_id=school.id, date=tomorrow, day_type=DayType.PUBLIC_HOLIDAY, academic_term_id=academic_term.id,
+    ))
+    await db_session.flush()
+
+    auth = await _teacher_login(client, db_session, school, staff_member)
+    resp = await client.get("/dashboard", headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["tomorrow_is_school_day"] is False
+    assert data["tomorrow_schedule"] == []

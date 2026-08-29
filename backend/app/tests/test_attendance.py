@@ -2,7 +2,7 @@
 Attendance integration tests — schedule, calendar generation, marking, summary.
 Run inside Docker: docker compose exec api pytest app/tests/test_attendance.py -v
 """
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -10,12 +10,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
-from app.models.academic import AcademicTerm, Class, ClassTeacher
-from app.models.attendance import AttendanceAuditLog, DayType, SchoolCalendar
+from app.models.academic import AcademicTerm, AcademicYear, Class, ClassTeacher
+from app.models.attendance import AttendanceAuditLog, CalendarOverrideLog, DayType, SchoolCalendar
 from app.models.auth import LoginType, PositionPermission, StaffPosition, User
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 from app.models.students import Student, StudentClassAssignment
 from app.tests.legacy_position_perms import LEGACY_POSITION_PERMISSIONS
+
+
+async def _extend_term_into_future(term: AcademicTerm, db_session: AsyncSession) -> None:
+    """conftest.py's shared `academic_term` fixture is hardcoded to 2024
+    dates (many other tests hardcode SchoolCalendar rows on those same
+    literal dates), which is now in the past relative to wall-clock time —
+    correctly rejected by the new "can't edit a passed term's calendar"
+    guard. Tests exercising override/regenerate SUCCEEDING push the term's
+    end_date into the future first, without touching start_date (so the
+    2024-dated calendar days used elsewhere stay valid)."""
+    term.end_date = date.today() + timedelta(days=30)
+    await db_session.flush()
 
 
 async def _login_as_position(
@@ -84,7 +96,6 @@ async def _other_school_auth(client: AsyncClient, db_session: AsyncSession) -> d
 async def test_upsert_schedule(client: AsyncClient, auth: dict):
     resp = await client.post("/attendance/schedule", json={
         "day_of_week": "MON", "is_school_day": True,
-        "start_time": "07:30:00", "end_time": "15:00:00",
     }, headers=auth)
     assert resp.status_code == 201
     data = resp.json()
@@ -129,11 +140,60 @@ async def test_generate_calendar(
     assert len(days) > 0
     # All days have the correct term_id
     assert all(d["academic_term_id"] == str(academic_term.id) for d in days)
-    # Weekends must not be SCHOOL_DAY
+    # Weekends must not be SCHOOL_DAY — WEEKEND unless a recurring public
+    # holiday's (month, day) happens to fall on it too, in which case
+    # PUBLIC_HOLIDAY correctly wins (see test_generate_calendar_recurring_
+    # holiday_matches_any_year below for the dedicated case).
     for d in days:
         dt = date.fromisoformat(d["date"])
         if dt.weekday() >= 5:  # Saturday=5, Sunday=6
-            assert d["day_type"] == "WEEKEND", f"{dt} should be WEEKEND, got {d['day_type']}"
+            assert d["day_type"] in ("WEEKEND", "PUBLIC_HOLIDAY"), \
+                f"{dt} should be WEEKEND or PUBLIC_HOLIDAY, got {d['day_type']}"
+
+
+@pytest.mark.asyncio
+async def test_generate_calendar_recurring_holiday_matches_any_year(
+    client: AsyncClient, auth: dict, academic_term: AcademicTerm,
+):
+    """Kwame Nkrumah Memorial Day is seeded as 2025-09-21, is_recurring=True.
+    academic_term spans 2024-09-01..2024-12-20 — a different year — so this
+    only classifies correctly if the holiday match is by (month, day), not
+    the exact seeded date."""
+    resp = await client.post("/attendance/calendar/generate", json={
+        "term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    by_date = {d["date"]: d["day_type"] for d in resp.json()}
+    assert by_date["2024-09-21"] == "PUBLIC_HOLIDAY"
+
+
+@pytest.mark.asyncio
+async def test_generate_calendar_non_recurring_holiday_does_not_project(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+):
+    """Good Friday is seeded as 2025-04-18, is_recurring=False (moveable —
+    Easter shifts every year). A term spanning April 2024 must NOT classify
+    2024-04-18 as a holiday just because the month/day happens to match."""
+    year = AcademicYear(
+        school_id=school.id, name="2023/2024",
+        start_date=date(2023, 9, 1), end_date=date(2024, 7, 31), is_current=False,
+    )
+    db_session.add(year)
+    await db_session.flush()
+    term = AcademicTerm(
+        school_id=school.id, academic_year_id=year.id,
+        term_number=3, name="Term 3 (2023/2024)",
+        start_date=date(2024, 4, 1), end_date=date(2024, 4, 30), is_current=False,
+    )
+    db_session.add(term)
+    await db_session.flush()
+
+    resp = await client.post("/attendance/calendar/generate", json={
+        "term_id": str(term.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    by_date = {d["date"]: d["day_type"] for d in resp.json()}
+    assert by_date["2024-04-18"] != "PUBLIC_HOLIDAY"
 
 
 @pytest.mark.asyncio
@@ -204,14 +264,202 @@ async def test_list_calendar(
 
 @pytest.mark.asyncio
 async def test_override_calendar_day(
-    client: AsyncClient, auth: dict, school_calendar: SchoolCalendar
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school_calendar: SchoolCalendar, academic_term: AcademicTerm,
 ):
+    await _extend_term_into_future(academic_term, db_session)
     resp = await client.patch(f"/attendance/calendar/{school_calendar.id}", json={
         "day_type": "SCHOOL_HOLIDAY", "notes": "Inter-school sports day",
     }, headers=auth)
     assert resp.status_code == 200
     assert resp.json()["day_type"] == "SCHOOL_HOLIDAY"
     assert resp.json()["notes"] == "Inter-school sports day"
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_day_writes_audit_log(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+    school_calendar: SchoolCalendar, academic_term: AcademicTerm,
+):
+    await _extend_term_into_future(academic_term, db_session)
+    old_day_type = school_calendar.day_type
+    resp = await client.patch(f"/attendance/calendar/{school_calendar.id}", json={
+        "day_type": "SCHOOL_HOLIDAY", "notes": "Sports day",
+    }, headers=auth)
+    assert resp.status_code == 200
+
+    logs = (await db_session.scalars(
+        select(CalendarOverrideLog).where(CalendarOverrideLog.calendar_id == school_calendar.id)
+    )).all()
+    assert len(logs) == 1
+    assert logs[0].old_day_type == old_day_type
+    assert logs[0].new_day_type.value == "SCHOOL_HOLIDAY"
+    assert logs[0].notes == "Sports day"
+    assert logs[0].changed_by_id is not None
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_day_blocked_when_term_passed(
+    client: AsyncClient, auth: dict, school_calendar: SchoolCalendar,
+):
+    """conftest.py's academic_term fixture is dated 2024 — already passed
+    relative to wall-clock time — so no _extend_term_into_future() call
+    here is deliberate: this is exactly the case being tested."""
+    resp = await client.patch(f"/attendance/calendar/{school_calendar.id}", json={
+        "day_type": "SCHOOL_HOLIDAY", "notes": "Too late to change this now",
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "ended" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_range_blocked_when_term_passed(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_term: AcademicTerm,
+):
+    cal = SchoolCalendar(school_id=school.id, date=date(2024, 9, 20),
+                         day_type=DayType.SCHOOL_DAY, academic_term_id=academic_term.id)
+    db_session.add(cal)
+    await db_session.flush()
+
+    resp = await client.patch("/attendance/calendar/range", json={
+        "start_date": "2024-09-20", "end_date": "2024-09-20", "day_type": "SCHOOL_HOLIDAY",
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "ended" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_generate_calendar_allowed_when_term_passed(
+    client: AsyncClient, auth: dict, academic_term: AcademicTerm,
+):
+    """Plain (non-force) generation only fills gaps — never rewrites an
+    existing day — so it stays allowed even on a passed term, letting a
+    school backfill a calendar it forgot to generate at the time."""
+    resp = await client.post("/attendance/calendar/generate", json={
+        "term_id": str(academic_term.id),
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert len(resp.json()) > 0
+
+
+@pytest.mark.asyncio
+async def test_force_regenerate_blocked_when_term_passed(
+    client: AsyncClient, auth: dict, academic_term: AcademicTerm,
+):
+    gen = await client.post("/attendance/calendar/generate", json={
+        "term_id": str(academic_term.id),
+    }, headers=auth)
+    assert gen.status_code == 201
+
+    resp = await client.post("/attendance/calendar/generate", json={
+        "term_id": str(academic_term.id), "force": True,
+    }, headers=auth)
+    assert resp.status_code == 422
+    assert "ended" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_range_marks_every_day(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_term: AcademicTerm,
+):
+    """A week-long mid-term break in one call, instead of one PATCH per day."""
+    await _extend_term_into_future(academic_term, db_session)
+    days = [
+        SchoolCalendar(school_id=school.id, date=date(2024, 9, 2 + i),
+                       day_type=DayType.SCHOOL_DAY, academic_term_id=academic_term.id)
+        for i in range(5)
+    ]
+    db_session.add_all(days)
+    await db_session.flush()
+
+    resp = await client.patch("/attendance/calendar/range", json={
+        "start_date": "2024-09-02", "end_date": "2024-09-06",
+        "day_type": "SCHOOL_HOLIDAY", "notes": "Mid-term break",
+    }, headers=auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 5
+    for d in data:
+        assert d["day_type"] == "SCHOOL_HOLIDAY"
+        assert d["notes"] == "Mid-term break"
+        assert d["is_manual_override"] is True
+
+    logs = (await db_session.scalars(
+        select(CalendarOverrideLog).where(CalendarOverrideLog.calendar_id.in_([d.id for d in days]))
+    )).all()
+    assert len(logs) == 5
+    assert all(log.old_day_type == DayType.SCHOOL_DAY for log in logs)
+    assert all(log.new_day_type == DayType.SCHOOL_HOLIDAY for log in logs)
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_range_404_when_nothing_generated(
+    client: AsyncClient, auth: dict,
+):
+    resp = await client.patch("/attendance/calendar/range", json={
+        "start_date": "2030-01-01", "end_date": "2030-01-05", "day_type": "SCHOOL_HOLIDAY",
+    }, headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_range_rejects_end_before_start(client: AsyncClient, auth: dict):
+    resp = await client.patch("/attendance/calendar/range", json={
+        "start_date": "2024-09-06", "end_date": "2024-09-02", "day_type": "SCHOOL_HOLIDAY",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_range_rejects_oversized_range(client: AsyncClient, auth: dict):
+    resp = await client.patch("/attendance/calendar/range", json={
+        "start_date": "2024-01-01", "end_date": "2024-12-31", "day_type": "SCHOOL_HOLIDAY",
+    }, headers=auth)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_override_calendar_range_requires_attendance_approve(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    """CLASS_TEACHER holds attendance.record, not attendance.approve — the
+    same gate as the single-day override."""
+    days = [SchoolCalendar(school_id=school.id, date=date(2024, 9, 9),
+                           day_type=DayType.SCHOOL_DAY, academic_term_id=academic_term.id)]
+    db_session.add_all(days)
+    await db_session.flush()
+
+    teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "CLASS_TEACHER")
+    resp = await client.patch("/attendance/calendar/range", json={
+        "start_date": "2024-09-09", "end_date": "2024-09-09", "day_type": "SCHOOL_HOLIDAY",
+    }, headers=teacher_auth)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_schedule_and_calendar_reads_require_attendance_view(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_term: AcademicTerm, redis_permissions: None,
+):
+    """GET /attendance/schedule and GET /attendance/calendar previously only
+    required require_auth (any authenticated user) — inconsistent with every
+    other attendance read endpoint, which requires attendance.view."""
+    no_perm_auth, _ = await _login_as_position(client, auth, db_session, school, "BURSAR")
+
+    resp = await client.get("/attendance/schedule", headers=no_perm_auth)
+    assert resp.status_code == 403
+
+    resp = await client.get(
+        "/attendance/calendar", params={"term_id": str(academic_term.id)}, headers=no_perm_auth,
+    )
+    assert resp.status_code == 403
+
+    # A holder of attendance.view (e.g. the unrestricted admin auth fixture) still works.
+    resp = await client.get("/attendance/schedule", headers=auth)
+    assert resp.status_code == 200
 
 
 # ── Attendance marking ────────────────────────────────────────────────────────
@@ -384,13 +632,14 @@ async def test_mark_attendance_rejects_inactive_class(
 
 @pytest.mark.asyncio
 async def test_attendance_rate_consistent_after_day_reclassified(
-    client: AsyncClient, auth: dict,
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
     school_calendar: SchoolCalendar, school_class: Class,
     student: Student, academic_term: AcademicTerm,
 ):
     """A day marked PRESENT, then reclassified to a non-markable type, must
     drop out of both the numerator and denominator — not just the
     denominator (which would let the rate exceed 100%)."""
+    await _extend_term_into_future(academic_term, db_session)
     await client.post("/attendance/mark", json={
         "school_calendar_id": str(school_calendar.id),
         "class_id": str(school_class.id),
@@ -418,8 +667,9 @@ async def test_attendance_rate_consistent_after_day_reclassified(
 
 @pytest.mark.asyncio
 async def test_force_regenerate_preserves_manual_override(
-    client: AsyncClient, auth: dict, academic_term: AcademicTerm,
+    client: AsyncClient, auth: dict, db_session: AsyncSession, academic_term: AcademicTerm,
 ):
+    await _extend_term_into_future(academic_term, db_session)
     await client.post("/attendance/calendar/generate", json={"term_id": str(academic_term.id)}, headers=auth)
     days = (await client.get(f"/attendance/calendar?term_id={academic_term.id}", headers=auth)).json()
 
@@ -525,6 +775,7 @@ async def test_compute_attendance_stats_excludes_reclassified_day(
 ):
     from app.services.attendance_stats import compute_attendance_stats
 
+    await _extend_term_into_future(academic_term, db_session)
     await client.post("/attendance/mark", json={
         "school_calendar_id": str(school_calendar.id),
         "class_id": str(school_class.id),

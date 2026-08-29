@@ -9,15 +9,17 @@
     listCalendar, listAttendanceRecords, markAttendance, getClassSummaries, listMyAttendanceClasses,
     type AttendanceStatus, type CalendarDay, type StudentAbsenceSummary,
   } from '$lib/api/attendance';
+  import { getMySchool } from '$lib/api/schools';
   import { toast } from '$lib/stores/toast';
   import { setPageTitle } from '$lib/stores/title';
   import { userRole } from '$lib/stores/permissions';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
-  import NotRegisteredBanner from '$lib/components/NotRegisteredBanner.svelte';
   import AttendanceSelectors from './AttendanceSelectors.svelte';
-  import AttendanceStudentRow from './AttendanceStudentRow.svelte';
   import AttendanceMarkingOverview from './AttendanceMarkingOverview.svelte';
+  import AttendancePeriodPicker from './AttendancePeriodPicker.svelte';
+  import AttendanceRosterPanel from './AttendanceRosterPanel.svelte';
+  import { queueAttendanceOffline } from './offlineQueue';
   setPageTitle('Attendance');
 
   function detailOf(e: unknown): string | undefined {
@@ -34,6 +36,12 @@
   const today = new Date().toISOString().slice(0, 10);
   let classId      = $state('');
   let selectedDate = $state(today);
+  let periodId     = $state<string | null>(null);
+
+  const schoolQ = createQuery({ queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000 });
+  const periodAttendanceOn = $derived($schoolQ.data?.has_period_attendance ?? false);
+  // A period picked for a different class/day is stale — reset to "Whole day."
+  $effect(() => { classId; selectedDate; periodId = null; });
 
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
@@ -95,10 +103,10 @@
   const registeredStudents = $derived(classStudents.filter(s => registeredIds.has(s.id)));
   const notRegistered      = $derived(classStudents.filter(s => !registeredIds.has(s.id)));
 
-  // ── Existing records for this day + class ──────────────────────────────────────
+  // ── Existing records for this day + class (+ period, when picked) ───────────────
   const recordsQ = reactiveQuery(() => ({
-    queryKey: ['att-records', calDay?.id ?? '', classId] as const,
-    queryFn:  () => listAttendanceRecords(calDay!.id, classId),
+    queryKey: ['att-records', calDay?.id ?? '', classId, periodId] as const,
+    queryFn:  () => listAttendanceRecords(calDay!.id, classId, periodId),
     enabled:  !!classId && !!calDay,
     staleTime: 30_000,
   }));
@@ -125,7 +133,7 @@
   let initializedFor = $state<string | null>(null);
 
   $effect(() => {
-    const key = `${classId}-${calDay?.id ?? ''}`;
+    const key = `${classId}-${calDay?.id ?? ''}-${periodId ?? ''}`;
     if ($recordsQ.data !== undefined && $termRegisteredQ.data !== undefined && initializedFor !== key) {
       const init: Record<string, AttendanceStatus | ''> = {};
       for (const r of $recordsQ.data) init[r.student_id] = r.status;
@@ -143,19 +151,41 @@
   let markError = $state('');
 
   const markMut = createMutation({
-    mutationFn: (overrideReason: string | undefined) => {
+    mutationFn: async (overrideReason: string | undefined) => {
       // A toggled-off status (tapping an already-active button clears it back
       // to '') still counts as Present — blank means "no exception," not
       // "unrecorded," under the exception-based model above.
       const records = registeredStudents
-        .map(s => ({ student_id: s.id, status: (markInputs[s.id] || 'PRESENT') as string }));
-      return markAttendance({ school_calendar_id: calDay!.id, class_id: classId, records, override_reason: overrideReason });
+        .map(s => ({ student_id: s.id, status: (markInputs[s.id] || 'PRESENT') as AttendanceStatus }));
+      try {
+        const saved = await markAttendance({
+          school_calendar_id: calDay!.id, class_id: classId, records, override_reason: overrideReason,
+          period_id: periodId,
+        });
+        return { saved, records };
+      } catch (err: unknown) {
+        // No response → network unreachable; queue for later sync — same
+        // fallback the Assessments score-entry page uses. Offline queueing
+        // stays whole-day only (a period pick never reaches this branch
+        // with a period_id) — a deliberate, smaller v1 scope.
+        if (!(err as { response?: unknown }).response) {
+          if (periodId) throw err;
+          await queueAttendanceOffline(calDay!.id, classId, records);
+          return { saved: null, records };
+        }
+        throw err;
+      }
     },
-    onSuccess: (res) => {
+    onSuccess: ({ saved, records }) => {
+      markOverrideNeeded = false; markError = '';
+      if (!saved) {
+        toast.info('No connection — attendance queued and will sync when you reconnect.');
+        return;
+      }
       qc.invalidateQueries({ queryKey: ['att-records'] });
       qc.invalidateQueries({ queryKey: ['att-summaries'] });
-      markOverrideNeeded = false; markError = '';
-      toast.success(`${res.length} record(s) saved.`);
+      qc.invalidateQueries({ queryKey: ['markable-periods'] });
+      toast.success(`${saved.length} record(s) saved.`);
     },
     onError: (e: unknown) => {
       if (isLocked(e)) { markOverrideNeeded = true; markError = detailOf(e) ?? 'This term is locked.'; return; }
@@ -212,68 +242,22 @@
     Select a class to mark attendance.
   </div>
 {:else}
-  <!-- Submission status banner -->
-  {#if recordCount > 0 && studentCount > 0}
-    {#if recordCount >= studentCount}
-      <div class="mb-3 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 dark:border-green-900 dark:bg-green-950/30">
-        <span class="text-green-600 dark:text-green-400">✓</span>
-        <span class="text-sm font-medium text-green-700 dark:text-green-300">Attendance fully submitted — {recordCount} records saved.</span>
-      </div>
-    {:else}
-      <div class="mb-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-900 dark:bg-amber-950/30">
-        <span class="text-amber-600 dark:text-amber-400">⚠</span>
-        <span class="text-sm font-medium text-amber-700 dark:text-amber-300">Partially submitted — {recordCount} of {studentCount} students recorded.</span>
-      </div>
-    {/if}
-  {/if}
+  <AttendancePeriodPicker
+    {classId} calendarId={calDay.id} enabled={periodAttendanceOn} {periodId}
+    onSelect={(id) => periodId = id}
+  />
 
-  <!-- Action bar -->
-  <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-    <p class="text-xs text-[var(--fg-muted)]">
-      {studentCount} student(s) · everyone starts Present — tap a student to change to Absent, Late, or Excused
-    </p>
-    <button onclick={handleSave} disabled={$markMut.isPending || studentCount === 0}
-      class="min-h-[44px] rounded-xl px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition" style="background:var(--brand)">
-      {$markMut.isPending ? 'Saving…' : 'Save attendance'}
-    </button>
-  </div>
-
-  <!-- Student list -->
-  {#if $classStudentsQ.isPending || $termRegisteredQ.isPending}
-    <div class="space-y-2">{#each [1,2,3,4,5] as _}<div class="h-14 animate-pulse rounded-xl bg-[var(--card)]"></div>{/each}</div>
-  {:else if classStudents.length === 0}
-    <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
-      No students assigned to this class yet.
-    </div>
-  {:else}
-    {#if notRegistered.length > 0}
-      <div class="mb-3">
-        <NotRegisteredBanner
-          items={notRegistered.map(s => ({ student_id: s.id, academic_term_id: currentTermId }))}
-          termName={allTerms.find(t => t.id === currentTermId)?.name ?? 'this term'}
-          onRegistered={() => qc.invalidateQueries({ queryKey: ['students-for-class', classId] })}
-        />
-      </div>
-    {/if}
-    <!-- Legend — the row buttons are single-letter for space, spelled out once here
-         rather than relying on a hover title (doesn't work on touch). -->
-    <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-[var(--fg-muted)]">
-      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-green-500"></span>P = Present</span>
-      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-red-500"></span>A = Absent</span>
-      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>L = Late</span>
-      <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>E = Excused</span>
-    </div>
-    <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      {#each classStudents as student, i (student.id)}
-        {@const cur = markInputs[student.id] ?? ''}
-        <AttendanceStudentRow
-          {student} index={i} status={cur} summary={summaryMap.get(student.id)}
-          registered={registeredIds.has(student.id)}
-          onToggle={(code) => markInputs[student.id] = cur === code ? '' : code}
-        />
-      {/each}
-    </div>
-  {/if}
+  <AttendanceRosterPanel
+    {recordCount} {studentCount}
+    classStudentsLoading={$classStudentsQ.isPending || $termRegisteredQ.isPending}
+    {classStudents} {notRegistered} {registeredIds} {currentTermId}
+    termName={allTerms.find(t => t.id === currentTermId)?.name ?? 'this term'}
+    {markInputs} {summaryMap}
+    isSaving={$markMut.isPending}
+    onSave={handleSave}
+    onToggle={(studentId, value) => markInputs[studentId] = value}
+    onRegistered={() => qc.invalidateQueries({ queryKey: ['students-for-class', classId] })}
+  />
 {/if}
 {/if}
 

@@ -27,7 +27,9 @@ from app.core.database import get_db
 from app.core.dependencies import require_auth
 from app.models.auth import User
 from app.models.students import TermEnrollment
+from app.schemas.attendance_excuse import ExcuseRequestCreate, ExcuseRequestRead
 from app.schemas.portal import PortalProfile, PortalTermEnrollmentRead
+from app.services import attendance_excuse as excuse_svc
 from app.services import portal as portal_svc
 from app.services import report_card as rc_svc
 from app.services.pdf import render_report_card
@@ -115,6 +117,30 @@ async def list_my_term_enrollments(
 ):
     _, school_id, student_id = auth
     return await portal_svc.list_my_term_enrollments(student_id, school_id, db)
+
+
+@router.post("/excuse-requests", response_model=ExcuseRequestRead, status_code=201)
+async def submit_excuse_request(
+    req: ExcuseRequestCreate,
+    auth=Depends(_require_portal_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit an absence excuse — a student for themselves, or a guardian
+    for a verified linked child (?student_id=, checked by _require_portal_access)."""
+    user_id, school_id, student_id = auth
+    user = await db.get(User, user_id)
+    return await excuse_svc.submit_excuse_request(
+        student_id, user.guardian_id if user else None, user_id, req, school_id, db,
+    )
+
+
+@router.get("/excuse-requests", response_model=list[ExcuseRequestRead])
+async def list_my_excuse_requests(
+    auth=Depends(_require_portal_access),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id, student_id = auth
+    return await excuse_svc.list_my_excuse_requests(student_id, school_id, db)
 
 
 @router.get("/report-cards/{enrollment_id}")

@@ -8,6 +8,7 @@
   import MyClassesCard from './MyClassesCard.svelte';
   import MySubjectsCard from './MySubjectsCard.svelte';
   import MyHousesCard from './MyHousesCard.svelte';
+  import MyScheduleCard from './MyScheduleCard.svelte';
   import QuickLinksCard from './QuickLinksCard.svelte';
 
   interface Props { data: StaffDashboard; }
@@ -26,6 +27,9 @@
   const hasSubjects = $derived(data.my_subjects.length > 0);
   const hasHouses   = $derived(data.my_houses.length > 0);
   const hasAnything = $derived(hasClasses || hasSubjects || hasHouses);
+  // Only meaningful for someone who actually teaches (homeroom or subject) —
+  // a housemaster-only login has nothing to teach tomorrow at all.
+  const showSchedule = $derived(hasClasses || hasSubjects);
 
   const unmarkedClasses = $derived(data.my_classes.filter(c => !c.attendance_marked_today));
   const multipleClasses = $derived(data.my_classes.length > 1);
@@ -106,6 +110,11 @@
      one generic grid, so each combination gets a deterministic, correctly
      proportioned layout instead of auto-fit stretching cards to fill space. -->
 {#if hasAnything}
+  {#if showSchedule}
+    <div class="mx-auto mb-6 max-w-2xl">
+      <MyScheduleCard schedule={data.tomorrow_schedule} isSchoolDay={data.tomorrow_is_school_day} />
+    </div>
+  {/if}
   {#if hasClasses}
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-[3fr_2fr]">
       <MyClassesCard classes={data.my_classes} />

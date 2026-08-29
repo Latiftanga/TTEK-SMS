@@ -8,24 +8,43 @@ Permission map:
 """
 from __future__ import annotations
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_auth, require_permission
+from app.core.dependencies import require_permission
+from app.models.school import School
 from app.schemas.academic import ClassRead
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
-    CalendarDayOverride, CalendarDayRead, CalendarGenerateRequest,
-    ClassMarkingStatusRead, ScheduleRead, ScheduleUpsert, StudentAbsenceSummary,
+    CalendarDayOverride, CalendarDayRead, CalendarGenerateRequest, CalendarRangeOverride,
+    ClassMarkingStatusRead, MarkablePeriod, ScheduleRead, ScheduleUpsert, StudentAbsenceSummary,
     TodayStatusRead,
 )
+from app.schemas.attendance_excuse import ExcuseRequestRead, ExcuseRequestReview
+from app.schemas.attendance_risk import AtRiskStudentRead
+from app.schemas.attendance_trends import AttendanceTrendPoint
 from app.services import attendance as att_svc
 from app.services import attendance_calendar as cal_svc
+from app.services import attendance_excuse as excuse_svc
+from app.services import attendance_periods as period_svc
+from app.services import attendance_risk as risk_svc
 from app.services import attendance_summary as att_summary_svc
+from app.services import attendance_trends as trends_svc
+from app.services.export_utils import rows_to_bytes
+from app.services.pdf import render_export_table
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+_EXPORT_MEDIA_TYPES = {
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+    "csv": "text/csv",
+}
+_EXPORT_EXTENSIONS = {"excel": "xlsx", "pdf": "pdf", "csv": "csv"}
 
 
 # ── School schedule ───────────────────────────────────────────────────────────
@@ -42,7 +61,7 @@ async def upsert_schedule(
 
 @router.get("/schedule", response_model=list[ScheduleRead])
 async def list_schedule(
-    ids=Depends(require_auth),
+    ids=Depends(require_permission("attendance", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
@@ -65,11 +84,26 @@ async def generate_calendar(
 @router.get("/calendar", response_model=list[CalendarDayRead])
 async def list_calendar(
     term_id: uuid.UUID = Query(...),
-    ids=Depends(require_auth),
+    ids=Depends(require_permission("attendance", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     _, school_id = ids
     return [CalendarDayRead.model_validate(d) for d in await cal_svc.list_calendar(school_id, term_id, db)]
+
+
+@router.patch("/calendar/range", response_model=list[CalendarDayRead])
+async def override_calendar_range(
+    req: CalendarRangeOverride,
+    ids=Depends(require_permission("attendance", "approve")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark every generated calendar day in a date range at once — e.g. a
+    week-long mid-term break — instead of one PATCH /calendar/{cal_id} call
+    per day. Registered before /calendar/{cal_id} so "range" is never
+    swallowed by that route's path parameter."""
+    user_id, school_id = ids
+    days = await cal_svc.override_calendar_range(req, school_id, user_id, db)
+    return [CalendarDayRead.model_validate(d) for d in days]
 
 
 @router.patch("/calendar/{cal_id}", response_model=CalendarDayRead)
@@ -79,9 +113,9 @@ async def override_calendar_day(
     ids=Depends(require_permission("attendance", "approve")),
     db: AsyncSession = Depends(get_db),
 ):
-    _, school_id = ids
+    user_id, school_id = ids
     return CalendarDayRead.model_validate(
-        await cal_svc.override_calendar_day(cal_id, req, school_id, db)
+        await cal_svc.override_calendar_day(cal_id, req, school_id, user_id, db)
     )
 
 
@@ -101,11 +135,26 @@ async def mark_attendance(
 async def list_attendance(
     calendar_id: uuid.UUID = Query(...),
     class_id: uuid.UUID = Query(...),
+    period_id: uuid.UUID | None = Query(None),
     ids=Depends(require_permission("attendance", "view")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
-    return await att_svc.list_attendance(calendar_id, class_id, school_id, user_id, db)
+    return await att_svc.list_attendance(calendar_id, class_id, school_id, user_id, db, period_id=period_id)
+
+
+@router.get("/markable-periods", response_model=list[MarkablePeriod])
+async def list_markable_periods(
+    class_id: uuid.UUID = Query(...),
+    calendar_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Periods the caller can mark attendance for on this class+day —
+    additive to the always-available whole-day roll call. Returns [] when
+    the school hasn't opted into period-level attendance."""
+    user_id, school_id = ids
+    return await period_svc.list_markable_periods(class_id, calendar_id, school_id, user_id, db)
 
 
 @router.get("/today", response_model=TodayStatusRead)
@@ -152,6 +201,80 @@ async def get_marking_status(
     "who's marked, who hasn't" oversight view."""
     user_id, school_id = ids
     return await att_summary_svc.get_marking_status(calendar_id, school_id, user_id, db)
+
+
+@router.get("/at-risk", response_model=list[AtRiskStudentRead])
+async def get_at_risk_students(
+    term_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Chronic-absenteeism early-warning list — every visible student whose
+    term-to-date attendance has crossed a risk tier (see attendance_risk.py)."""
+    user_id, school_id = ids
+    return await risk_svc.list_at_risk(term_id, school_id, user_id, db)
+
+
+@router.get("/excuse-requests", response_model=list[ExcuseRequestRead])
+async def list_pending_excuse_requests(
+    ids=Depends(require_permission("attendance", "record")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every visible PENDING guardian/student excuse request — scoped like
+    every other attendance read (unrestricted for attendance.approve, else
+    the caller's own ClassTeacher classes this year)."""
+    user_id, school_id = ids
+    return await excuse_svc.list_pending_excuse_requests(school_id, user_id, db)
+
+
+@router.patch("/excuse-requests/{request_id}/review", response_model=ExcuseRequestRead)
+async def review_excuse_request(
+    request_id: uuid.UUID,
+    req: ExcuseRequestReview,
+    ids=Depends(require_permission("attendance", "record")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    return await excuse_svc.review_excuse_request(request_id, req, school_id, user_id, db)
+
+
+@router.get("/trends", response_model=list[AttendanceTrendPoint])
+async def get_attendance_trend(
+    term_id: uuid.UUID = Query(...),
+    class_id: uuid.UUID | None = Query(None),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Day-by-day attendance rate for a term — every visible class's
+    students if class_id is omitted, scoped exactly like every other
+    attendance read."""
+    user_id, school_id = ids
+    return await trends_svc.get_attendance_trend(term_id, school_id, user_id, db, class_id=class_id)
+
+
+@router.get("/export")
+async def export_attendance(
+    term_id: uuid.UUID = Query(...),
+    class_id: uuid.UUID | None = Query(None),
+    fmt: str = Query("csv", pattern="^(csv|excel|pdf)$"),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    headers, rows = await trends_svc.get_attendance_export_rows(term_id, school_id, user_id, db, class_id=class_id)
+    if fmt == "pdf":
+        school = await db.get(School, school_id)
+        data = render_export_table(
+            school, "Attendance Report", headers, rows,
+            datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M"), len(rows),
+        )
+    else:
+        data = rows_to_bytes(headers, rows, fmt, sheet_title="Attendance")
+    return StreamingResponse(
+        iter([data]),
+        media_type=_EXPORT_MEDIA_TYPES[fmt],
+        headers={"Content-Disposition": f'attachment; filename="attendance.{_EXPORT_EXTENSIONS[fmt]}"'},
+    )
 
 
 @router.get("/my-classes", response_model=list[ClassRead])

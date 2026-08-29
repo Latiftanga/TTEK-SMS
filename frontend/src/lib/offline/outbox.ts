@@ -3,8 +3,7 @@
  *
  * When a POST/PATCH to the API fails (network error), the operation is
  * queued here. The outbox drains automatically when the network returns.
- * Score entries are the only thing that goes offline today — attendance
- * marking has no offline queueing (there's no backend support for it).
+ * Score and Attendance are the two entities that can go offline today.
  *
  * Every outbox item carries offline_session_started_at so the server
  * can detect conflicts when syncing, and client_op_id — a globally-unique
@@ -17,7 +16,7 @@ export type OutboxStatus = 'pending' | 'syncing' | 'failed' | 'conflict';
 
 export interface OutboxItem {
   id?: number;                          // auto-increment local ID — unique per device only
-  entity: 'Score';
+  entity: 'Score' | 'Attendance';
   method: 'POST' | 'PATCH';
   endpoint: string;                     // e.g. /api/attendance
   payload: Record<string, unknown>;

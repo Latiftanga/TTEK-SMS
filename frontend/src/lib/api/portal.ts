@@ -39,3 +39,29 @@ export const getMyReportCardBlob = (enrollmentId: string, studentId?: string): P
     params: studentId ? { student_id: studentId } : {},
     responseType: 'blob',
   }).then(r => r.data);
+
+export type ExcuseStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface ExcuseRequest {
+  id: string;
+  student_id: string;
+  student_name: string | null;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  status: ExcuseStatus;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  created_at: string;
+}
+
+export const submitExcuseRequest = (
+  data: { start_date: string; end_date: string; reason: string },
+  studentId?: string,
+): Promise<ExcuseRequest> =>
+  api.post('/portal/excuse-requests', data, {
+    params: studentId ? { student_id: studentId } : {},
+  }).then(r => r.data);
+
+export const listMyExcuseRequests = (studentId?: string): Promise<ExcuseRequest[]> =>
+  api.get('/portal/excuse-requests', { params: studentId ? { student_id: studentId } : {} }).then(r => r.data);
