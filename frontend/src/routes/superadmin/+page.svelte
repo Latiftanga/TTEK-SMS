@@ -133,6 +133,11 @@
                  text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
           Holidays
         </a>
+        <a href="/superadmin/ai-default"
+          class="flex min-h-[44px] items-center rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium
+                 text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+          AI default
+        </a>
         <button onclick={openCreate}
           class="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           style="background-color: var(--brand, #111827)">

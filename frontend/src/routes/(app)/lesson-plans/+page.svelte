@@ -10,6 +10,9 @@
   import { setPageTitle } from '$lib/stores/title';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import LessonPlanForm from './LessonPlanForm.svelte';
+  import GeneratedContentPanel from './GeneratedContentPanel.svelte';
+  import ChatPanel from './ChatPanel.svelte';
+  import ReviewPanel from './ReviewPanel.svelte';
   setPageTitle('Lesson Plans');
 
   // ── Filters — persisted in the URL, same convention as /assessments ──────────
@@ -162,6 +165,17 @@
     {classId} {subjectId} academicTermId={termId} {weekStart}
     plan={existingPlan}
   />
+  {#if existingPlan}
+    <ChatPanel
+      plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
+    />
+    <GeneratedContentPanel
+      plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
+    />
+    <ReviewPanel
+      plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
+    />
+  {/if}
 {/if}
 
 <style>

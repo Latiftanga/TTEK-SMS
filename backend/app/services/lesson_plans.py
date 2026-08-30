@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.teacher_scope import resolve_assessment_scope, year_for_term
 from app.models.academic import AcademicTerm, Class, SHSProgramme, Subject
-from app.models.lesson_plans import LessonPlan
+from app.models.lesson_plans import CurriculumStandard, LessonPlan
 from app.schemas.lesson_plans import LessonPlanCreate, LessonPlanRead, LessonPlanUpdate
 from app.services import ai_config
 from app.services.student_display import _class_display_name
@@ -57,6 +57,22 @@ async def _get_term(academic_term_id: uuid.UUID, school_id: uuid.UUID, db: Async
     return term
 
 
+async def _resolve_curriculum_standard(
+    curriculum_standard_id: uuid.UUID | None, school_id: uuid.UUID, db: AsyncSession,
+) -> CurriculumStandard | None:
+    if curriculum_standard_id is None:
+        return None
+    cs = await db.scalar(
+        select(CurriculumStandard).where(
+            CurriculumStandard.id == curriculum_standard_id,
+            (CurriculumStandard.school_id == school_id) | (CurriculumStandard.school_id.is_(None)),
+        )
+    )
+    if not cs:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Curriculum standard not found.")
+    return cs
+
+
 async def create_lesson_plan(
     req: LessonPlanCreate, school_id: uuid.UUID, user_id: uuid.UUID, staff_id: uuid.UUID, db: AsyncSession,
 ) -> LessonPlanRead:
@@ -72,6 +88,11 @@ async def create_lesson_plan(
             f"That week falls outside {term.name}'s dates ({term.start_date} to {term.end_date}).",
         )
 
+    cs = await _resolve_curriculum_standard(req.curriculum_standard_id, school_id, db)
+    content_standard = req.content_standard or (f"{cs.strand} — {cs.sub_strand}" if cs else None)
+    indicator = req.indicator or (cs.indicator_code if cs else None)
+    learning_objectives = req.learning_objectives or (cs.objective_text if cs else None)
+
     lp = LessonPlan(
         school_id=school_id,
         class_id=req.class_id,
@@ -79,15 +100,16 @@ async def create_lesson_plan(
         academic_term_id=req.academic_term_id,
         week_start_date=week_start,
         topic=req.topic.strip(),
-        content_standard=req.content_standard,
-        indicator=req.indicator,
-        learning_objectives=req.learning_objectives,
+        content_standard=content_standard,
+        indicator=indicator,
+        learning_objectives=learning_objectives,
         core_competencies=req.core_competencies,
         teaching_resources=req.teaching_resources,
         activities=req.activities,
         assessment_strategy=req.assessment_strategy,
         reflection_notes=req.reflection_notes,
         created_by_id=staff_id,
+        curriculum_standard_id=cs.id if cs else None,
     )
     db.add(lp)
     try:
@@ -147,7 +169,10 @@ async def update_lesson_plan(
     lesson_plan_id: uuid.UUID, req: LessonPlanUpdate, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
 ) -> LessonPlanRead:
     lp = await get_lesson_plan(lesson_plan_id, school_id, user_id, db)
-    for field, value in req.model_dump(exclude_unset=True).items():
+    fields = req.model_dump(exclude_unset=True)
+    if "curriculum_standard_id" in fields and fields["curriculum_standard_id"] is not None:
+        await _resolve_curriculum_standard(fields["curriculum_standard_id"], school_id, db)
+    for field, value in fields.items():
         setattr(lp, field, value.strip() if field == "topic" and value else value)
     await db.flush()
     return _to_read(lp)
@@ -177,9 +202,11 @@ async def draft_with_ai(
     """Returns a single free-text draft — AiDriver.generate() returns plain
     str with no structured-output contract, so this is shown to the teacher
     as a suggestion to review/copy from, never auto-saved into the form's
-    individual fields."""
-    await ai_config.check_daily_limit(school_id, user_id, db)  # raises 429 if exhausted
-    driver = await ai_config.get_active_driver(school_id, db)  # raises 503 if unconfigured
+    individual fields. Falls back to the platform-default provider if this
+    school hasn't configured its own (see ai_config.py::
+    resolve_driver_for_generation)."""
+    driver, cfg = await ai_config.resolve_driver_for_generation(school_id, db)  # raises 503 if neither exists
+    await ai_config.check_daily_limit(school_id, user_id, cfg, db)  # raises 429 if exhausted
 
     subject = await db.get(Subject, subject_id)
     cls = await db.get(Class, class_id)
@@ -193,5 +220,5 @@ async def draft_with_ai(
     prompt = f"Draft a weekly lesson plan for {class_label}, subject: {subject_name}. Topic: {topic}."
     draft_text = await driver.generate(prompt, _AI_SYSTEM_PROMPT)
 
-    await ai_config.increment_usage(school_id, user_id)
+    await ai_config.increment_usage(school_id, user_id, cfg)
     return draft_text

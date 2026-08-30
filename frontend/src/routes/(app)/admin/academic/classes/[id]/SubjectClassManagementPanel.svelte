@@ -6,9 +6,10 @@
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import SubjectRosterPanel from '$lib/components/SubjectRosterPanel.svelte';
+  import CurriculumMaterialsPanel from './CurriculumMaterialsPanel.svelte';
 
-  interface Props { subjectId: string; classId: string; yearId: string; termId: string; }
-  const { subjectId, classId, yearId, termId }: Props = $props();
+  interface Props { subjectId: string; classId: string; yearId: string; termId: string; classSubjectId: string; }
+  const { subjectId, classId, yearId, termId, classSubjectId }: Props = $props();
 
   const qc = useQueryClient();
 
@@ -105,5 +106,9 @@
   <div>
     <p class="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--fg-subtle)]">Students</p>
     <SubjectRosterPanel {classId} {subjectId} />
+  </div>
+
+  <div class="border-t border-[var(--border)] pt-3">
+    <CurriculumMaterialsPanel {classSubjectId} />
   </div>
 </div>

@@ -378,7 +378,12 @@ STAFF_POSITIONS = [
         # needs the module explicitly to reach core/teacher_scope.py::
         # resolve_assessment_scope()'s own unrestricted bypass for
         # approve_scores holders (services/lesson_plans.py reuses it as-is).
-        ("lesson_plans", "view"), ("lesson_plans", "manage"),
+        # lesson_plans.approve is the narrow review-workflow action (distinct
+        # from lesson_plans.manage, the plan-owner's own tier) — mirrors the
+        # assessments.record_behaviour/approve_scores split from 12am, so a
+        # school can grant just review rights to someone else later without
+        # handing them the broader approve_scores tier too.
+        ("lesson_plans", "view"), ("lesson_plans", "manage"), ("lesson_plans", "approve"),
     ]),
     ("CLASS_TEACHER", "Class Teacher", [
         ("school", "view"),

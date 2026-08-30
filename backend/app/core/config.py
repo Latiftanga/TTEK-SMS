@@ -108,6 +108,15 @@ class Settings(BaseSettings):
     superadmin_email: str = "admin@tagnatek.com"
     superadmin_password: str = "changeme"
 
+    # ── AI (platform-default provider) ────────────────────────────────────────
+    # A school with no AiConfig of its own falls back to the platform-default
+    # row (AiConfig.school_id IS NULL) — see services/ai_config.py::
+    # resolve_driver_for_generation(). This cap protects Tagnatek's own shared
+    # budget/free-tier ceiling from every fallback-relying school combined; a
+    # school using its own key is never checked against it. Conservative
+    # starting point, adjustable without a code change.
+    platform_ai_daily_limit: int = 500
+
     # ── Validators ───────────────────────────────────────────────────────────
 
     @field_validator("database_url", mode="before")

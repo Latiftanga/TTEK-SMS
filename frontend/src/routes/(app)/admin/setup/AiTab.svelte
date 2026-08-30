@@ -1,15 +1,35 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { reactiveQuery } from '$lib/query.svelte';
   import {
     listAiProviders, listAiConfigs, saveAiConfig,
     activateAiProvider, deleteAiConfig, testAiProvider,
+    listAiPlatformConfigs, saveAiPlatformConfig,
+    activateAiPlatformProvider, deleteAiPlatformConfig, testAiPlatformProvider,
     type AiProvider, type AiConfigCreate,
   } from '$lib/api/ai';
+
+  // platformDefault: renders the exact same UI against Tagnatek's own
+  // shared config (superadmin-only /ai/platform-default/* endpoints)
+  // instead of a school's own /ai/configs/* — see routers/ai_platform.py.
+  interface Props { platformDefault?: boolean }
+  const { platformDefault = false }: Props = $props();
+
+  const scope = $derived(platformDefault ? 'platform' : 'school');
+  const listConfigsFn = $derived(platformDefault ? listAiPlatformConfigs : listAiConfigs);
+  const saveConfigFn = $derived(platformDefault ? saveAiPlatformConfig : saveAiConfig);
+  const activateFn = $derived(platformDefault ? activateAiPlatformProvider : activateAiProvider);
+  const deleteFn = $derived(platformDefault ? deleteAiPlatformConfig : deleteAiConfig);
+  const testFn = $derived(platformDefault ? testAiPlatformProvider : testAiProvider);
 
   const qc = useQueryClient();
 
   const providersQ = createQuery({ queryKey: ['ai-providers'], queryFn: listAiProviders, staleTime: Infinity });
-  const configsQ   = createQuery({ queryKey: ['ai-configs'],   queryFn: listAiConfigs,   staleTime: 60_000 });
+  const configsQ = reactiveQuery(() => ({
+    queryKey: ['ai-configs', scope] as const,
+    queryFn: () => listConfigsFn(),
+    staleTime: 60_000,
+  }));
 
   let selectedProvider = $state<AiProvider>('GEMINI');
   let apiKey           = $state('');
@@ -20,9 +40,9 @@
   let testResult       = $state<{ ok: boolean; message: string } | null>(null);
 
   const saveMut = createMutation({
-    mutationFn: (data: AiConfigCreate) => saveAiConfig(data),
+    mutationFn: (data: AiConfigCreate) => saveConfigFn(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ai-configs'] });
+      qc.invalidateQueries({ queryKey: ['ai-configs', scope] });
       showForm = false; formError = ''; apiKey = ''; modelOverride = '';
     },
     onError: (e: unknown) => {
@@ -31,17 +51,17 @@
   });
 
   const activateMut = createMutation({
-    mutationFn: (provider: AiProvider) => activateAiProvider(provider),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-configs'] }),
+    mutationFn: (provider: AiProvider) => activateFn(provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-configs', scope] }),
   });
 
   const deleteMut = createMutation({
-    mutationFn: (provider: AiProvider) => deleteAiConfig(provider),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-configs'] }),
+    mutationFn: (provider: AiProvider) => deleteFn(provider),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-configs', scope] }),
   });
 
   const testMut = createMutation({
-    mutationFn: testAiProvider,
+    mutationFn: () => testFn(),
     onSuccess: (r) => { testResult = { ok: r.ok, message: r.message }; },
     onError: () => { testResult = { ok: false, message: 'Request failed.' }; },
   });
@@ -71,8 +91,14 @@
   <div class="flex items-start justify-between gap-4">
     <div>
       <p class="text-sm text-[var(--fg-muted)]">
-        Enable AI-powered lesson note generation for your teachers.
-        Teachers pay nothing — the cost comes from this API key.
+        {#if platformDefault}
+          The platform-default provider — every school with no AI key of its
+          own automatically falls back to this one, so lesson planning works
+          out of the box with zero setup on their end.
+        {:else}
+          Enable AI-powered lesson note generation for your teachers.
+          Teachers pay nothing — the cost comes from this API key.
+        {/if}
         <span class="font-medium text-[var(--fg)]">Gemini and Groq have generous free tiers.</span>
       </p>
     </div>

@@ -227,7 +227,7 @@
             </button>
           </div>
           {#if expandedSubjectId === cs.subject_id}
-            <SubjectClassManagementPanel subjectId={cs.subject_id} {classId} {yearId} termId={currentTermId} />
+            <SubjectClassManagementPanel subjectId={cs.subject_id} {classId} {yearId} termId={currentTermId} classSubjectId={cs.id} />
           {/if}
         </div>
       {/snippet}

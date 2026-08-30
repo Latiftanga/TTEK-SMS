@@ -17,11 +17,18 @@ All drivers implement:
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
+from typing import TypeVar
+
+from fastapi import HTTPException, status
+from pydantic import BaseModel, ValidationError
 
 import httpx
 
 from app.models.school import AiProvider
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class AiDriver(ABC):
@@ -30,6 +37,44 @@ class AiDriver(ABC):
 
     async def test(self) -> str:
         return await self.generate("Reply with the single word OK and nothing else.")
+
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", re.DOTALL)
+
+
+def _extract_json(text: str) -> str:
+    """Models routinely wrap JSON in a markdown code fence despite being
+    told not to — strip it before parsing rather than failing on it."""
+    m = _JSON_FENCE_RE.search(text)
+    return m.group(1) if m else text.strip()
+
+
+async def generate_json(driver: AiDriver, prompt: str, system: str, schema: type[T]) -> T:
+    """Structured-output helper layered on top of the existing single-turn
+    generate() — none of the four drivers below have native JSON-mode/
+    function-calling, so this is prompt-engineering + parse/validate, not a
+    provider API change. Retries once (a fresh, more forceful instruction) on
+    a parse/validation failure before raising a clean 502 the caller can
+    surface to the teacher rather than a raw exception."""
+    json_instruction = (
+        f"{system}\n\nRespond with ONLY valid JSON matching this exact shape "
+        f"(no markdown, no commentary, no code fence):\n{schema.model_json_schema()}"
+    )
+    last_error: Exception | None = None
+    for attempt in range(2):
+        raw = await driver.generate(prompt, json_instruction)
+        try:
+            return schema.model_validate(json.loads(_extract_json(raw)))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            last_error = exc
+            json_instruction += (
+                "\n\nYour previous response could not be parsed as valid JSON "
+                "matching the shape above. Respond again with ONLY the JSON object."
+            )
+    raise HTTPException(
+        status.HTTP_502_BAD_GATEWAY,
+        f"The AI response could not be parsed into the expected format: {last_error}",
+    )
 
 
 # ── Gemini ────────────────────────────────────────────────────────────────────

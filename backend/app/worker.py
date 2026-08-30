@@ -32,10 +32,11 @@ from app.core.redis import close_redis, init_redis
 # main.py's own imports — it needs this exact same explicit sweep
 # tests/conftest.py already does for the same reason.
 from app.models import (  # noqa: F401
-    academic, assessments, attendance, auth, documents, fees,
-    housing, school, staff, staff_history, students,
+    academic, assessments, attendance, auth, curriculum_materials, documents,
+    fees, housing, lesson_plans, school, staff, staff_history, students,
 )
 from app.services.bulk_report_job import bulk_generate_report_cards
+from app.services.curriculum_extraction import extract_curriculum_material
 from app.services.report_notify_job import notify_class_report_published
 
 
@@ -78,7 +79,10 @@ async def test_job(ctx: dict, message: str) -> str:
 # ── Worker settings ───────────────────────────────────────────────────────────
 
 class WorkerSettings:
-    functions = [test_job, bulk_generate_report_cards, notify_class_report_published]
+    functions = [
+        test_job, bulk_generate_report_cards, notify_class_report_published,
+        extract_curriculum_material,
+    ]
 
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
 

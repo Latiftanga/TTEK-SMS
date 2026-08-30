@@ -229,9 +229,16 @@ class SmsLog(Base, UUIDPrimaryKey, SchoolScopedMixin):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class AiConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
+class AiConfig(Base, UUIDPrimaryKey, TimestampMixin):
     """
-    AI provider credentials per school. Only one provider is active at a time.
+    AI provider credentials. Only one provider is active at a time, per scope.
+
+    school_id is nullable — mirrors SubjectCatalogue exactly: a school's own
+    row (school_id set) always wins; school_id=NULL is the single
+    Tagnatek-configured platform-default row every school falls back to when
+    it has none of its own (see services/ai_config.py::
+    resolve_driver_for_generation()). Not SchoolScopedMixin, deliberately, for
+    the same reason SubjectCatalogue isn't — that mixin requires school_id.
 
     api_key is stored but NEVER returned by any GET endpoint.
     model is optional — if None, the driver uses the best default for the provider.
@@ -240,6 +247,9 @@ class AiConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     """
     __tablename__ = "ai_config"
 
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("school.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
     provider: Mapped[AiProvider] = mapped_column(
         SAEnum(AiProvider, name="aiprovider"), nullable=False
     )
@@ -248,4 +258,4 @@ class AiConfig(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     daily_limit_per_teacher: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    school: Mapped[School] = relationship(back_populates="ai_configs")
+    school: Mapped[School | None] = relationship(back_populates="ai_configs")

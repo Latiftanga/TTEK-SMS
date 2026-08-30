@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.limiter import RateLimitMiddleware
 from app.core.redis import close_redis, init_redis
-from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, attendance_trends, auth, dashboard, documents, email, fees, grading, holidays, housing, lesson_plans, permissions, portal, programme_summary, report_cards, school_periods, schools, scoring, sms, staff, staff_admin, staff_category, staff_photo, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync, timetable
+from app.routers import academic, academic_structure, ai, ai_platform, assessment_types, assessments, attendance, attendance_trends, auth, curriculum_materials, curriculum_standards, dashboard, documents, email, fees, grading, holidays, housing, lesson_plans, permissions, portal, programme_summary, report_cards, school_periods, schools, scoring, sms, staff, staff_admin, staff_category, staff_photo, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync, timetable
 
 # ── Sentry ───────────────────────────────────────────────────────────────────
 if settings.sentry_dsn and settings.sentry_dsn.startswith("https://"):
@@ -119,12 +119,15 @@ app.include_router(fees.router)
 app.include_router(report_cards.router)
 app.include_router(documents.router)
 app.include_router(lesson_plans.router)
+app.include_router(curriculum_standards.router)
+app.include_router(curriculum_materials.router)
 app.include_router(portal.router)
 app.include_router(sync.router)
 app.include_router(sms.router)
 app.include_router(email.router)
 app.include_router(permissions.router)
 app.include_router(ai.router)
+app.include_router(ai_platform.router)
 app.include_router(dashboard.router)
 app.include_router(holidays.router)
 

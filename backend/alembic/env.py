@@ -23,6 +23,7 @@ from app.models import assessments  # noqa: F401
 from app.models import fees         # noqa: F401
 from app.models import documents    # noqa: F401
 from app.models import lesson_plans # noqa: F401
+from app.models import curriculum_materials  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

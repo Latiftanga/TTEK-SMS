@@ -50,3 +50,22 @@ export const testAiProvider = (): Promise<AiTestResult> =>
 
 export const deleteAiConfig = (provider: AiProvider): Promise<void> =>
   api.delete(`/ai/configs/${provider}`).then(r => r.data);
+
+// ── Platform-default provider (Tagnatek's own shared config, superadmin only) ─
+// A school with no AiConfig of its own falls back to this one — see
+// services/ai_config.py::resolve_driver_for_generation on the backend.
+
+export const listAiPlatformConfigs = (): Promise<AiConfigRead[]> =>
+  api.get('/ai/platform-default/configs').then(r => r.data);
+
+export const saveAiPlatformConfig = (data: AiConfigCreate): Promise<AiConfigRead> =>
+  api.post('/ai/platform-default/configs', data).then(r => r.data);
+
+export const activateAiPlatformProvider = (provider: AiProvider): Promise<AiConfigRead> =>
+  api.post('/ai/platform-default/configs/activate', { provider }).then(r => r.data);
+
+export const testAiPlatformProvider = (): Promise<AiTestResult> =>
+  api.post('/ai/platform-default/configs/test').then(r => r.data);
+
+export const deleteAiPlatformConfig = (provider: AiProvider): Promise<void> =>
+  api.delete(`/ai/platform-default/configs/${provider}`).then(r => r.data);

@@ -25,6 +25,9 @@ email-validator==2.2.0
 weasyprint==69.0
 jinja2==3.1.4
 
+# PDF text extraction (curriculum material grounding for AI lesson planning)
+pypdf==5.1.0
+
 # QR codes
 qrcode[pil]==8.0
 
