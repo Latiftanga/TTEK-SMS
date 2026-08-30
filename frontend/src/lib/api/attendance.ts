@@ -88,6 +88,21 @@ export interface ClassMarkingStatus {
   class_teacher_name: string | null;
 }
 
+// Period-level sibling of ClassMarkingStatus — one row per (class, period)
+// that's actually timetabled, not per class. Always [] when the school
+// hasn't opted into period-level attendance.
+export interface PeriodMarkingStatus {
+  class_id: string;
+  class_name: string;
+  period_id: string;
+  period_name: string;
+  start_time: string;
+  end_time: string;
+  subject_name: string;
+  teacher_name: string | null;
+  marked: boolean;
+}
+
 export const listSchedule = (): Promise<ScheduleDay[]> =>
   api.get('/attendance/schedule').then(r => r.data);
 
@@ -165,6 +180,11 @@ export const listMyAttendanceClasses = (termId: string): Promise<SchoolClass[]> 
 // who hasn't," same scope as listMyAttendanceClasses.
 export const getMarkingStatus = (calendarId: string): Promise<ClassMarkingStatus[]> =>
   api.get('/attendance/marking-status', { params: { calendar_id: calendarId } }).then(r => r.data);
+
+// Period-level sibling of getMarkingStatus — [] when the school hasn't
+// enabled period-level attendance.
+export const getPeriodMarkingStatus = (calendarId: string): Promise<PeriodMarkingStatus[]> =>
+  api.get('/attendance/period-marking-status', { params: { calendar_id: calendarId } }).then(r => r.data);
 
 // ── Chronic-absenteeism early warning ───────────────────────────────────────
 

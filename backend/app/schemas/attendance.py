@@ -171,3 +171,20 @@ class MarkablePeriod(BaseModel):
     teacher_name: str | None
     can_mark: bool
     already_marked: bool
+
+
+class PeriodMarkingStatusRead(BaseModel):
+    """One row of the school-wide period-level "who's marked, who hasn't"
+    oversight — see services/attendance_period_status.py::
+    get_period_marking_status(). The period-level sibling of
+    ClassMarkingStatusRead, one row per (class, period) that's actually
+    timetabled, not per class."""
+    class_id: uuid.UUID
+    class_name: str
+    period_id: uuid.UUID
+    period_name: str
+    start_time: time
+    end_time: time
+    subject_name: str
+    teacher_name: str | None
+    marked: bool

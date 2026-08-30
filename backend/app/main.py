@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.limiter import RateLimitMiddleware
 from app.core.redis import close_redis, init_redis
-from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, auth, dashboard, documents, email, fees, grading, holidays, housing, lesson_plans, permissions, portal, programme_summary, report_cards, school_periods, schools, scoring, sms, staff, staff_admin, staff_category, staff_photo, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync, timetable
+from app.routers import academic, academic_structure, ai, assessment_types, assessments, attendance, attendance_trends, auth, dashboard, documents, email, fees, grading, holidays, housing, lesson_plans, permissions, portal, programme_summary, report_cards, school_periods, schools, scoring, sms, staff, staff_admin, staff_category, staff_photo, staff_records, students, students_detail, students_enrollment, students_lifecycle, students_transcript, subject_summary, sync, timetable
 
 # ── Sentry ───────────────────────────────────────────────────────────────────
 if settings.sentry_dsn and settings.sentry_dsn.startswith("https://"):
@@ -93,6 +93,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(auth.router)
 app.include_router(schools.router)
 app.include_router(attendance.router)
+app.include_router(attendance_trends.router)
 app.include_router(school_periods.router)
 app.include_router(academic.router)
 app.include_router(academic_structure.router)

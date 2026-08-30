@@ -8,43 +8,30 @@ Permission map:
 """
 from __future__ import annotations
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
-from app.models.school import School
 from app.schemas.academic import ClassRead
 from app.schemas.attendance import (
     AttendanceMarkRequest, AttendanceRecordRead, AttendanceSummaryRead,
     CalendarDayOverride, CalendarDayRead, CalendarGenerateRequest, CalendarRangeOverride,
-    ClassMarkingStatusRead, MarkablePeriod, ScheduleRead, ScheduleUpsert, StudentAbsenceSummary,
-    TodayStatusRead,
+    ClassMarkingStatusRead, MarkablePeriod, PeriodMarkingStatusRead, ScheduleRead, ScheduleUpsert,
+    StudentAbsenceSummary, TodayStatusRead,
 )
 from app.schemas.attendance_excuse import ExcuseRequestRead, ExcuseRequestReview
 from app.schemas.attendance_risk import AtRiskStudentRead
-from app.schemas.attendance_trends import AttendanceTrendPoint
 from app.services import attendance as att_svc
 from app.services import attendance_calendar as cal_svc
 from app.services import attendance_excuse as excuse_svc
+from app.services import attendance_period_status as period_status_svc
 from app.services import attendance_periods as period_svc
 from app.services import attendance_risk as risk_svc
 from app.services import attendance_summary as att_summary_svc
-from app.services import attendance_trends as trends_svc
-from app.services.export_utils import rows_to_bytes
-from app.services.pdf import render_export_table
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
-
-_EXPORT_MEDIA_TYPES = {
-    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-}
-_EXPORT_EXTENSIONS = {"excel": "xlsx", "pdf": "pdf", "csv": "csv"}
 
 
 # ── School schedule ───────────────────────────────────────────────────────────
@@ -203,6 +190,19 @@ async def get_marking_status(
     return await att_summary_svc.get_marking_status(calendar_id, school_id, user_id, db)
 
 
+@router.get("/period-marking-status", response_model=list[PeriodMarkingStatusRead])
+async def get_period_marking_status(
+    calendar_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("attendance", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Period-level sibling of /marking-status — every visible (class,
+    period) pair that's actually timetabled, with its marked status. []
+    when the school hasn't opted into period-level attendance."""
+    user_id, school_id = ids
+    return await period_status_svc.get_period_marking_status(calendar_id, school_id, user_id, db)
+
+
 @router.get("/at-risk", response_model=list[AtRiskStudentRead])
 async def get_at_risk_students(
     term_id: uuid.UUID = Query(...),
@@ -236,45 +236,6 @@ async def review_excuse_request(
 ):
     user_id, school_id = ids
     return await excuse_svc.review_excuse_request(request_id, req, school_id, user_id, db)
-
-
-@router.get("/trends", response_model=list[AttendanceTrendPoint])
-async def get_attendance_trend(
-    term_id: uuid.UUID = Query(...),
-    class_id: uuid.UUID | None = Query(None),
-    ids=Depends(require_permission("attendance", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Day-by-day attendance rate for a term — every visible class's
-    students if class_id is omitted, scoped exactly like every other
-    attendance read."""
-    user_id, school_id = ids
-    return await trends_svc.get_attendance_trend(term_id, school_id, user_id, db, class_id=class_id)
-
-
-@router.get("/export")
-async def export_attendance(
-    term_id: uuid.UUID = Query(...),
-    class_id: uuid.UUID | None = Query(None),
-    fmt: str = Query("csv", pattern="^(csv|excel|pdf)$"),
-    ids=Depends(require_permission("attendance", "view")),
-    db: AsyncSession = Depends(get_db),
-):
-    user_id, school_id = ids
-    headers, rows = await trends_svc.get_attendance_export_rows(term_id, school_id, user_id, db, class_id=class_id)
-    if fmt == "pdf":
-        school = await db.get(School, school_id)
-        data = render_export_table(
-            school, "Attendance Report", headers, rows,
-            datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M"), len(rows),
-        )
-    else:
-        data = rows_to_bytes(headers, rows, fmt, sheet_title="Attendance")
-    return StreamingResponse(
-        iter([data]),
-        media_type=_EXPORT_MEDIA_TYPES[fmt],
-        headers={"Content-Disposition": f'attachment; filename="attendance.{_EXPORT_EXTENSIONS[fmt]}"'},
-    )
 
 
 @router.get("/my-classes", response_model=list[ClassRead])

@@ -17,6 +17,7 @@
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
   import AttendanceSelectors from './AttendanceSelectors.svelte';
   import AttendanceMarkingOverview from './AttendanceMarkingOverview.svelte';
+  import AttendancePeriodMarkingOverview from './AttendancePeriodMarkingOverview.svelte';
   import AttendancePeriodPicker from './AttendancePeriodPicker.svelte';
   import AttendanceRosterPanel from './AttendanceRosterPanel.svelte';
   import { queueAttendanceOffline } from './offlineQueue';
@@ -40,8 +41,12 @@
 
   const schoolQ = createQuery({ queryKey: ['my-school'], queryFn: getMySchool, staleTime: 60_000 });
   const periodAttendanceOn = $derived($schoolQ.data?.has_period_attendance ?? false);
-  // A period picked for a different class/day is stale — reset to "Whole day."
-  $effect(() => { classId; selectedDate; periodId = null; });
+  // A period picked for a different class/day would be stale — every path
+  // that changes classId/selectedDate on its own resets periodId to null
+  // explicitly (not a reactive $effect keyed on classId, since
+  // AttendancePeriodMarkingOverview's onSelect below intentionally sets
+  // both classId and periodId together — an effect would immediately
+  // clobber that back to null).
 
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
 
@@ -206,8 +211,8 @@
 {:else}
 <AttendanceSelectors
   {classId} {classes} {today} {selectedDate} {calDay} {dayTypeColor}
-  onClassChange={(id) => classId = id}
-  onDateChange={(date) => selectedDate = date}
+  onClassChange={(id) => { classId = id; periodId = null; }}
+  onDateChange={(date) => { selectedDate = date; periodId = null; }}
 />
 
 {#if $calendarQ.isPending}
@@ -234,7 +239,11 @@
   <!-- The "who's marked, who hasn't" overview — an admin (or any caller with
        more than one class in scope) lands here instead of a bare class
        picker, so they can see who to chase up or mark on behalf of. -->
-  <AttendanceMarkingOverview calendarId={calDay.id} onSelectClass={(id) => classId = id} />
+  <AttendanceMarkingOverview calendarId={calDay.id} onSelectClass={(id) => { classId = id; periodId = null; }} />
+  <AttendancePeriodMarkingOverview
+    calendarId={calDay.id} enabled={periodAttendanceOn}
+    onSelect={(cid, pid) => { classId = cid; periodId = pid; }}
+  />
 {:else if !classId}
   <div class="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
     Select a class to mark attendance.
