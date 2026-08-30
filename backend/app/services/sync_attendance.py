@@ -12,10 +12,15 @@ If AttendanceRecord.recorded_at > item.offline_session_started_at → the
 server received a newer write after the offline session began → conflict.
 (Score's equivalent field is submitted_at; AttendanceRecord's is recorded_at.)
 
-An offline-synced ABSENT mark fires the exact same guardian notifications
-(absence SMS/email, consecutive-absence trigger, chronic-absenteeism risk
-check) as the online mark_attendance() path — a family shouldn't be
-notified only when their child's teacher happened to have connectivity.
+An offline-synced whole-day ABSENT mark fires the exact same guardian
+notifications (absence SMS/email, consecutive-absence trigger, chronic-
+absenteeism risk check) as the online mark_attendance() path — a family
+shouldn't be notified only when their child's teacher happened to have
+connectivity. A period-level mark (data.period_id set) fires none of
+these, matching mark_attendance()'s own gating — see
+services/attendance_shared.py::validate_period_marking, shared by both the
+online and offline paths so a period mark can never reach AttendanceRecord
+through one route with weaker rules than the other.
 """
 from __future__ import annotations
 import uuid
@@ -36,7 +41,7 @@ from app.services import attendance_risk as risk_svc
 from app.services import email_notifications as email_svc
 from app.services import sms_notifications as sms_svc
 from app.services.academic_class import get_active_class
-from app.services.attendance_shared import _MARKABLE_TYPES, check_class_in_attendance_scope
+from app.services.attendance_shared import _MARKABLE_TYPES, check_class_in_attendance_scope, validate_period_marking
 from app.services.sync_shared import clamp_session_start, find_processed_item
 
 
@@ -64,7 +69,10 @@ async def _validate_attendance_write(
     online write, applied identically here. Returns the resolved override
     reason (None if the term isn't locked), for AttendanceAuditLog.reason."""
     await get_active_class(data.class_id, school_id, db)
-    await check_class_in_attendance_scope(data.class_id, cal.academic_term_id, user_id, db)
+    if data.period_id is not None:
+        await validate_period_marking(data.class_id, data.period_id, cal, school_id, user_id, db)
+    else:
+        await check_class_in_attendance_scope(data.class_id, cal.academic_term_id, user_id, db)
     await enforce_current_term_for_attendance(user_id, cal.academic_term_id, db)
 
     resolved_reason: str | None = None
@@ -94,7 +102,7 @@ async def _write_attendance(
         select(AttendanceRecord).where(
             AttendanceRecord.student_id == data.student_id,
             AttendanceRecord.school_calendar_id == data.school_calendar_id,
-            AttendanceRecord.period_id.is_(None),
+            AttendanceRecord.period_id == data.period_id,
         )
     )
     is_new_absent = False
@@ -108,7 +116,7 @@ async def _write_attendance(
         rec = AttendanceRecord(
             school_id=school_id, student_id=data.student_id,
             school_calendar_id=data.school_calendar_id, class_id=data.class_id,
-            status=data.status, notes=data.notes,
+            period_id=data.period_id, status=data.status, notes=data.notes,
             recorded_by_id=user_id, recorded_at=now,
         )
         db.add(rec)
@@ -129,6 +137,12 @@ async def _fire_side_effects(
     rec: AttendanceRecord, data: OutboxAttendanceData, cal: SchoolCalendar,
     is_new_absent: bool, school_id: uuid.UUID, db: AsyncSession,
 ) -> None:
+    """Guardian alerts and the chronic-absenteeism tracker key off the day's
+    real (whole-day) record only, matching mark_attendance()'s own gating —
+    a school layering period-level marks on top of it shouldn't fire a
+    second alert per lesson."""
+    if data.period_id is not None:
+        return
     if is_new_absent:
         school = await db.get(School, school_id)
         school_short = (school.short_name or school.name) if school else ""
@@ -198,7 +212,7 @@ async def _sync_attendance(
         select(AttendanceRecord).where(
             AttendanceRecord.student_id == data.student_id,
             AttendanceRecord.school_calendar_id == data.school_calendar_id,
-            AttendanceRecord.period_id.is_(None),
+            AttendanceRecord.period_id == data.period_id,
         )
     )
 
@@ -216,6 +230,7 @@ async def _sync_attendance(
                 "class_id": str(data.class_id),
                 "status": data.status.value,
                 "notes": data.notes,
+                "period_id": str(data.period_id) if data.period_id else None,
             },
             server_data={
                 "status": existing.status.value,

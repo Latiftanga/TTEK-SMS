@@ -20,19 +20,23 @@ from app.tests.test_sync import _login_as_position, _portal_login
 def _outbox_attendance_payload(
     calendar: SchoolCalendar, class_id, student: Student, status: str,
     outbox_id: str, offline_ts: str, client_op_id: str | None = None,
+    period_id=None,
 ) -> dict:
+    data = {
+        "student_id": str(student.id),
+        "school_calendar_id": str(calendar.id),
+        "class_id": str(class_id),
+        "status": status,
+    }
+    if period_id is not None:
+        data["period_id"] = str(period_id)
     return {
         "items": [{
             "outbox_id": outbox_id,
             "client_op_id": client_op_id or f"op-{outbox_id}",
             "entity_type": "attendance",
             "offline_session_started_at": offline_ts,
-            "data": {
-                "student_id": str(student.id),
-                "school_calendar_id": str(calendar.id),
-                "class_id": str(class_id),
-                "status": status,
-            },
+            "data": data,
         }]
     }
 

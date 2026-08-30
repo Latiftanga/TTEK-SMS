@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import check_term_lock_override
 from app.core.teacher_scope import enforce_current_term_for_attendance, year_for_term
 from app.models.academic import TimetableSlot
-from app.models.attendance import AttendanceAuditLog, AttendanceRecord, AttendanceStatus, DayOfWeek, SchoolCalendar, SchoolPeriod
+from app.models.attendance import AttendanceAuditLog, AttendanceRecord, AttendanceStatus, SchoolCalendar
 from app.models.school import School
 from app.models.students import Student
 from app.schemas.attendance import AttendanceMarkRequest, AttendanceRecordRead
@@ -39,54 +39,8 @@ from app.services import sms_notifications as sms_svc
 from app.services.academic_class import get_active_class
 from app.services.attendance_shared import (
     _MARKABLE_TYPES, _to_read, check_class_in_attendance_scope, check_period_attendance_scope,
+    validate_period_marking,
 )
-
-_DAYS_IN_ORDER = list(DayOfWeek)
-
-
-async def _validate_period_marking(
-    req: AttendanceMarkRequest, cal: SchoolCalendar, school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
-) -> None:
-    """Only called when req.period_id is set — the whole-day path never
-    reaches this. Confirms the school has opted in, the period is real and
-    actually falls on this calendar day's weekday (periods are a recurring
-    weekly template, so a mismatch means marking Monday's period against a
-    calendar row that's actually a Wednesday), and a subject is timetabled
-    for it — then defers the actual who-can-mark-it question to
-    check_period_attendance_scope."""
-    school = await db.get(School, school_id)
-    if not school or not school.has_period_attendance:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Period-level attendance is not enabled for this school.",
-        )
-
-    period = await db.get(SchoolPeriod, req.period_id)
-    if not period or period.school_id != school_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Period not found.")
-    if period.day_of_week != _DAYS_IN_ORDER[cal.date.weekday()]:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"{period.name} is a {period.day_of_week.value} period — this calendar day falls on a different weekday.",
-        )
-
-    year_id = await year_for_term(cal.academic_term_id, db)
-    slot = None
-    if year_id is not None:
-        slot = await db.scalar(
-            select(TimetableSlot).where(
-                TimetableSlot.class_id == req.class_id,
-                TimetableSlot.period_id == req.period_id,
-                TimetableSlot.academic_year_id == year_id,
-            )
-        )
-    if not slot:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "No subject is timetabled for this period — nothing to take attendance for.",
-        )
-
-    await check_period_attendance_scope(req.class_id, slot.subject_id, cal.academic_term_id, user_id, db)
 
 
 async def mark_attendance(
@@ -107,7 +61,7 @@ async def mark_attendance(
     await get_active_class(req.class_id, school_id, db)
 
     if req.period_id is not None:
-        await _validate_period_marking(req, cal, school_id, user_id, db)
+        await validate_period_marking(req.class_id, req.period_id, cal, school_id, user_id, db)
     else:
         await check_class_in_attendance_scope(req.class_id, cal.academic_term_id, user_id, db)
     await enforce_current_term_for_attendance(user_id, cal.academic_term_id, db)

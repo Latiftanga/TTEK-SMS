@@ -40,12 +40,18 @@ class OutboxScoreData(BaseModel):
 
 
 class OutboxAttendanceData(BaseModel):
-    """Payload for entity_type = "attendance"."""
+    """Payload for entity_type = "attendance". period_id: None = the
+    always-available whole-day roll call (unchanged); a real SchoolPeriod id
+    marks that one period instead — additive, never a replacement — only
+    accepted when School.has_period_attendance is true (see
+    services/attendance_shared.py::validate_period_marking, shared with the
+    online mark_attendance() path so neither route has weaker rules)."""
     student_id: uuid.UUID
     school_calendar_id: uuid.UUID
     class_id: uuid.UUID
     status: AttendanceStatus
     notes: str | None = None
+    period_id: uuid.UUID | None = None
 
 
 class OutboxItem(BaseModel):

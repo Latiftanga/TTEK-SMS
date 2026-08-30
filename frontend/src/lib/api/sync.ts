@@ -12,6 +12,7 @@ export interface AttendanceData {
   class_id: string;
   status: string;
   notes?: string | null;
+  period_id?: string | null;
 }
 
 export type ConflictResolution = 'CLIENT_WINS' | 'SERVER_WINS' | 'MERGED' | 'DISCARDED';

@@ -165,12 +165,10 @@
         return { saved, records };
       } catch (err: unknown) {
         // No response → network unreachable; queue for later sync — same
-        // fallback the Assessments score-entry page uses. Offline queueing
-        // stays whole-day only (a period pick never reaches this branch
-        // with a period_id) — a deliberate, smaller v1 scope.
+        // fallback the Assessments score-entry page uses. periodId flows
+        // through unchanged (undefined/null queues the whole-day mark).
         if (!(err as { response?: unknown }).response) {
-          if (periodId) throw err;
-          await queueAttendanceOffline(calDay!.id, classId, records);
+          await queueAttendanceOffline(calDay!.id, classId, records, periodId);
           return { saved: null, records };
         }
         throw err;
