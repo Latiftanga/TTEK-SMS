@@ -13,8 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.teacher_scope import year_for_term
-from app.models.academic import Class, ClassSubject, SHSProgramme, Subject
+from app.models.academic import AcademicTerm, Class, ClassSubject, SHSProgramme, Subject
 from app.models.lesson_plans import LessonPlan, LessonPlanGenerationLog, LessonPlanGenerationStage
 from app.models.school import AiConfig
 from app.models.students import StudentClassAssignment
@@ -63,16 +62,6 @@ def sync_legacy_fields_from_content(lp: LessonPlan, content: GeneratedContent) -
         )
 
 
-async def class_size(class_id: uuid.UUID, academic_year_id: uuid.UUID, db: AsyncSession) -> int:
-    return await db.scalar(
-        select(func.count()).select_from(StudentClassAssignment).where(
-            StudentClassAssignment.class_id == class_id,
-            StudentClassAssignment.academic_year_id == academic_year_id,
-            StudentClassAssignment.is_active.is_(True),
-        )
-    ) or 0
-
-
 async def build_context(
     lp: LessonPlan, school_id: uuid.UUID, db: AsyncSession, *,
     query_text: str | None = None, cs_id: uuid.UUID | None = None,
@@ -85,18 +74,38 @@ async def build_context(
 
     Pass `cs_id` when the caller already resolved it (e.g. alongside its own
     propose_curriculum_reference() call on the same class+subject) to skip a
-    redundant ClassSubject lookup."""
+    redundant ClassSubject lookup.
+
+    A single AsyncSession can't run concurrent queries (no asyncio.gather
+    here — SQLAlchemy async sessions aren't safe for that), so this is
+    written to minimize round trips instead: Class+SHSProgramme is one
+    outerjoin (same pattern as core/teacher_scope.py::classes_for_scope),
+    and the class-size count folds in its own year-for-term lookup as a
+    join rather than two sequential calls."""
     subject = await db.get(Subject, lp.subject_id)
-    cls = await db.get(Class, lp.class_id)
-    prog_name = None
-    if cls and cls.programme_id:
-        prog = await db.get(SHSProgramme, cls.programme_id)
-        prog_name = prog.name if prog else None
+
+    cls_row = (await db.execute(
+        select(Class, SHSProgramme.name.label("prog_name"))
+        .outerjoin(SHSProgramme, Class.programme_id == SHSProgramme.id)
+        .where(Class.id == lp.class_id)
+    )).first()
+    cls, prog_name = cls_row if cls_row else (None, None)
     class_label = _class_display_name(cls.level, cls.year_group, prog_name, cls.stream) if cls else "the class"
     subject_name = subject.name if subject else "the subject"
 
-    year_id = await year_for_term(lp.academic_term_id, db)
-    size = await class_size(lp.class_id, year_id, db) if year_id else 0
+    # Folds year_for_term()'s own AcademicTerm lookup into the count query
+    # itself — a missing/unset term yields no join match, so size stays 0,
+    # same as the two-step "year_id = year_for_term(...); size = ... if
+    # year_id else 0" this replaces.
+    size = await db.scalar(
+        select(func.count()).select_from(StudentClassAssignment)
+        .join(AcademicTerm, AcademicTerm.academic_year_id == StudentClassAssignment.academic_year_id)
+        .where(
+            AcademicTerm.id == lp.academic_term_id,
+            StudentClassAssignment.class_id == lp.class_id,
+            StudentClassAssignment.is_active.is_(True),
+        )
+    ) or 0
 
     recent = list(await db.scalars(
         select(LessonPlan.topic).where(
