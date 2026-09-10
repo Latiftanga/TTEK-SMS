@@ -125,6 +125,99 @@ async def test_schools_own_config_unaffected_by_exhausted_platform_cap(
         await redis_client.delete(platform_key)
 
 
+@pytest.mark.asyncio
+async def test_usage_counter_does_not_carry_over_between_configs(
+    db_session: AsyncSession, school: School, redis_permissions: None,
+):
+    """A school's own config (used up today) and the platform-default config
+    it falls back to after that config is removed must NOT share one Redis
+    counter — regression for the bug where switching configs mid-day
+    inherited the previous config's usage."""
+    from app.core.redis import redis_client
+
+    own_cfg = AiConfig(
+        school_id=school.id, provider=AiProvider.GROQ, api_key="school-key",
+        daily_limit_per_teacher=10, is_active=True,
+    )
+    db_session.add(own_cfg)
+    await db_session.flush()
+    user_id = "00000000-0000-0000-0000-000000000001"
+
+    for _ in range(8):
+        await ai_config_module.increment_usage(school.id, user_id, own_cfg)
+
+    platform_cfg = AiConfig(
+        school_id=None, provider=AiProvider.GEMINI, api_key="platform-key",
+        daily_limit_per_teacher=3, is_active=True,
+    )
+    db_session.add(platform_cfg)
+    await db_session.flush()
+    try:
+        remaining = await ai_config_module.check_daily_limit(school.id, user_id, platform_cfg, db_session)
+        assert remaining == 3  # fresh counter for this config, not 3 - 8
+    finally:
+        await redis_client.delete(f"ai_usage:{school.id}:{user_id}:{own_cfg.id}:{date.today().isoformat()}")
+        await redis_client.delete(f"ai_usage:{school.id}:{user_id}:{platform_cfg.id}:{date.today().isoformat()}")
+
+
+@pytest.mark.asyncio
+async def test_redis_unavailable_fails_closed_for_platform_default(
+    db_session: AsyncSession, school: School, monkeypatch,
+):
+    """With Redis unavailable there is no way to enforce the platform-wide
+    shared-budget cap, so the platform-default path must fail closed (503),
+    not silently allow every fallback-relying school unlimited use of
+    Tagnatek's own key."""
+    monkeypatch.setattr("app.core.redis.redis_client", None)
+    platform_cfg = AiConfig(
+        school_id=None, provider=AiProvider.GEMINI, api_key="platform-key",
+        daily_limit_per_teacher=5, is_active=True,
+    )
+    db_session.add(platform_cfg)
+    await db_session.flush()
+
+    with pytest.raises(Exception) as exc_info:
+        await ai_config_module.check_daily_limit(
+            school.id, "00000000-0000-0000-0000-000000000001", platform_cfg, db_session,
+        )
+    assert getattr(exc_info.value, "status_code", None) == 503
+
+
+@pytest.mark.asyncio
+async def test_redis_unavailable_still_allows_schools_own_key(
+    db_session: AsyncSession, school: School, monkeypatch,
+):
+    """A school's own funded key carries no shared-budget risk, so it should
+    stay allow-through (as before) when Redis is briefly unavailable."""
+    monkeypatch.setattr("app.core.redis.redis_client", None)
+    own_cfg = AiConfig(
+        school_id=school.id, provider=AiProvider.GROQ, api_key="school-key",
+        daily_limit_per_teacher=7, is_active=True,
+    )
+    db_session.add(own_cfg)
+    await db_session.flush()
+
+    remaining = await ai_config_module.check_daily_limit(
+        school.id, "00000000-0000-0000-0000-000000000001", own_cfg, db_session,
+    )
+    assert remaining == 7
+
+
+@pytest.mark.asyncio
+async def test_two_active_platform_default_rows_rejected_at_db_level(db_session: AsyncSession):
+    """uq_ai_config_one_active_per_scope (migration d6e7f8a9b0c1) backstops
+    activate_ai_provider()'s non-atomic deactivate-then-activate against a
+    genuine concurrent race — two active school_id=NULL rows must collide."""
+    from sqlalchemy.exc import IntegrityError
+
+    db_session.add(AiConfig(school_id=None, provider=AiProvider.GEMINI, api_key="k1", is_active=True))
+    await db_session.flush()
+    db_session.add(AiConfig(school_id=None, provider=AiProvider.GROQ, api_key="k2", is_active=True))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+
 # ── superadmin platform-default router ──────────────────────────────────────
 
 @pytest.mark.asyncio

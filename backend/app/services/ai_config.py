@@ -29,6 +29,7 @@ from datetime import date
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -91,7 +92,16 @@ async def activate_ai_provider(
         .values(is_active=False)
     )
     cfg.is_active = True
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # A concurrent activate call for this same scope won the race —
+        # uq_ai_config_one_active_per_scope (migration d6e7f8a9b0c1) is the
+        # backstop; surface it as a clean, retryable 409 rather than a raw 500.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Another activation for this provider scope happened at the same time. Try again.",
+        )
     return AiConfigRead.model_validate(cfg)
 
 
@@ -178,9 +188,14 @@ async def check_daily_limit(
     Return remaining per-teacher AI generations today for `cfg` (whichever
     config resolve_driver_for_generation() found — the school's own, or the
     platform default). Enforced via Redis key
-    ai_usage:{school_id}:{user_id}:{YYYY-MM-DD} — always scoped to the real
-    calling school_id even when `cfg` is the shared platform row, so two
-    different schools relying on the fallback never share one counter.
+    ai_usage:{school_id}:{user_id}:{cfg.id}:{YYYY-MM-DD} — always scoped to
+    the real calling school_id even when `cfg` is the shared platform row,
+    so two different schools relying on the fallback never share one
+    counter, AND scoped to the specific config's own id, so a school
+    switching between its own key and the platform default mid-day (or
+    replacing its own config) starts that config's counter at zero instead
+    of inheriting whatever was used against a different config with a
+    different daily_limit_per_teacher.
 
     When `cfg` IS the platform default (cfg.school_id is None), an
     additional platform-wide counter is also checked — protects Tagnatek's
@@ -190,9 +205,20 @@ async def check_daily_limit(
     from app.core.redis import redis_client
 
     if not redis_client:
-        return cfg.daily_limit_per_teacher  # Redis unavailable — allow through, don't block teachers
+        if cfg.school_id is None:
+            # Redis is what enforces the platform-wide shared-budget cap
+            # below — with it unavailable there is no way to bound usage
+            # against Tagnatek's own key, so fail closed here specifically
+            # (a school using its own funded key is unaffected either way).
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "AI usage tracking is temporarily unavailable, so the platform's "
+                "shared assistant can't verify its usage cap right now. Try again "
+                "shortly, or add the school's own AI key in School Setup → AI.",
+            )
+        return cfg.daily_limit_per_teacher  # own key — no shared-budget risk, allow through
 
-    key = f"ai_usage:{school_id}:{user_id}:{date.today().isoformat()}"
+    key = f"ai_usage:{school_id}:{user_id}:{cfg.id}:{date.today().isoformat()}"
     used_raw = await redis_client.get(key)
     used = int(used_raw) if used_raw else 0
     remaining = cfg.daily_limit_per_teacher - used
@@ -218,12 +244,13 @@ async def check_daily_limit(
 
 async def increment_usage(school_id: uuid.UUID, user_id: uuid.UUID, cfg: AiConfig) -> None:
     """Increment the per-teacher Redis counter (25-hour TTL, clears after
-    midnight); also increments the platform-wide counter when `cfg` is the
-    platform-default row."""
+    midnight), keyed by cfg.id so switching configs doesn't inherit a prior
+    config's usage (see check_daily_limit's docstring); also increments the
+    platform-wide counter when `cfg` is the platform-default row."""
     from app.core.redis import redis_client
     if not redis_client:
         return
-    key = f"ai_usage:{school_id}:{user_id}:{date.today().isoformat()}"
+    key = f"ai_usage:{school_id}:{user_id}:{cfg.id}:{date.today().isoformat()}"
     await redis_client.incr(key)
     await redis_client.expire(key, 90_000)  # 25 hours
 

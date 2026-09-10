@@ -109,7 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // still have read/manage access at the API level for oversight, via
       // the same assessments.approve_scores bypass Assessments itself uses,
       // but there's no admin-facing page for it, so no nav entry for them).
-      { href: '/lesson-plans', label: 'Lesson Plans', icon: IC.lessonPlans, roles: ['staff'], teachingOnly: true },
+      { href: '/lesson-plans', label: 'Lesson Planner', icon: IC.lessonPlans, roles: ['staff'], teachingOnly: true },
       // "What do I teach today/tomorrow?" — any subject teacher, not just a
       // class teacher, mirrors Assessments' teachingOnly gate. Admin/
       // approver manage the underlying schedule from the class detail page

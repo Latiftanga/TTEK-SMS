@@ -5,7 +5,15 @@ Each school configures one AI provider. The school admin provides the API key;
 teachers never see or pay for it directly.
 
 DEFAULT MODELS (used when AiConfig.model is NULL):
-  GEMINI     → gemini-2.0-flash          (free tier: 1 500 req/day)
+  GEMINI     → gemini-3.6-flash          (free tier — confirmed live against
+                                           a real key: gemini-2.0-flash 404s
+                                           "no longer available" — retired
+                                           2026-06-01; gemini-2.5-flash ALSO
+                                           404s for a new key/account
+                                           specifically, Google's own error
+                                           message names gemini-3.6-flash as
+                                           the replacement; verified working
+                                           with a real generateContent call)
   GROQ       → llama-3.3-70b-versatile   (free tier: fast, generous quota)
   ANTHROPIC  → claude-haiku-4-5-20251001 (cheapest Anthropic model, ~$0.001/note)
   OPENAI     → gpt-4o-mini               (cheapest OpenAI model)
@@ -49,20 +57,54 @@ def _extract_json(text: str) -> str:
     return m.group(1) if m else text.strip()
 
 
+async def generate_safe(driver: AiDriver, prompt: str, system: str = "") -> str:
+    """The one place every call site should reach driver.generate() through
+    — a bare driver.generate() call has no error handling of its own and
+    will crash with a raw, unhandled exception on any provider-level
+    failure (confirmed live: a real Gemini key hit this both via a
+    genuinely deprecated model — a clean, deterministic httpx.HTTPStatusError
+    — and via a transient network hiccup with an empty httpx.RequestError
+    message that succeeded on a plain manual retry).
+
+    httpx.HTTPStatusError (a real 4xx/5xx response — bad key, deprecated
+    model, rate limit) is never retried: it will just fail again
+    identically. httpx.RequestError (connection reset, timeout — no
+    response was ever received) is retried once, since this class of
+    failure has been observed to be transient in practice. Either way, the
+    caller gets a clean 502 naming the real cause, never a raw 500."""
+    last_exc: httpx.RequestError | None = None
+    for attempt in range(2):
+        try:
+            return await driver.generate(prompt, system)
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                f"The AI provider request failed: {type(exc).__name__}: {exc}",
+            ) from exc
+        except httpx.RequestError as exc:
+            last_exc = exc
+    raise HTTPException(
+        status.HTTP_502_BAD_GATEWAY,
+        f"The AI provider request failed after retrying: {type(last_exc).__name__}: {last_exc}",
+    )
+
+
 async def generate_json(driver: AiDriver, prompt: str, system: str, schema: type[T]) -> T:
     """Structured-output helper layered on top of the existing single-turn
     generate() — none of the four drivers below have native JSON-mode/
     function-calling, so this is prompt-engineering + parse/validate, not a
     provider API change. Retries once (a fresh, more forceful instruction) on
     a parse/validation failure before raising a clean 502 the caller can
-    surface to the teacher rather than a raw exception."""
+    surface to the teacher rather than a raw exception. A provider-level
+    failure itself is handled by generate_safe() (its own retry-vs-fail-fast
+    distinction is independent of this function's JSON-retry loop)."""
     json_instruction = (
         f"{system}\n\nRespond with ONLY valid JSON matching this exact shape "
         f"(no markdown, no commentary, no code fence):\n{schema.model_json_schema()}"
     )
     last_error: Exception | None = None
     for attempt in range(2):
-        raw = await driver.generate(prompt, json_instruction)
+        raw = await generate_safe(driver, prompt, json_instruction)
         try:
             return schema.model_validate(json.loads(_extract_json(raw)))
         except (json.JSONDecodeError, ValidationError) as exc:
@@ -84,7 +126,7 @@ class GeminiDriver(AiDriver):
 
     def __init__(self, api_key: str, model: str | None) -> None:
         self._key  = api_key
-        self._model = model or "gemini-2.0-flash"
+        self._model = model or "gemini-3.6-flash"
 
     async def generate(self, prompt: str, system: str = "") -> str:
         parts = []

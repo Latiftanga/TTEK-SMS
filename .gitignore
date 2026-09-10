@@ -158,6 +158,10 @@ frontend/build/
 
 # Node
 frontend/node_modules/
+scripts/screenshot/node_modules/
+
+# Dev screenshot-tool output — throwaway captures, may contain live dev data
+scripts/screenshot/screenshots/*.png
 .envrc
 .venv
 env/

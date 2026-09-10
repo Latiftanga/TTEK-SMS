@@ -68,6 +68,7 @@ export interface AdminDashboard extends DashboardExtras {
   term_expected: number;
   pending_approvals: number;
   class_attendance: ClassAttendanceLine[];
+  today_is_markable: boolean;
 }
 
 export interface ApproverDashboard extends DashboardExtras {

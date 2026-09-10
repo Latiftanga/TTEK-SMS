@@ -5,11 +5,33 @@ description: Project-specific recipe for verifying TTEK-SMS changes against the 
 
 # TTEK-SMS verify recipe
 
-No browser automation exists in this sandbox (no Playwright/Chromium/Xvfb,
-confirmed 2026-07-11 — recheck before assuming still true). There is also no
-GUI verifier here. Given that, verify the **backend at the real HTTP surface**
-(live docker compose stack, real Postgres, no mocks) and the **frontend via
-SSR page-load + svelte-check** — not full interactive browser drives.
+Verify the **backend at the real HTTP surface** (live docker compose stack,
+real Postgres, no mocks) and the **frontend via SSR page-load + svelte-check**
+for routine changes — not a full interactive browser drive for every change.
+
+Real browser screenshots ARE available (added 2026-09-09, superseding the
+2026-07-11 "no browser automation" note) via the `playwright` compose service
+(`scripts/screenshot/`, `tools` profile — never starts with a plain
+`docker compose up`). Use it when a change is visual/layout-sensitive, or
+when reasoning from source risks missing a real render bug (confirmed once
+already: a dashboard alert condition was correct in source but only obviously
+wrong once actually screenshotted):
+
+```bash
+docker compose run --rm playwright --path=/dashboard --out=dashboard.png \
+  --email=admin@shs.school --password=Demo1234! --school_code=SHS-DEMO
+# unauthenticated page: omit --email/--password/--school_code
+# superadmin: --superadmin --email=... --password=... (no school_code)
+# --full-page, --dark, --wait-for=<selector>, --path=/some/route also supported
+```
+
+Output lands in `scripts/screenshot/screenshots/<out>` on the host — read it
+with the Read tool. First build (`docker compose build playwright`) downloads
+Chromium (~190MB) from Playwright's CDN, which has been flaky in this exact
+sandbox (stalls mid-download, connection reset) — retry the build if it fails;
+the image is cached afterward. The frontend's `vite.config.ts` allows the
+`frontend` hostname specifically for this container to reach it over the
+docker network (`server.allowedHosts`) — don't remove that entry.
 
 ## Stack
 
@@ -80,10 +102,11 @@ classes/years/fee structures) is fine to drive live — it's additive.
 
 ## Frontend
 
-No interactive drive possible. Do instead:
+For routine changes, the HTTP-surface fallback is enough and doesn't need a
+browser build:
 - `docker compose exec frontend npm run check` — full svelte-check, compare
-  error count against baseline (was 0 as of 2026-07-11; any new errors are a
-  regression signal even though this isn't "running the app").
+  error count against baseline (0 errors as of 2026-09-08; any new errors are
+  a regression signal even though this isn't "running the app").
 - `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/<route>` for a
   handful of touched routes — confirms SSR doesn't crash (login page, and any
   public/unauthenticated route). Authenticated routes will 200 with a login
@@ -92,6 +115,6 @@ No interactive drive possible. Do instead:
 - `docker compose logs frontend --tail 30` after touching files — should show
   clean Vite HMR reloads, no stack traces.
 
-If Playwright/Chromium ever gets added to this repo, prefer driving the
-browser directly over this HTTP-surface fallback — update this file's opening
-paragraph when that happens.
+For a visual/layout change, or when the change touches conditional styling
+(alert states, empty states, anything keyed off live data), use the real
+`playwright` screenshot tool described above instead of guessing from source.

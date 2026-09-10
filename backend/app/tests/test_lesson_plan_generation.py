@@ -87,6 +87,31 @@ def _lesson_body_json(intro="New intro", main="New main", closure="New closure")
     return json.dumps({"introduction": intro, "main_lesson": main, "closure": closure})
 
 
+def test_validate_lessons_prefers_descriptive_content_standard_over_terse_indicator():
+    """Regression: a terse GES indicator code (e.g. "B7.1.1.1") almost never
+    appears verbatim in natural lesson prose, so using it as the keyword
+    source made the overlap check fire an almost-always-spurious warning.
+    content_standard (descriptive prose) must be preferred when both are set."""
+    from app.services.lesson_plan_prompt import validate_lessons
+    from app.schemas.lesson_plans import LessonEntry
+    import uuid
+
+    lesson = LessonEntry(
+        school_calendar_id=uuid.uuid4(), period_id=uuid.uuid4(),
+        lesson_date=date(2024, 9, 9), start_time="08:00", end_time="08:45",
+        duration_minutes=45, introduction="We will study fractions today.",
+        main_lesson="Fractions represent parts of a whole number.",
+        closure="Review of fractions.", delivery_status="DRAFT",
+    )
+    # content_standard shares real words with the lesson text; the terse
+    # indicator code alone would not.
+    warnings_with_standard = validate_lessons([lesson], "Number and fractions")
+    assert not any("doesn't obviously reference" in w for w in warnings_with_standard)
+
+    warnings_indicator_only = validate_lessons([lesson], "B7.1.1.1")
+    assert any("doesn't obviously reference" in w for w in warnings_indicator_only)
+
+
 class _StubDriver:
     def __init__(self, response: str):
         self._response = response
@@ -97,6 +122,21 @@ class _StubDriver:
 
 def _patch_driver(monkeypatch, response: str) -> None:
     monkeypatch.setattr(ai_config_module, "build_ai_driver", lambda *a, **kw: _StubDriver(response))
+
+
+class _FailingDriver:
+    """Simulates a real provider-level failure (bad key, wrong/deprecated
+    model, rate limit) — every real driver's generate() raises exactly this
+    shape via httpx's own raise_for_status()."""
+    async def generate(self, prompt: str, system: str = "") -> str:
+        import httpx
+        request = httpx.Request("POST", "https://example.invalid")
+        response = httpx.Response(404, request=request, text="model not found")
+        raise httpx.HTTPStatusError("404 Not Found", request=request, response=response)
+
+
+def _patch_failing_driver(monkeypatch) -> None:
+    monkeypatch.setattr(ai_config_module, "build_ai_driver", lambda *a, **kw: _FailingDriver())
 
 
 async def _create_plan(client: AsyncClient, teacher_auth: dict, academic_term, school_class, subject) -> dict:
@@ -128,6 +168,89 @@ async def test_generate_skeleton_success(
     content = resp.json()["generated_content"]
     assert content["essential_questions"] == ["What is a fraction?"]
     assert content["lessons"] == []
+
+
+@pytest.mark.asyncio
+async def test_generate_skeleton_populates_teaching_resources_once_blank(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Regression: a teacher using chat/generation exclusively saw Plan
+    details' teaching_resources/activities/assessment_strategy sitting
+    permanently blank even though a real, complete plan existed —
+    generated_content was never reflected onto these legacy scalar fields
+    at all. Reported directly ("teacher learner resource... not populated")."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+    _patch_driver(monkeypatch, _skeleton_json())
+
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+    assert lp["teaching_resources"] is None
+    resp = await client.post(f"/lesson-plans/{lp['id']}/generate-skeleton", headers=teacher_auth)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["teaching_resources"] == "- Fraction tiles"
+
+
+@pytest.mark.asyncio
+async def test_generate_skeleton_never_overwrites_manual_teaching_resources(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+
+    resp = await client.post("/lesson-plans", json={
+        **_payload(academic_term, school_class, subject), "teaching_resources": "Textbook, chalkboard",
+    }, headers=teacher_auth)
+    lp = resp.json()
+
+    _patch_driver(monkeypatch, _skeleton_json())
+    skel = await client.post(f"/lesson-plans/{lp['id']}/generate-skeleton", headers=teacher_auth)
+    assert skel.json()["teaching_resources"] == "Textbook, chalkboard"
+
+
+@pytest.mark.asyncio
+async def test_generate_lessons_populates_activities_and_assessment_strategy(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+    await _add_period_and_slot(db_session, school, school_class, subject, academic_term, date(2024, 9, 9), number=1)
+
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+    _patch_driver(monkeypatch, _skeleton_json())
+    await client.post(f"/lesson-plans/{lp['id']}/generate-skeleton", headers=teacher_auth)
+
+    _patch_driver(monkeypatch, _lessons_json(1))
+    resp = await client.post(f"/lesson-plans/{lp['id']}/generate-lessons", headers=teacher_auth)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "Lesson 1 main" in data["activities"]
+    assert "Oral" in data["assessment_strategy"]
+    assert "Written" in data["assessment_strategy"]
+
+
+@pytest.mark.asyncio
+async def test_generate_skeleton_502s_cleanly_on_provider_failure(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Regression: generate_json() never protected its driver.generate()
+    call — a real provider-level failure (bad key, deprecated model, rate
+    limit) crashed with a raw unhandled 500 instead of a clean 502."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+
+    _patch_failing_driver(monkeypatch)
+    resp = await client.post(f"/lesson-plans/{lp['id']}/generate-skeleton", headers=teacher_auth)
+    assert resp.status_code == 502
+    assert "AI provider request failed" in resp.text
 
 
 @pytest.mark.asyncio
@@ -198,6 +321,73 @@ async def test_generate_skeleton_never_overwrites_existing_content_standard(
     resp = await client.post(f"/lesson-plans/{lp['id']}/generate-skeleton", headers=teacher_auth)
     assert resp.status_code == 200, resp.text
     assert resp.json()["content_standard"] == "Teacher-entered standard"
+
+
+class _PromptCapturingDriver:
+    """Records every prompt it's asked to generate against, shared via
+    closure across driver instances (build_ai_driver() is called fresh per
+    generation call, same shape as _CountingStubDriver in
+    test_lesson_plan_chat.py)."""
+    def __init__(self, response: str, prompts: list[str]):
+        self._response = response
+        self._prompts = prompts
+
+    async def generate(self, prompt: str, system: str = "") -> str:
+        self._prompts.append(prompt)
+        return self._response
+
+
+@pytest.mark.asyncio
+async def test_generate_lessons_prompt_is_grounded_in_uploaded_curriculum(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Regression: generate_lessons()/regenerate_lesson()/regenerate_assessment()
+    must actually ground their prompts in the school's uploaded curriculum
+    material (services/lesson_plan_prompt.py::build_context), not just
+    generate_skeleton()'s one-time content-standard proposal."""
+    from app.models.academic import ClassSubject as ClassSubjectModel
+    from app.services.curriculum_materials import upload_material
+    from app.services import curriculum_extraction
+    from fastapi import UploadFile
+    from weasyprint import HTML
+    import io
+
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+    await _add_period_and_slot(db_session, school, school_class, subject, academic_term, date(2024, 9, 9), number=1)
+
+    cs = await db_session.scalar(
+        select(ClassSubjectModel).where(
+            ClassSubjectModel.class_id == school_class.id, ClassSubjectModel.subject_id == subject.id,
+        )
+    )
+    me = await client.get("/auth/me", headers=teacher_auth)
+    # plainto_tsquery ANDs every word of the query — the plan's default
+    # topic is "Introduction to Fractions" (see _payload()), so the uploaded
+    # text must contain both "introduction" and "fractions" to be found by
+    # get_curriculum_excerpts(..., lp.topic, ...), not just "fractions" alone.
+    pdf_bytes = HTML(
+        string="<html><body><p>Introduction to Fractions: they represent parts of a whole number.</p></body></html>"
+    ).write_pdf()
+    upload = UploadFile(filename="textbook.pdf", file=io.BytesIO(pdf_bytes), headers={"content-type": "application/pdf"})
+    material = await upload_material(cs.id, "TEXTBOOK", upload, school.id, me.json()["id"], db_session)
+    await curriculum_extraction._run(db_session, material.id)
+
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+    _patch_driver(monkeypatch, _skeleton_json())
+    await client.post(f"/lesson-plans/{lp['id']}/generate-skeleton", headers=teacher_auth)
+
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        ai_config_module, "build_ai_driver",
+        lambda *a, **kw: _PromptCapturingDriver(_lessons_json(1), prompts),
+    )
+    resp = await client.post(f"/lesson-plans/{lp['id']}/generate-lessons", headers=teacher_auth)
+    assert resp.status_code == 200, resp.text
+    assert len(prompts) == 1
+    assert "they represent parts of a whole number" in prompts[0]
 
 
 # ── generate-lessons ─────────────────────────────────────────────────────────

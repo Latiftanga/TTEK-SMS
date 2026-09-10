@@ -85,6 +85,39 @@ async def test_upload_success_and_list_and_delete(client: AsyncClient, auth: dic
 
 
 @pytest.mark.asyncio
+async def test_upload_survives_enqueue_failure_without_orphaning_file(
+    client: AsyncClient, auth: dict, class_subject: ClassSubject, db_session: AsyncSession, monkeypatch,
+):
+    """If queuing the background extraction job fails right after a
+    successful upload, the request must not roll back the already-written
+    DB row/file (which would orphan the file on disk) — it should record
+    the failure the same way a worker-side extraction failure would."""
+    import app.routers.curriculum_materials as router_module
+
+    async def _broken_get_arq():
+        raise ConnectionError("redis unreachable")
+
+    monkeypatch.setattr(router_module, "get_arq", _broken_get_arq)
+
+    pdf_bytes = _real_pdf_bytes(["Chapter 1: Fractions are parts of a whole number."])
+    created = await client.post(
+        f"/curriculum-materials/{class_subject.id}", params={"document_type": "TEXTBOOK"}, headers=auth,
+        files={"file": ("textbook.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+    )
+    assert created.status_code == 201, created.text
+    data = created.json()
+    assert data["extraction_status"] == "FAILED"
+
+    from pathlib import Path
+    from app.core.config import settings
+    mat = await db_session.get(CurriculumMaterial, data["id"])
+    assert mat is not None  # the DB row was NOT rolled back
+    file_path = Path(settings.secure_upload_dir) / mat.file_path
+    assert file_path.exists()  # the file is not orphaned — a real row still points to it
+    file_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
 async def test_upload_404_for_cross_school_class_subject(client: AsyncClient, auth: dict):
     import uuid
     resp = await client.post(

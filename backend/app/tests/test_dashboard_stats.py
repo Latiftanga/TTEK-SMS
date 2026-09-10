@@ -270,6 +270,58 @@ async def test_admin_dashboard_class_attendance_line_marked_flag(
     assert line["present"] == 0
 
 
+async def test_admin_dashboard_today_is_markable_false_with_no_calendar_day(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear, academic_term: AcademicTerm,
+    school_class: Class, student: Student, redis_permissions: None,
+):
+    """Regression: with no SchoolCalendar row for today (e.g. the term has
+    ended and nobody generated a calendar past its end date), the dashboard
+    used to still show every class as "not marked · Mark now", a dead-end
+    CTA since /attendance itself refuses to mark a day with no calendar
+    entry. today_is_markable tells the frontend to render a calm state
+    instead of a false alarm."""
+    db_session.add(StudentClassAssignment(
+        school_id=school.id, student_id=student.id, class_id=school_class.id,
+        academic_year_id=academic_year.id, is_active=True,
+    ))
+    await db_session.flush()
+
+    head_auth = await _login_as_position(client, auth, db_session, school, "HEAD")
+
+    resp = await client.get("/dashboard", headers=head_auth)
+    body = resp.json()
+    assert body["today_is_markable"] is False
+    line = next(c for c in body["class_attendance"] if c["class_id"] == str(school_class.id))
+    assert line["marked"] is False
+
+    cal = SchoolCalendar(
+        school_id=school.id, date=date.today(), day_type=DayType.SCHOOL_DAY, academic_term_id=academic_term.id,
+    )
+    db_session.add(cal)
+    await db_session.flush()
+
+    resp = await client.get("/dashboard", headers=head_auth)
+    assert resp.json()["today_is_markable"] is True
+
+
+async def test_admin_dashboard_today_is_markable_false_on_non_markable_day_type(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    academic_year: AcademicYear, academic_term: AcademicTerm, redis_permissions: None,
+):
+    """A calendar row can exist for today and still not be markable — a
+    weekend or public holiday. today_is_markable must check day_type, not
+    just row existence."""
+    db_session.add(SchoolCalendar(
+        school_id=school.id, date=date.today(), day_type=DayType.WEEKEND, academic_term_id=academic_term.id,
+    ))
+    await db_session.flush()
+
+    head_auth = await _login_as_position(client, auth, db_session, school, "HEAD")
+    resp = await client.get("/dashboard", headers=head_auth)
+    assert resp.json()["today_is_markable"] is False
+
+
 # ── Teacher dashboard: same is_active gap, plus LATE/EXCUSED "marked" gap ─────
 # Both scenarios exercise dashboard_staff.py's _class_snapshot(); combined into
 # one dashboard call (one login) rather than two, to match the fixture shape.

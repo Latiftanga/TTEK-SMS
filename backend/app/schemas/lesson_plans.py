@@ -13,8 +13,11 @@ class LessonPlanCreate(BaseModel):
     academic_term_id: uuid.UUID
     week_start_date: date  # any date in the target week — normalized server-side
     topic: str = Field(min_length=1, max_length=300)
-    content_standard: str | None = Field(default=None, max_length=300)
-    indicator: str | None = Field(default=None, max_length=300)
+    # No max_length: a real extracted indicator/content-standard sentence
+    # (autofilled from a CurriculumUnit) can run well past what a short
+    # manual entry would — matches learning_objectives' own unbounded Text.
+    content_standard: str | None = None
+    indicator: str | None = None
     learning_objectives: str | None = None
     core_competencies: str | None = Field(default=None, max_length=300)
     teaching_resources: str | None = None
@@ -25,12 +28,17 @@ class LessonPlanCreate(BaseModel):
     # learning_objectives are filled server-side from the linked
     # CurriculumStandard row if the caller left them blank.
     curriculum_standard_id: uuid.UUID | None = None
+    # A second, independent optional autofill source — a specific
+    # machine-extracted CurriculumUnit the teacher picked from a short
+    # list. Also fills strand/sub_strand, which curriculum_standard_id
+    # alone does not carry. See services/lesson_plans.py::_resolve_curriculum_unit.
+    curriculum_unit_id: uuid.UUID | None = None
 
 
 class LessonPlanUpdate(BaseModel):
     topic: str | None = Field(default=None, min_length=1, max_length=300)
-    content_standard: str | None = Field(default=None, max_length=300)
-    indicator: str | None = Field(default=None, max_length=300)
+    content_standard: str | None = None
+    indicator: str | None = None
     learning_objectives: str | None = None
     core_competencies: str | None = Field(default=None, max_length=300)
     teaching_resources: str | None = None
@@ -38,6 +46,7 @@ class LessonPlanUpdate(BaseModel):
     assessment_strategy: str | None = None
     reflection_notes: str | None = None
     curriculum_standard_id: uuid.UUID | None = None
+    curriculum_unit_id: uuid.UUID | None = None
 
 
 # ── AI-generated structured content ─────────────────────────────────────────
@@ -78,13 +87,23 @@ class LessonEntry(BaseModel):
     re-open can detect if the timetable has since changed underneath it.
     delivery_status is named distinctly from LessonPlan.status (the plan-level
     approval workflow) to avoid the spec's two different "status" concepts
-    colliding."""
-    school_calendar_id: uuid.UUID
-    period_id: uuid.UUID
-    lesson_date: date
-    start_time: time
-    end_time: time
-    duration_minutes: int
+    colliding.
+
+    school_calendar_id/period_id/lesson_date/start_time/end_time/
+    duration_minutes are all nullable together — a class with no real
+    timetable configured for this class+subject+week has no real calendar
+    day/period to attach to at all (see
+    services/lesson_plan_occurrences.py::get_occurrences_or_require_count).
+    Such a lesson is a teacher-declared placeholder identified instead by
+    sequence_index (its 1-based position within the plan's lessons list) —
+    regenerate_lesson looks it up by whichever identity is present."""
+    school_calendar_id: uuid.UUID | None = None
+    period_id: uuid.UUID | None = None
+    sequence_index: int | None = None
+    lesson_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    duration_minutes: int | None = None
     introduction: str
     main_lesson: str
     closure: str
@@ -157,8 +176,11 @@ class LessonPlanRead(BaseModel):
     activities: str | None
     assessment_strategy: str | None
     reflection_notes: str | None
+    strand: str | None
+    sub_strand: str | None
     created_by_id: uuid.UUID
     curriculum_standard_id: uuid.UUID | None
+    curriculum_unit_id: uuid.UUID | None
     generated_content: GeneratedContent | None
     status: LessonPlanStatus
     reviewed_by_staff_id: uuid.UUID | None
@@ -185,8 +207,24 @@ class ChatMessageRead(BaseModel):
 
 
 class RegenerateLessonRequest(BaseModel):
-    school_calendar_id: uuid.UUID
-    period_id: uuid.UUID
+    """Either (school_calendar_id, period_id) for a real-occurrence lesson,
+    or sequence_index for a teacher-declared (no-timetable) placeholder —
+    see LessonEntry's own docstring."""
+    school_calendar_id: uuid.UUID | None = None
+    period_id: uuid.UUID | None = None
+    sequence_index: int | None = None
+
+
+class GenerateLessonsRequest(BaseModel):
+    """lesson_count is only consulted when the class+subject genuinely has
+    no real timetable data for this week (resolve_week_occurrences returns
+    none) — whenever a real timetable exists, its count stays authoritative
+    and this is ignored, never an override."""
+    lesson_count: int | None = Field(default=None, ge=1, le=20)
+
+
+class FinalizeChatRequest(BaseModel):
+    lesson_count: int | None = Field(default=None, ge=1, le=20)
 
 
 class LessonPlanAiDraftRequest(BaseModel):

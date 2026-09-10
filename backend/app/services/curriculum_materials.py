@@ -111,6 +111,55 @@ async def upload_material(
     return _to_read(mat)
 
 
+async def get_material_or_404(material_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> CurriculumMaterial:
+    mat = await db.scalar(
+        select(CurriculumMaterial).where(CurriculumMaterial.id == material_id, CurriculumMaterial.school_id == school_id)
+    )
+    if not mat:
+        raise HTTPException(404, "Curriculum material not found.")
+    return mat
+
+
+async def mark_unit_extraction_pending(
+    material_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
+) -> CurriculumMaterialRead:
+    mat = await get_material_or_404(material_id, school_id, db)
+    mat.unit_extraction_status = ExtractionStatus.PENDING
+    mat.unit_extraction_error = None
+    await db.flush()
+    return _to_read(mat)
+
+
+async def mark_unit_extraction_failed(
+    material_id: uuid.UUID, school_id: uuid.UUID, error: str, db: AsyncSession,
+) -> CurriculumMaterialRead:
+    """Same fire-and-forget-enqueue-failure shape as mark_extraction_failed
+    below, for the second (unit) extraction pipeline's own enqueue step."""
+    mat = await get_material_or_404(material_id, school_id, db)
+    mat.unit_extraction_status = ExtractionStatus.FAILED
+    mat.unit_extraction_error = f"Could not queue unit extraction: {error}. Try again."
+    await db.flush()
+    return _to_read(mat)
+
+
+async def mark_extraction_failed(
+    material_id: uuid.UUID, school_id: uuid.UUID, error: str, db: AsyncSession,
+) -> CurriculumMaterialRead:
+    """Used when queuing the background extraction job itself fails (Redis/
+    ARQ unreachable right after a successful upload) — records the failure
+    the same way the worker itself would on a read failure (services/
+    curriculum_extraction.py::_run), rather than letting the exception
+    propagate and roll back the request: the DB row and file were already
+    committed by upload_material() above, so an unhandled exception here
+    would roll back the row while leaving the file orphaned on disk — the
+    same bug class already fixed once for services/documents.py (12bs)."""
+    mat = await db.get(CurriculumMaterial, material_id)
+    mat.extraction_status = ExtractionStatus.FAILED
+    mat.extraction_error = f"Could not queue text extraction: {error}. Try re-uploading."
+    await db.flush()
+    return _to_read(mat)
+
+
 async def list_materials(
     class_subject_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession,
 ) -> list[CurriculumMaterialRead]:

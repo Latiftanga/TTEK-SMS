@@ -68,6 +68,18 @@ class CurriculumMaterial(Base, UUIDPrimaryKey, SchoolScopedMixin):
     # silently left looking like extraction worked.
     extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # A second, independent pipeline stage from the page-text extraction
+    # above (services/curriculum_extraction.py) — structured CurriculumUnit
+    # rows (services/curriculum_unit_extraction.py), admin-triggered
+    # separately since it costs many more AI calls. Reuses ExtractionStatus:
+    # a document can have perfectly good page text and still fail structured
+    # extraction, or vice versa in theory, so the two statuses are tracked
+    # independently rather than overloading the one field above.
+    unit_extraction_status: Mapped[ExtractionStatus] = mapped_column(
+        SAEnum(ExtractionStatus, name="extractionstatus"), nullable=False, default=ExtractionStatus.PENDING,
+    )
+    unit_extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class CurriculumMaterialChunk(Base, UUIDPrimaryKey, SchoolScopedMixin):
     """One page of usable extracted text from a CurriculumMaterial.

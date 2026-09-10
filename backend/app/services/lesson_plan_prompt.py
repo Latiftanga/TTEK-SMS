@@ -37,6 +37,32 @@ def get_content(lp: LessonPlan) -> GeneratedContent:
     return GeneratedContent.model_validate(lp.generated_content) if lp.generated_content else GeneratedContent()
 
 
+def sync_legacy_fields_from_content(lp: LessonPlan, content: GeneratedContent) -> None:
+    """Keeps LessonPlan's own legacy scalar fields (teaching_resources/
+    activities/assessment_strategy — the "Plan details" panel's manual
+    fields) as a readable summary of the AI-generated content, populated
+    only the first time each becomes available and never overwritten again
+    — the same "never clobber a value that's already set" rule already
+    used for content_standard/indicator/learning_objectives (see
+    services/lesson_plans.py::create_lesson_plan/update_lesson_plan).
+    Without this, a teacher using chat/generation exclusively would see
+    Plan details' fields sitting permanently blank even though a real,
+    complete plan exists — confusing, reported directly."""
+    if not lp.teaching_resources and content.teaching_learning_resources:
+        lp.teaching_resources = "\n".join(f"- {r}" for r in content.teaching_learning_resources)
+    if not lp.activities and content.lessons:
+        lp.activities = "\n\n".join(
+            f"{l.lesson_date.isoformat() if l.lesson_date else f'Lesson {l.sequence_index}'}: {l.main_lesson}"
+            for l in content.lessons
+        )
+    if not lp.assessment_strategy and content.assessment:
+        a = content.assessment
+        lp.assessment_strategy = (
+            f"Formative ({a.formative.mode}): {a.formative.task} — {a.formative.mark_scheme}\n"
+            f"Summative ({a.transcript_assessment.mode}): {a.transcript_assessment.task} — {a.transcript_assessment.rubric}"
+        )
+
+
 async def class_size(class_id: uuid.UUID, academic_year_id: uuid.UUID, db: AsyncSession) -> int:
     return await db.scalar(
         select(func.count()).select_from(StudentClassAssignment).where(
@@ -47,7 +73,19 @@ async def class_size(class_id: uuid.UUID, academic_year_id: uuid.UUID, db: Async
     ) or 0
 
 
-async def build_context(lp: LessonPlan, school_id: uuid.UUID, db: AsyncSession) -> str:
+async def build_context(
+    lp: LessonPlan, school_id: uuid.UUID, db: AsyncSession, *,
+    query_text: str | None = None, cs_id: uuid.UUID | None = None,
+) -> str:
+    """Shared by every generation/chat call site. Always includes the
+    school's real uploaded curriculum excerpts (keyed on `query_text`,
+    defaulting to the plan's own topic) — every stage that produces actual
+    lesson/assessment content, not just generate_skeleton's one-time
+    standard/indicator proposal, needs to be grounded in what was uploaded.
+
+    Pass `cs_id` when the caller already resolved it (e.g. alongside its own
+    propose_curriculum_reference() call on the same class+subject) to skip a
+    redundant ClassSubject lookup."""
     subject = await db.get(Subject, lp.subject_id)
     cls = await db.get(Class, lp.class_id)
     prog_name = None
@@ -83,6 +121,9 @@ async def build_context(lp: LessonPlan, school_id: uuid.UUID, db: AsyncSession) 
         lines.append(f"Core competencies to weave in: {lp.core_competencies}")
     if recent:
         lines.append(f"Recent topics taught to this class in this subject: {'; '.join(recent)}")
+
+    excerpts = await get_curriculum_excerpts(lp.class_id, lp.subject_id, query_text or lp.topic, school_id, db, cs_id=cs_id)
+    lines.append(f"Curriculum excerpts (ground your answer in these when relevant, cite document + page):\n{excerpts}")
     return "\n".join(lines)
 
 
@@ -119,7 +160,7 @@ _REFERENCE_GUARDRAILS = (
 )
 
 
-async def _class_subject_id(class_id: uuid.UUID, subject_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> uuid.UUID | None:
+async def class_subject_id(class_id: uuid.UUID, subject_id: uuid.UUID, school_id: uuid.UUID, db: AsyncSession) -> uuid.UUID | None:
     return await db.scalar(
         select(ClassSubject.id).where(
             ClassSubject.class_id == class_id, ClassSubject.subject_id == subject_id, ClassSubject.school_id == school_id,
@@ -129,14 +170,20 @@ async def _class_subject_id(class_id: uuid.UUID, subject_id: uuid.UUID, school_i
 
 async def get_curriculum_excerpts(
     class_id: uuid.UUID, subject_id: uuid.UUID, query_text: str, school_id: uuid.UUID, db: AsyncSession,
+    *, cs_id: uuid.UUID | None = None,
 ) -> str:
     """Real, uploaded-material excerpts relevant to `query_text` (usually a
     lesson topic or the latest chat message) — grounds a generation/chat
     prompt in the school's own curriculum content instead of generic
     knowledge. Falls back to a plain "nothing found" note, not a blank
     string, so the model is told explicitly rather than left to guess why
-    no excerpts appeared."""
-    cs_id = await _class_subject_id(class_id, subject_id, school_id, db)
+    no excerpts appeared.
+
+    Pass `cs_id` when the caller already resolved it (e.g. two excerpt
+    lookups on the same class+subject in one request) to skip a redundant
+    ClassSubject lookup — omit it to have this resolve it itself."""
+    if cs_id is None:
+        cs_id = await class_subject_id(class_id, subject_id, school_id, db)
     chunks = await search_curriculum(cs_id, query_text, school_id, db) if cs_id else []
     return "\n\n".join(
         f'[{c.document_type} "{c.file_name}", p.{c.page_number}]\n{c.chunk_text}' for c in chunks
@@ -145,6 +192,7 @@ async def get_curriculum_excerpts(
 
 async def propose_curriculum_reference(
     lp: LessonPlan, school_id: uuid.UUID, driver: AiDriver, db: AsyncSession,
+    *, cs_id: uuid.UUID | None = None,
 ) -> CurriculumReferenceSuggestion | None:
     """Proposes content_standard/indicator/learning_objectives so a teacher
     never has to type them — grounded in the class+subject's uploaded
@@ -154,10 +202,14 @@ async def propose_curriculum_reference(
     proposal, is never re-proposed or overwritten. Used by the chat path
     (services/lesson_plan_chat.py) as its own dedicated call — the
     button-driven skeleton path bundles the same idea into its own single
-    generate_json() call instead (see generate_skeleton())."""
+    generate_json() call instead (see generate_skeleton()).
+
+    Pass `cs_id` when the caller will also call build_context()/
+    get_curriculum_excerpts() again in the same request, to avoid resolving
+    the same ClassSubject twice."""
     if lp.content_standard and lp.indicator and lp.learning_objectives:
         return None
-    excerpts = await get_curriculum_excerpts(lp.class_id, lp.subject_id, lp.topic, school_id, db)
+    excerpts = await get_curriculum_excerpts(lp.class_id, lp.subject_id, lp.topic, school_id, db, cs_id=cs_id)
     prompt = f"Topic: {lp.topic}\n\nCurriculum excerpts:\n{excerpts}\n\nPropose the content standard, learning indicator, and learning objectives for this topic."
     return await generate_json(driver, prompt, _REFERENCE_GUARDRAILS, CurriculumReferenceSuggestion)
 
@@ -185,7 +237,10 @@ def validate_lessons(lessons: list[LessonEntry], indicator_text: str | None) -> 
     """Best-effort validation pass — flags, never blocks. Time-budget check
     is a rough words-per-minute heuristic, not an exact reading-time model;
     the indicator check is a soft keyword-overlap sanity check, not a
-    semantic one."""
+    semantic one. A teacher-declared placeholder lesson (no real timetable —
+    see LessonEntry's own docstring) has no lesson_date/duration_minutes, so
+    the time-budget check is skipped for it and its label falls back to
+    sequence_index."""
     warnings: list[str] = []
     keywords: set[str] = set()
     if indicator_text:
@@ -195,19 +250,21 @@ def validate_lessons(lessons: list[LessonEntry], indicator_text: str | None) -> 
         }
 
     for lesson in lessons:
+        label = lesson.lesson_date.isoformat() if lesson.lesson_date else f"Lesson {lesson.sequence_index}"
         combined = f"{lesson.introduction} {lesson.main_lesson} {lesson.closure}"
         word_count = len(combined.split())
         # ~130 words/minute of spoken narration, generous 1.5x buffer for
         # in-class activity time (not everything is a teacher monologue).
-        budget = lesson.duration_minutes * 130 * 1.5
-        if word_count > budget:
-            warnings.append(
-                f"{lesson.lesson_date.isoformat()}: content may be too long for a "
-                f"{lesson.duration_minutes}-minute lesson — review before teaching."
-            )
+        if lesson.duration_minutes is not None:
+            budget = lesson.duration_minutes * 130 * 1.5
+            if word_count > budget:
+                warnings.append(
+                    f"{label}: content may be too long for a "
+                    f"{lesson.duration_minutes}-minute lesson — review before teaching."
+                )
         if keywords and not (keywords & set(combined.lower().split())):
             warnings.append(
-                f"{lesson.lesson_date.isoformat()}: content doesn't obviously reference "
+                f"{label}: content doesn't obviously reference "
                 "the stated indicator — worth a quick check."
             )
     return warnings

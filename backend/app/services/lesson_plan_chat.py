@@ -16,6 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,10 +25,10 @@ from app.core.teacher_scope import year_for_term
 from app.models.lesson_plans import ChatMessageRole, LessonPlanChatMessage, LessonPlanGenerationStage
 from app.schemas.lesson_plans import ChatMessageRead, GeneratedLessonsResponse, LessonEntry, LessonPlanRead
 from app.services import ai_config
-from app.services.ai_driver import generate_json
-from app.services.lesson_plan_occurrences import resolve_week_occurrences
+from app.services.ai_driver import generate_json, generate_safe
+from app.services.lesson_plan_occurrences import get_occurrences_or_require_count
 from app.services.lesson_plan_prompt import (
-    apply_curriculum_reference, build_context, get_curriculum_excerpts,
+    apply_curriculum_reference, build_context, class_subject_id, sync_legacy_fields_from_content,
     get_ready_driver, get_content, log_generation, propose_curriculum_reference, validate_lessons,
 )
 from app.services.lesson_plans import _to_read, get_lesson_plan
@@ -76,10 +77,15 @@ async def send_chat_message(
     # the conversation, not something that should break the actual chat
     # reply below if the model's response can't be parsed as JSON.
     is_first_turn = not await _load_messages(lp.id, db)
+    proposed_reference = False
+    # Resolved once and reused below for build_context()'s own excerpt
+    # lookup — both target the same class+subject, so this avoids a
+    # redundant ClassSubject query on every first-turn chat message.
+    cs_id = await class_subject_id(lp.class_id, lp.subject_id, school_id, db) if is_first_turn else None
     if is_first_turn:
         try:
-            suggestion = await propose_curriculum_reference(lp, school_id, driver, db)
-        except HTTPException:
+            suggestion = await propose_curriculum_reference(lp, school_id, driver, db, cs_id=cs_id)
+        except (HTTPException, httpx.HTTPError):
             suggestion = None
         if suggestion:
             apply_curriculum_reference(lp, suggestion)
@@ -88,6 +94,17 @@ async def send_chat_message(
                 cfg.provider.value, cfg.model or "default", staff_id, db,
             )
             await ai_config.increment_usage(school_id, user_id, cfg)
+            proposed_reference = True
+
+    if proposed_reference:
+        # The reference proposal above already consumed one of today's
+        # generations — get_ready_driver()'s check only guaranteed at least
+        # one was available before either call ran. Re-check before the
+        # second real AI call below so a caller with exactly one generation
+        # left is stopped here with a clean 429, not after silently running
+        # one call over budget (and, on the platform-default path, over the
+        # shared platform-wide cap too).
+        await ai_config.check_daily_limit(school_id, user_id, cfg, db)
 
     now = datetime.now(timezone.utc)
     db.add(LessonPlanChatMessage(
@@ -96,14 +113,10 @@ async def send_chat_message(
     ))
     await db.flush()
 
-    excerpts = await get_curriculum_excerpts(lp.class_id, lp.subject_id, f"{lp.topic} {message_text}", school_id, db)
-    context = await build_context(lp, school_id, db)
+    context = await build_context(lp, school_id, db, query_text=f"{lp.topic} {message_text}", cs_id=cs_id)
     messages = await _load_messages(lp.id, db)
-    prompt = (
-        f"{context}\n\nRelevant curriculum excerpts:\n{excerpts}\n\n"
-        f"Conversation so far:\n{_transcript(messages)}\n\nAssistant:"
-    )
-    reply_text = await driver.generate(prompt, _CHAT_GUARDRAILS)
+    prompt = f"{context}\n\nConversation so far:\n{_transcript(messages)}\n\nAssistant:"
+    reply_text = await generate_safe(driver, prompt, _CHAT_GUARDRAILS)
 
     db.add(LessonPlanChatMessage(
         school_id=school_id, lesson_plan_id=lp.id, role=ChatMessageRole.ASSISTANT,
@@ -128,6 +141,7 @@ async def list_chat_messages(
 
 async def finalize_chat(
     lesson_plan_id: uuid.UUID, school_id: uuid.UUID, user_id: uuid.UUID, staff_id: uuid.UUID, db: AsyncSession,
+    *, lesson_count: int | None = None,
 ) -> LessonPlanRead:
     lp = await get_lesson_plan(lesson_plan_id, school_id, user_id, db)
     messages = await _load_messages(lp.id, db)
@@ -138,21 +152,25 @@ async def finalize_chat(
     if year_id is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Academic term has no year.")
     week_end = lp.week_start_date + timedelta(days=6)
-    occurrences = await resolve_week_occurrences(lp.class_id, lp.subject_id, year_id, lp.week_start_date, week_end, school_id, db)
-    if not occurrences:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "No real scheduled occurrences found for this class/subject this week "
-            "(check the timetable and calendar for that week).",
-        )
+    occurrences = await get_occurrences_or_require_count(
+        lp.class_id, lp.subject_id, year_id, lp.week_start_date, week_end, school_id, db, lesson_count,
+    )
 
     driver, cfg = await get_ready_driver(school_id, user_id, db)
     context = await build_context(lp, school_id, db)
-    occ_lines = "\n".join(f"- {o.lesson_date.isoformat()}, {o.start_time}-{o.end_time}" for o in occurrences)
+    if occurrences is not None:
+        n = len(occurrences)
+        occ_lines = "\n".join(f"- {o.lesson_date.isoformat()}, {o.start_time}-{o.end_time}" for o in occurrences)
+    else:
+        n = lesson_count
+        occ_lines = (
+            f"No confirmed timetable exists for this class/subject this week — plan "
+            f"{n} generic lessons for the week, evenly weighted, no specific dates/times."
+        )
     prompt = (
         f"{context}\n\nConversation with the teacher so far:\n{_transcript(messages)}\n\n"
-        f"There are exactly {len(occurrences)} scheduled lessons this week:\n{occ_lines}\n\n"
-        f"Based on everything discussed above, produce exactly {len(occurrences)} lesson entries in "
+        f"There are exactly {n} scheduled lessons this week:\n{occ_lines}\n\n"
+        f"Based on everything discussed above, produce exactly {n} lesson entries in "
         "the same order as listed above (introduction, main lesson, closure for each), sized to fit "
         "each lesson's own duration. Also produce one assessment block: a formative check (mode, "
         "task, mark scheme) and a transcript/summative assessment (mode, task, rubric)."
@@ -164,27 +182,35 @@ async def finalize_chat(
     )
     await ai_config.increment_usage(school_id, user_id, cfg)
 
-    if len(result.lessons) != len(occurrences):
+    if len(result.lessons) != n:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
-            f"The AI produced {len(result.lessons)} lessons but {len(occurrences)} were expected.",
+            f"The AI produced {len(result.lessons)} lessons but {n} were expected.",
         )
 
     lessons: list[LessonEntry] = []
-    for occ, body in zip(occurrences, result.lessons):
-        duration = (occ.end_time.hour * 60 + occ.end_time.minute) - (occ.start_time.hour * 60 + occ.start_time.minute)
-        lessons.append(LessonEntry(
-            school_calendar_id=occ.school_calendar_id, period_id=occ.period_id,
-            lesson_date=occ.lesson_date, start_time=occ.start_time, end_time=occ.end_time,
-            duration_minutes=duration, introduction=body.introduction,
-            main_lesson=body.main_lesson, closure=body.closure, delivery_status="DRAFT",
-        ))
+    if occurrences is not None:
+        for occ, body in zip(occurrences, result.lessons):
+            duration = (occ.end_time.hour * 60 + occ.end_time.minute) - (occ.start_time.hour * 60 + occ.start_time.minute)
+            lessons.append(LessonEntry(
+                school_calendar_id=occ.school_calendar_id, period_id=occ.period_id,
+                lesson_date=occ.lesson_date, start_time=occ.start_time, end_time=occ.end_time,
+                duration_minutes=duration, introduction=body.introduction,
+                main_lesson=body.main_lesson, closure=body.closure, delivery_status="DRAFT",
+            ))
+    else:
+        for i, body in enumerate(result.lessons):
+            lessons.append(LessonEntry(
+                sequence_index=i + 1, introduction=body.introduction,
+                main_lesson=body.main_lesson, closure=body.closure, delivery_status="DRAFT",
+            ))
 
     content = get_content(lp)
     content.lessons = lessons
     content.assessment = result.assessment
     content.occurrence_mismatch = False
-    content.generation_warnings = validate_lessons(lessons, lp.indicator or lp.content_standard)
+    content.generation_warnings = validate_lessons(lessons, lp.content_standard or lp.indicator)
     lp.generated_content = content.model_dump(mode="json")
+    sync_legacy_fields_from_content(lp, content)
     await db.flush()
     return _to_read(lp)

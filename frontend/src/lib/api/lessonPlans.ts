@@ -1,14 +1,19 @@
 import { api } from './client';
+import type { CurriculumUnit } from './curriculumUnits';
 
 // ── AI-generated structured content (LessonPlan.generated_content) ─────────
 
 export interface LessonEntry {
-  school_calendar_id: string;
-  period_id: string;
-  lesson_date: string;
-  start_time: string;
-  end_time: string;
-  duration_minutes: number;
+  // Nullable together: a class with no real timetable for this week has no
+  // real calendar day/period to attach to — such a lesson is a
+  // teacher-declared placeholder identified by sequence_index instead.
+  school_calendar_id: string | null;
+  period_id: string | null;
+  sequence_index: number | null;
+  lesson_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
   introduction: string;
   main_lesson: string;
   closure: string;
@@ -52,8 +57,11 @@ export interface LessonPlan {
   activities: string | null;
   assessment_strategy: string | null;
   reflection_notes: string | null;
+  strand: string | null;
+  sub_strand: string | null;
   created_by_id: string;
   curriculum_standard_id: string | null;
+  curriculum_unit_id: string | null;
   generated_content: GeneratedContent | null;
   status: LessonPlanStatus;
   reviewed_by_staff_id: string | null;
@@ -72,6 +80,7 @@ export interface LessonPlanPayload {
   assessment_strategy?: string | null;
   reflection_notes?: string | null;
   curriculum_standard_id?: string | null;
+  curriculum_unit_id?: string | null;
 }
 
 export const listLessonPlans = (
@@ -105,15 +114,22 @@ export const draftLessonPlanWithAi = (
 export const generateSkeleton = (id: string): Promise<LessonPlan> =>
   api.post(`/lesson-plans/${id}/generate-skeleton`).then(r => r.data);
 
-export const generateLessons = (id: string): Promise<LessonPlan> =>
-  api.post(`/lesson-plans/${id}/generate-lessons`).then(r => r.data);
+// lessonCount is only consulted server-side when this class+subject
+// genuinely has no real timetable for this week — whenever a real
+// timetable exists, its count stays authoritative and this is ignored.
+export const generateLessons = (id: string, lessonCount?: number): Promise<LessonPlan> =>
+  api.post(`/lesson-plans/${id}/generate-lessons`, { lesson_count: lessonCount ?? null }).then(r => r.data);
 
+// Either (schoolCalendarId, periodId) for a real-occurrence lesson, or
+// sequenceIndex for a teacher-declared (no-timetable) placeholder.
 export const regenerateLesson = (
-  id: string, schoolCalendarId: string, periodId: string,
+  id: string, identity: { schoolCalendarId: string; periodId: string } | { sequenceIndex: number },
 ): Promise<LessonPlan> =>
-  api.post(`/lesson-plans/${id}/regenerate-lesson`, {
-    school_calendar_id: schoolCalendarId, period_id: periodId,
-  }).then(r => r.data);
+  api.post(`/lesson-plans/${id}/regenerate-lesson`,
+    'sequenceIndex' in identity
+      ? { sequence_index: identity.sequenceIndex }
+      : { school_calendar_id: identity.schoolCalendarId, period_id: identity.periodId },
+  ).then(r => r.data);
 
 export const regenerateAssessment = (id: string): Promise<LessonPlan> =>
   api.post(`/lesson-plans/${id}/regenerate-assessment`).then(r => r.data);
@@ -163,5 +179,16 @@ export const listChatMessages = (lessonPlanId: string): Promise<ChatMessage[]> =
 export const sendChatMessage = (lessonPlanId: string, message: string): Promise<ChatMessage[]> =>
   api.post(`/lesson-plans/${lessonPlanId}/chat`, { message }).then(r => r.data);
 
-export const finalizeChat = (lessonPlanId: string): Promise<LessonPlan> =>
-  api.post(`/lesson-plans/${lessonPlanId}/chat/finalize`).then(r => r.data);
+export const finalizeChat = (lessonPlanId: string, lessonCount?: number): Promise<LessonPlan> =>
+  api.post(`/lesson-plans/${lessonPlanId}/chat/finalize`, { lesson_count: lessonCount ?? null }).then(r => r.data);
+
+// ── Curriculum units (machine-extracted from an uploaded material) ─────────
+// A second, independent "pick a unit" flow alongside curriculum standards —
+// never auto-mapped from the calendar week, the teacher picks explicitly.
+
+export const listCurriculumUnitsForPlanning = (
+  classId: string, subjectId: string, termId: string,
+): Promise<CurriculumUnit[]> =>
+  api.get('/lesson-plans/curriculum-units', {
+    params: { class_id: classId, subject_id: subjectId, academic_term_id: termId },
+  }).then(r => r.data);

@@ -7,6 +7,7 @@
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import { isOnline } from '$lib/offline/sync';
+  import ChatMessageContent from '$lib/components/ChatMessageContent.svelte';
 
   interface Props {
     plan: LessonPlan;
@@ -37,10 +38,25 @@
     onError: (e: unknown) => toast.error(apiError(e, 'Could not send that message.')),
   });
 
+  function statusOf(e: unknown): number | undefined {
+    return (e as { response?: { status?: number } })?.response?.status;
+  }
+  function errorCodeOf(e: unknown): string | undefined {
+    return (e as { response?: { headers?: Record<string, string> } })?.response?.headers?.['x-error-code'];
+  }
+
+  // Only ever surfaces when this class+subject genuinely has no real
+  // timetable for this week — a real timetable's count always stays
+  // authoritative with no prompt at all.
+  let needsLessonCount = $state(false);
+  let lessonCount = $state(3);
   const finalizeMut = createMutation({
-    mutationFn: () => finalizeChat(plan.id),
-    onSuccess: () => { invalidatePlan(); toast.success('Lesson plan generated from this conversation.'); },
-    onError: (e: unknown) => toast.error(apiError(e, 'Could not finalize this conversation.')),
+    mutationFn: (count?: number) => finalizeChat(plan.id, count),
+    onSuccess: () => { invalidatePlan(); needsLessonCount = false; toast.success('Lesson plan generated from this conversation.'); },
+    onError: (e: unknown) => {
+      if (statusOf(e) === 422 && errorCodeOf(e) === 'lesson_count_required') { needsLessonCount = true; return; }
+      toast.error(apiError(e, 'Could not finalize this conversation.'));
+    },
   });
 
   function handleSend() {
@@ -74,7 +90,11 @@
             ? 'text-white'
             : 'border border-[var(--border)] bg-[var(--card)] text-[var(--fg)]'}"
             style={m.role === 'USER' ? 'background: var(--brand)' : ''}>
-            {m.content}
+            {#if m.role === 'ASSISTANT'}
+              <ChatMessageContent content={m.content} />
+            {:else}
+              {m.content}
+            {/if}
           </div>
         </div>
       {/each}
@@ -97,8 +117,23 @@
     </button>
   </div>
 
-  {#if messages.length > 0}
-    <button onclick={() => $finalizeMut.mutate()} disabled={$finalizeMut.isPending || !$isOnline}
+  {#if needsLessonCount}
+    <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+      <p class="text-xs text-amber-700 dark:text-amber-400">
+        No real scheduled lessons found on the timetable for this class/subject this week —
+        how many lessons would you like to plan?
+      </p>
+      <div class="flex items-center gap-2">
+        <input type="number" min="1" max="20" bind:value={lessonCount} inputmode="numeric"
+          class="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-sm text-[var(--fg)]" />
+        <button onclick={() => $finalizeMut.mutate(lessonCount)} disabled={$finalizeMut.isPending || !$isOnline}
+          class="min-h-[36px] rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-50" style="background: var(--brand)">
+          {$finalizeMut.isPending ? 'Generating…' : 'Generate'}
+        </button>
+      </div>
+    </div>
+  {:else if messages.length > 0}
+    <button onclick={() => $finalizeMut.mutate(undefined)} disabled={$finalizeMut.isPending || !$isOnline}
       class="min-h-[44px] w-full rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--fg)] transition hover:bg-[var(--hover)] disabled:opacity-50">
       {$finalizeMut.isPending ? 'Generating…' : 'Generate lesson plan from this conversation →'}
     </button>

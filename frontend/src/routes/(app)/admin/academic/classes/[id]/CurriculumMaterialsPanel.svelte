@@ -2,12 +2,13 @@
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
   import {
-    listCurriculumMaterials, uploadCurriculumMaterial, deleteCurriculumMaterial,
+    listCurriculumMaterials, uploadCurriculumMaterial, deleteCurriculumMaterial, extractCurriculumUnits,
     type CurriculumMaterial,
   } from '$lib/api/curriculumMaterials';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import CurriculumUnitsAdmin from './CurriculumUnitsAdmin.svelte';
 
   interface Props { classSubjectId: string; }
   const { classSubjectId }: Props = $props();
@@ -24,6 +25,7 @@
   let documentType = $state('TEXTBOOK');
   let fileInput = $state<HTMLInputElement | null>(null);
   let deleteTarget = $state<CurriculumMaterial | null>(null);
+  let expandedUnitsId = $state<string | null>(null);
 
   const qc = useQueryClient();
   function invalidate() { qc.invalidateQueries({ queryKey: ['curriculum-materials', classSubjectId] }); }
@@ -40,6 +42,15 @@
     onError: (e: unknown) => { toast.error(apiError(e, 'Could not remove this file.')); deleteTarget = null; },
   });
 
+  // Admin-triggered, not automatic on upload — a large document can cost
+  // 10-30 sequential AI calls, a conscious action rather than a surprise
+  // side effect of every upload.
+  const extractUnitsMut = createMutation({
+    mutationFn: (id: string) => extractCurriculumUnits(id),
+    onSuccess: () => { invalidate(); toast.success('Extracting week-by-week content in the background.'); },
+    onError: (e: unknown) => toast.error(apiError(e, 'Could not start extraction.')),
+  });
+
   function handleFileChange(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
     if (file) $uploadMut.mutate(file);
@@ -51,6 +62,15 @@
       case 'PENDING': return { text: 'Processing…', cls: 'text-[var(--fg-muted)]' };
       case 'EMPTY': return { text: 'Needs a text-based PDF', cls: 'text-amber-600 dark:text-amber-400' };
       case 'FAILED': return { text: 'Failed to process', cls: 'text-red-600 dark:text-red-400' };
+    }
+  }
+
+  function unitStatusLabel(m: CurriculumMaterial): { text: string; cls: string } | null {
+    switch (m.unit_extraction_status) {
+      case 'DONE': return { text: 'Week-by-week content ready', cls: 'text-green-600 dark:text-green-400' };
+      case 'PENDING': return null; // never triggered, or currently running — the button below covers this
+      case 'EMPTY': return { text: 'No teaching units could be identified', cls: 'text-amber-600 dark:text-amber-400' };
+      case 'FAILED': return { text: 'Extraction incomplete', cls: 'text-red-600 dark:text-red-400' };
     }
   }
 </script>
@@ -66,20 +86,50 @@
     <div class="space-y-1.5">
       {#each materials as m (m.id)}
         {@const status = statusLabel(m)}
-        <div class="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2">
-          <div class="min-w-0">
-            <p class="truncate text-xs font-medium text-[var(--fg)]">{m.document_type} — {m.file_name}</p>
-            <p class="text-[11px] {status.cls}">
-              {status.text}
-              {#if m.extraction_status === 'EMPTY' || m.extraction_status === 'FAILED'}
-                {#if m.extraction_error}<span class="text-[var(--fg-subtle)]"> — {m.extraction_error}</span>{/if}
+        {@const unitStatus = unitStatusLabel(m)}
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <p class="truncate text-xs font-medium text-[var(--fg)]">{m.document_type} — {m.file_name}</p>
+              <p class="text-[11px] {status.cls}">
+                {status.text}
+                {#if m.extraction_status === 'EMPTY' || m.extraction_status === 'FAILED'}
+                  {#if m.extraction_error}<span class="text-[var(--fg-subtle)]"> — {m.extraction_error}</span>{/if}
+                {/if}
+              </p>
+              {#if unitStatus}
+                <p class="text-[11px] {unitStatus.cls}">
+                  {unitStatus.text}
+                  {#if m.unit_extraction_status === 'FAILED' && m.unit_extraction_error}
+                    <span class="text-[var(--fg-subtle)]"> — {m.unit_extraction_error}</span>
+                  {/if}
+                </p>
               {/if}
-            </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              {#if m.extraction_status === 'DONE'}
+                {#if m.unit_extraction_status === 'DONE' || m.unit_extraction_status === 'FAILED'}
+                  <button onclick={() => expandedUnitsId = expandedUnitsId === m.id ? null : m.id}
+                    class="min-h-[36px] rounded-lg border border-[var(--border)] px-2.5 text-[11px] font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)]">
+                    {expandedUnitsId === m.id ? 'Hide' : 'Review'}
+                  </button>
+                {/if}
+                <button onclick={() => $extractUnitsMut.mutate(m.id)} disabled={$extractUnitsMut.isPending}
+                  class="min-h-[36px] rounded-lg border border-[var(--border)] px-2.5 text-[11px] font-semibold text-[var(--fg-muted)] hover:bg-[var(--hover)] disabled:opacity-50">
+                  {m.unit_extraction_status === 'DONE' || m.unit_extraction_status === 'FAILED' ? 'Re-extract' : 'Extract week-by-week content'}
+                </button>
+              {/if}
+              <button onclick={() => deleteTarget = m} aria-label="Remove"
+                class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+              </button>
+            </div>
           </div>
-          <button onclick={() => deleteTarget = m} aria-label="Remove"
-            class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-[var(--fg-muted)] transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
-          </button>
+          {#if expandedUnitsId === m.id}
+            <div class="mt-2 border-t border-[var(--border)] pt-2">
+              <CurriculumUnitsAdmin materialId={m.id} />
+            </div>
+          {/if}
         </div>
       {/each}
     </div>

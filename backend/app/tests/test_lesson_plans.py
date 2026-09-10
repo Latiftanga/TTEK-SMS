@@ -247,6 +247,75 @@ async def test_list_unrestricted_for_approve_scores_holder(
     assert [p["id"] for p in resp.json()] == [created["id"]]
 
 
+@pytest.mark.asyncio
+async def test_update_autofills_blank_fields_from_curriculum_standard(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None,
+):
+    """create_lesson_plan() autofills content_standard/indicator/
+    learning_objectives from a linked CurriculumStandard — update_lesson_plan()
+    must do the same when a standard is attached after the fact, not silently
+    resolve+validate it and then discard the result."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+
+    cat = SubjectCatalogue(name="Mathematics", code="MATH_LP_STD", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    standard = await client.post("/curriculum-standards", json={
+        "subject_catalogue_id": str(cat.id), "level": "SHS", "year_group": 2,
+        "strand": "Number", "sub_strand": "Fractions", "indicator_code": "B7.1.1.1",
+        "objective_text": "Add and subtract fractions with unlike denominators.",
+    }, headers=auth)
+    assert standard.status_code == 201, standard.text
+    standard_id = standard.json()["id"]
+
+    created = (await client.post(
+        "/lesson-plans", json=_payload(academic_term, school_class, subject), headers=teacher_auth,
+    )).json()
+    assert created["content_standard"] is None
+
+    patched = await client.patch(
+        f"/lesson-plans/{created['id']}", json={"curriculum_standard_id": standard_id}, headers=teacher_auth,
+    )
+    assert patched.status_code == 200, patched.text
+    data = patched.json()
+    assert data["curriculum_standard_id"] == standard_id
+    assert data["content_standard"] == "Number — Fractions"
+    assert data["indicator"] == "B7.1.1.1"
+    assert data["learning_objectives"] == "Add and subtract fractions with unlike denominators."
+
+
+@pytest.mark.asyncio
+async def test_update_curriculum_standard_never_overwrites_manual_field(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None,
+):
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+
+    cat = SubjectCatalogue(name="Mathematics", code="MATH_LP_STD2", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
+    db_session.add(cat)
+    await db_session.flush()
+    standard = await client.post("/curriculum-standards", json={
+        "subject_catalogue_id": str(cat.id), "level": "SHS", "year_group": 2,
+        "strand": "Number", "sub_strand": "Fractions", "indicator_code": "B7.1.1.2",
+        "objective_text": "Would-be autofill objective.",
+    }, headers=auth)
+    standard_id = standard.json()["id"]
+
+    created = (await client.post("/lesson-plans", json={
+        **_payload(academic_term, school_class, subject),
+        "content_standard": "Teacher-entered standard",
+    }, headers=teacher_auth)).json()
+
+    patched = await client.patch(
+        f"/lesson-plans/{created['id']}", json={"curriculum_standard_id": standard_id}, headers=teacher_auth,
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["content_standard"] == "Teacher-entered standard"  # untouched
+
+
 # ── AI-assist ────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -266,6 +335,42 @@ async def test_ai_draft_503_when_no_provider_configured(
 
 
 @pytest.mark.asyncio
+async def test_ai_draft_502s_cleanly_on_provider_failure(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Regression: draft_with_ai's raw driver.generate() call had no
+    protection — a real provider-level failure crashed with a raw 500."""
+    import httpx
+    from app.models.school import AiConfig, AiProvider
+    from app.services import ai_config as ai_config_module
+
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    db_session.add(AiConfig(
+        school_id=school.id, provider=AiProvider.GEMINI, api_key="fake-key",
+        daily_limit_per_teacher=10, is_active=True,
+    ))
+    await db_session.flush()
+
+    class _FailingDriver:
+        async def generate(self, prompt: str, system: str = "") -> str:
+            request = httpx.Request("POST", "https://example.invalid")
+            response = httpx.Response(404, request=request, text="model not found")
+            raise httpx.HTTPStatusError("404 Not Found", request=request, response=response)
+
+    monkeypatch.setattr(ai_config_module, "build_ai_driver", lambda *a, **kw: _FailingDriver())
+
+    resp = await client.post(
+        "/lesson-plans/ai-draft",
+        json={"class_id": str(school_class.id), "subject_id": str(subject.id), "topic": "Fractions"},
+        headers=teacher_auth,
+    )
+    assert resp.status_code == 502
+    assert "AI provider request failed" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_ai_draft_429_when_daily_limit_exhausted(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
     school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None,
@@ -276,15 +381,19 @@ async def test_ai_draft_429_when_daily_limit_exhausted(
     teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
     await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
 
-    db_session.add(AiConfig(
+    cfg = AiConfig(
         school_id=school.id, provider=AiProvider.GEMINI, api_key="fake-key",
         daily_limit_per_teacher=1, is_active=True,
-    ))
+    )
+    db_session.add(cfg)
     await db_session.flush()
 
     me = await client.get("/auth/me", headers=teacher_auth)
     user_id = me.json()["id"]
-    key = f"ai_usage:{school.id}:{user_id}:{date.today().isoformat()}"
+    # Keyed by cfg.id (not just school_id/user_id) — see ai_config.py::
+    # check_daily_limit's docstring on why a config switch must not inherit
+    # another config's usage.
+    key = f"ai_usage:{school.id}:{user_id}:{cfg.id}:{date.today().isoformat()}"
     await redis_client.set(key, "1")
     try:
         resp = await client.post(

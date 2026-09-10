@@ -25,14 +25,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.models.auth import User
+from app.schemas.curriculum_units import CurriculumUnitRead
 from app.schemas.lesson_plans import (
-    ChatMessageRead, ChatSendRequest,
+    ChatMessageRead, ChatSendRequest, FinalizeChatRequest, GenerateLessonsRequest,
     LessonPlanAiDraftRequest, LessonPlanAiDraftResponse,
     LessonPlanCreate, LessonPlanRead, LessonPlanReviewRequest, LessonPlanUpdate,
     RegenerateLessonRequest,
 )
+from app.services import lesson_plan_ai_draft as ai_draft_svc
 from app.services import lesson_plan_chat as chat_svc
 from app.services import lesson_plan_generation as gen_svc
+from app.services import lesson_plan_review as review_svc
 from app.services import lesson_plans as lp_svc
 
 router = APIRouter(prefix="/lesson-plans", tags=["lesson-plans"])
@@ -72,6 +75,18 @@ async def list_lesson_plans(
     )
 
 
+@router.get("/curriculum-units", response_model=list[CurriculumUnitRead])
+async def list_curriculum_units_for_planning(
+    class_id: uuid.UUID = Query(...),
+    subject_id: uuid.UUID = Query(...),
+    academic_term_id: uuid.UUID = Query(...),
+    ids=Depends(require_permission("lesson_plans", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id, school_id = ids
+    return await lp_svc.list_curriculum_units_for_planning(class_id, subject_id, academic_term_id, school_id, user_id, db)
+
+
 @router.post("/ai-draft", response_model=LessonPlanAiDraftResponse)
 async def ai_draft(
     req: LessonPlanAiDraftRequest,
@@ -79,7 +94,7 @@ async def ai_draft(
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
-    draft_text = await lp_svc.draft_with_ai(
+    draft_text = await ai_draft_svc.draft_with_ai(
         req.class_id, req.subject_id, req.topic.strip(), school_id, user_id, db,
     )
     return LessonPlanAiDraftResponse(draft_text=draft_text)
@@ -121,12 +136,15 @@ async def generate_skeleton(
 @router.post("/{lesson_plan_id}/generate-lessons", response_model=LessonPlanRead)
 async def generate_lessons(
     lesson_plan_id: uuid.UUID,
+    req: GenerateLessonsRequest = GenerateLessonsRequest(),
     ids=Depends(require_permission("lesson_plans", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
     staff_id = await _staff_id_for(user_id, db)
-    return await gen_svc.generate_lessons(lesson_plan_id, school_id, user_id, staff_id, db)
+    return await gen_svc.generate_lessons(
+        lesson_plan_id, school_id, user_id, staff_id, db, lesson_count=req.lesson_count,
+    )
 
 
 @router.post("/{lesson_plan_id}/regenerate-lesson", response_model=LessonPlanRead)
@@ -139,7 +157,8 @@ async def regenerate_lesson(
     user_id, school_id = ids
     staff_id = await _staff_id_for(user_id, db)
     return await gen_svc.regenerate_lesson(
-        lesson_plan_id, req.school_calendar_id, req.period_id, school_id, user_id, staff_id, db,
+        lesson_plan_id, school_id, user_id, staff_id, db,
+        school_calendar_id=req.school_calendar_id, period_id=req.period_id, sequence_index=req.sequence_index,
     )
 
 
@@ -163,7 +182,7 @@ async def review_lesson_plan(
 ):
     user_id, school_id = ids
     staff_id = await _staff_id_for(user_id, db)
-    return await gen_svc.review_lesson_plan(lesson_plan_id, req, school_id, staff_id, db)
+    return await review_svc.review_lesson_plan(lesson_plan_id, req, school_id, staff_id, db)
 
 
 @router.post("/{lesson_plan_id}/chat", response_model=list[ChatMessageRead])
@@ -191,12 +210,13 @@ async def list_chat_messages(
 @router.post("/{lesson_plan_id}/chat/finalize", response_model=LessonPlanRead)
 async def finalize_chat(
     lesson_plan_id: uuid.UUID,
+    req: FinalizeChatRequest = FinalizeChatRequest(),
     ids=Depends(require_permission("lesson_plans", "manage")),
     db: AsyncSession = Depends(get_db),
 ):
     user_id, school_id = ids
     staff_id = await _staff_id_for(user_id, db)
-    return await chat_svc.finalize_chat(lesson_plan_id, school_id, user_id, staff_id, db)
+    return await chat_svc.finalize_chat(lesson_plan_id, school_id, user_id, staff_id, db, lesson_count=req.lesson_count)
 
 
 @router.delete("/{lesson_plan_id}", status_code=204)

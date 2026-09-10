@@ -9,11 +9,12 @@
   import { resolveDefaultTerm } from '$lib/academicPeriod';
   import { setPageTitle } from '$lib/stores/title';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import LessonPlanForm from './LessonPlanForm.svelte';
+  import LessonPlanStart from './LessonPlanStart.svelte';
   import GeneratedContentPanel from './GeneratedContentPanel.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import ReviewPanel from './ReviewPanel.svelte';
-  setPageTitle('Lesson Plans');
+  import PlanDetailsPanel from './PlanDetailsPanel.svelte';
+  setPageTitle('Lesson Planner');
 
   // ── Filters — persisted in the URL, same convention as /assessments ──────────
   const sp       = $derived($page.url.searchParams);
@@ -113,7 +114,7 @@
   const existingPlan = $derived(($plansQ.data ?? [])[0] ?? null);
 </script>
 
-<PageHeader title="Lesson Plans" description="Plan your teaching week by week — a personal planner, no approval needed." />
+<PageHeader title="Lesson Planner" description="Plan your teaching week by week — a personal planner, no approval needed." />
 
 <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
   <div class="sm:w-64">
@@ -160,22 +161,23 @@
   </div>
 {:else if $plansQ.isPending}
   <div class="h-64 animate-pulse rounded-2xl bg-[var(--card)]"></div>
+{:else if !existingPlan}
+  <LessonPlanStart {classId} {subjectId} academicTermId={termId} {weekStart} />
 {:else}
-  <LessonPlanForm
-    {classId} {subjectId} academicTermId={termId} {weekStart}
-    plan={existingPlan}
+  <ChatPanel
+    plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
   />
-  {#if existingPlan}
-    <ChatPanel
+  <GeneratedContentPanel
+    plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
+  />
+  <ReviewPanel
+    plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
+  />
+  <div class="mt-6">
+    <PlanDetailsPanel
       plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
     />
-    <GeneratedContentPanel
-      plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
-    />
-    <ReviewPanel
-      plan={existingPlan} {classId} {subjectId} academicTermId={termId} {weekStart}
-    />
-  {/if}
+  </div>
 {/if}
 
 <style>

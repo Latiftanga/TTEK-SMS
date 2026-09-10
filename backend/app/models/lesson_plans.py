@@ -79,12 +79,18 @@ class LessonPlan(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     week_start_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     topic: Mapped[str] = mapped_column(String(300), nullable=False)
-    # GES-style curriculum reference fields — free text, since no linked
-    # curriculum/strand data model exists in this codebase to validate
-    # against (SubjectCatalogue is just a name/code/type/level catalogue).
-    content_standard: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    indicator: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # GES-style curriculum reference fields — free text. Text, not
+    # String(300): a real extracted indicator/content-standard sentence
+    # (autofilled from a CurriculumUnit, below) can run well past 300
+    # characters — this used to be String(300) before CurriculumUnit
+    # autofill existed, when the only source was a short manual entry.
+    content_standard: Mapped[str | None] = mapped_column(Text, nullable=True)
+    indicator: Mapped[str | None] = mapped_column(Text, nullable=True)
     learning_objectives: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Autofilled from a picked CurriculumUnit (below) — Text, not String,
+    # since a real extracted strand/sub-strand can be a full sentence.
+    strand: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sub_strand: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Comma-separated GES core-competency tags (Communication & Collaboration,
     # Critical Thinking, Creativity & Innovation, Digital Literacy, Personal
     # Development & Leadership) — offered as checkboxes client-side, stored
@@ -106,6 +112,14 @@ class LessonPlan(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     # (is_active=False), never hard-deleted, so there's nothing to react to.
     curriculum_standard_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("curriculum_standard.id"), nullable=True
+    )
+    # A second, independent optional autofill source — a specific
+    # machine-extracted unit from an uploaded CurriculumMaterial, picked
+    # by the teacher from a short list (never auto-mapped from the
+    # calendar date, see models/curriculum_units.py's own docstring for
+    # why). SET NULL, no cascade, same convention as curriculum_standard_id.
+    curriculum_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("curriculum_unit.id", ondelete="SET NULL"), nullable=True
     )
 
     # AI-generated structured content — see schemas/lesson_plans.py::GeneratedContent.

@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,3 +96,39 @@ async def resolve_week_occurrences(
                 end_time=period_by_id[p.id].end_time,
             ))
     return result
+
+
+async def get_occurrences_or_require_count(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    week_start: date,
+    week_end: date,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+    lesson_count: int | None,
+) -> list[ResolvedOccurrence] | None:
+    """Shared by generate_lessons/finalize_chat: real timetable data stays
+    authoritative whenever it exists (returns the real occurrences,
+    `lesson_count` is ignored entirely). Only when a class genuinely has no
+    real timetable for this class+subject+week does `lesson_count` get
+    consulted — None means "ask the teacher for a count" (422), a number
+    means "build that many teacher-declared placeholder lessons instead"
+    (signalled to the caller by returning None here, distinct from an empty
+    real-occurrence list, which can never happen — resolve_week_occurrences
+    only ever returns [] or a non-empty list)."""
+    occurrences = await resolve_week_occurrences(class_id, subject_id, academic_year_id, week_start, week_end, school_id, db)
+    if occurrences:
+        return occurrences
+    if lesson_count is None:
+        # X-Error-Code lets callers detect this specific case programmatically
+        # (see ChatPanel.svelte/GeneratedContentPanel.svelte) instead of
+        # substring-matching this prose, which is free to reword.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "No real scheduled occurrences found for this class/subject this week "
+            "(check the timetable and calendar for that week) — enter how many "
+            "lessons you'd like to plan instead.",
+            headers={"X-Error-Code": "lesson_count_required"},
+        )
+    return None

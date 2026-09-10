@@ -16,6 +16,7 @@ Planned jobs by phase:
   Phase 9:  recompute_fee_summary
   Phase 11: waec_export
 """
+from arq import func as arq_func
 from arq import run_worker
 from arq.connections import RedisSettings
 from sqlalchemy import text
@@ -32,11 +33,13 @@ from app.core.redis import close_redis, init_redis
 # main.py's own imports — it needs this exact same explicit sweep
 # tests/conftest.py already does for the same reason.
 from app.models import (  # noqa: F401
-    academic, assessments, attendance, auth, curriculum_materials, documents,
-    fees, housing, lesson_plans, school, staff, staff_history, students,
+    academic, assessments, attendance, auth, curriculum_materials,
+    curriculum_units, documents, fees, housing, lesson_plans, school,
+    staff, staff_history, students,
 )
 from app.services.bulk_report_job import bulk_generate_report_cards
 from app.services.curriculum_extraction import extract_curriculum_material
+from app.services.curriculum_unit_extraction import extract_curriculum_units
 from app.services.report_notify_job import notify_class_report_published
 
 
@@ -82,6 +85,11 @@ class WorkerSettings:
     functions = [
         test_job, bulk_generate_report_cards, notify_class_report_published,
         extract_curriculum_material,
+        # 10-30 sequential AI calls for a large document can legitimately
+        # run well past the global 300s/3-tries default below — a stuck job
+        # should not silently retry from scratch (redoing, and re-paying
+        # for, already-successful batches), hence max_tries=1.
+        arq_func(extract_curriculum_units, timeout=1800, max_tries=1),
     ]
 
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

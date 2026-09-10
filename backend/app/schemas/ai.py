@@ -53,7 +53,7 @@ PROVIDER_INFO: list[AiProviderInfo] = [
         name="Google Gemini",
         description="Google's Gemini Flash model. Best value — includes a generous free tier.",
         free_tier="1 500 requests/day free",
-        default_model="gemini-2.0-flash",
+        default_model="gemini-3.6-flash",
         docs_url="https://aistudio.google.com/app/apikey",
     ),
     AiProviderInfo(

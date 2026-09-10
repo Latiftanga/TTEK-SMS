@@ -8,6 +8,7 @@ Run inside Docker: docker compose exec api pytest app/tests/test_lesson_plan_cha
 import json
 from datetime import date
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,20 @@ class _StubDriver:
 
 def _patch_driver(monkeypatch, response: str) -> None:
     monkeypatch.setattr(ai_config_module, "build_ai_driver", lambda *a, **kw: _StubDriver(response))
+
+
+class _FailingDriver:
+    """Simulates a real provider-level failure (bad key, wrong/deprecated
+    model, rate limit) — every real driver's generate() raises exactly this
+    shape via httpx's own raise_for_status()."""
+    async def generate(self, prompt: str, system: str = "") -> str:
+        request = httpx.Request("POST", "https://example.invalid")
+        response = httpx.Response(404, request=request, text="model not found")
+        raise httpx.HTTPStatusError("404 Not Found", request=request, response=response)
+
+
+def _patch_failing_driver(monkeypatch) -> None:
+    monkeypatch.setattr(ai_config_module, "build_ai_driver", lambda *a, **kw: _FailingDriver())
 
 
 class _CountingStubDriver:
@@ -104,6 +119,25 @@ async def test_send_message_grounds_reply_in_curriculum_excerpt(
 
 
 @pytest.mark.asyncio
+async def test_send_message_502s_cleanly_on_provider_failure(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Regression: a real provider-level failure (bad key, deprecated model,
+    rate limit) used to crash with a raw unhandled 500 — must surface as a
+    clean 502 instead."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+
+    _patch_failing_driver(monkeypatch)
+    resp = await client.post(f"/lesson-plans/{lp['id']}/chat", headers=teacher_auth, json={"message": "Hello"})
+    assert resp.status_code == 502
+    assert "AI provider request failed" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_list_chat_messages_returns_full_history(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
     school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
@@ -132,6 +166,36 @@ async def test_finalize_requires_conversation_first(
 
     resp = await client.post(f"/lesson-plans/{lp['id']}/chat/finalize", headers=teacher_auth)
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_finalize_populates_activities_and_assessment_strategy(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Same regression as generate_lessons — a plan built purely through
+    chat must not leave Plan details' activities/assessment_strategy blank."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    await _with_ai_config(db_session, school)
+    await _add_period_and_slot(db_session, school, school_class, subject, academic_term, date(2024, 9, 9), number=1)
+
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+    _patch_driver(monkeypatch, "Let's do a hands-on activity with fraction tiles.")
+    await client.post(f"/lesson-plans/{lp['id']}/chat", headers=teacher_auth, json={"message": "Any activity ideas?"})
+
+    _patch_driver(monkeypatch, json.dumps({
+        "lessons": [{"introduction": "Intro", "main_lesson": "Hands-on fraction tiles activity", "closure": "Closure"}],
+        "assessment": {
+            "formative": {"mode": "Oral", "task": "Quiz", "mark_scheme": "1pt each"},
+            "transcript_assessment": {"mode": "Written", "task": "Worksheet", "rubric": "3-2-1"},
+        },
+    }))
+    resp = await client.post(f"/lesson-plans/{lp['id']}/chat/finalize", headers=teacher_auth)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "Hands-on fraction tiles activity" in data["activities"]
+    assert "Oral" in data["assessment_strategy"]
 
 
 @pytest.mark.asyncio
@@ -190,6 +254,41 @@ async def test_first_chat_message_proposes_curriculum_reference(
     assert updated.json()["content_standard"] == "Number — Fractions"
     assert updated.json()["indicator"] == "B7.1.1.1"
     assert updated.json()["learning_objectives"] == "Learners will add simple fractions."
+
+
+@pytest.mark.asyncio
+async def test_first_message_429s_before_second_call_when_only_one_generation_left(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, subject: Subject, academic_term: AcademicTerm, redis_permissions: None, monkeypatch,
+):
+    """Regression: the first chat turn makes TWO real AI generations (the
+    curriculum-reference proposal, then the actual reply) but
+    get_ready_driver() only checked the quota once, before either ran — a
+    caller with exactly 1 generation left could silently run one call over
+    budget. Now the reference proposal's own increment must be re-checked
+    before the second call, surfacing a clean 429 instead."""
+    teacher_auth, staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
+    await _make_subject_teacher(db_session, school, staff_id, school_class, subject, academic_term)
+    db_session.add(AiConfig(
+        school_id=school.id, provider=AiProvider.GEMINI, api_key="fake-key",
+        daily_limit_per_teacher=1, is_active=True,
+    ))
+    await db_session.flush()
+    lp = await _create_plan(client, teacher_auth, academic_term, school_class, subject)
+
+    reference = json.dumps({
+        "content_standard": "Number — Fractions", "indicator": "B7.1.1.1",
+        "learning_objectives": "Learners will add simple fractions.",
+    })
+    call_log: list[str] = []
+    _patch_counting_driver(monkeypatch, reference, call_log)
+
+    resp = await client.post(f"/lesson-plans/{lp['id']}/chat", headers=teacher_auth, json={"message": "Hello"})
+    assert resp.status_code == 429, resp.text
+    assert len(call_log) == 1  # only the reference proposal ran — the reply call never happened
+
+    listed = await client.get(f"/lesson-plans/{lp['id']}/chat", headers=teacher_auth)
+    assert listed.json() == []  # the user's message was never persisted either
 
 
 @pytest.mark.asyncio

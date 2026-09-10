@@ -7,6 +7,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // The `playwright` screenshot-tool container (docker-compose.yml, `tools`
+    // profile) reaches this dev server via the docker-network service name,
+    // which Vite's DNS-rebinding protection doesn't recognize by default.
+    allowedHosts: ['frontend'],
     proxy: {
       // In Docker, the browser hits localhost:5173 and we proxy /api to the backend.
       '/api': {

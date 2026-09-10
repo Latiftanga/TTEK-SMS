@@ -78,6 +78,7 @@ class AdminDashboard(DashboardExtras):
     term_expected: Decimal
     pending_approvals: int
     class_attendance: list[ClassAttendanceLine]
+    today_is_markable: bool
 
 
 class ApproverDashboard(DashboardExtras):

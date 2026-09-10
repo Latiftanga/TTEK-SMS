@@ -108,6 +108,22 @@ services:
         condition: service_healthy
     command: sh -c "npx svelte-kit sync && npm run dev"
 
+  # ── Screenshot tool (on-demand, dev only) ───────────────────────────────────
+  # Never starts with a plain `docker compose up` — the `tools` profile keeps
+  # it out of the default stack. Run explicitly:
+  #   docker compose run --rm playwright --path=/dashboard --out=dashboard.png \
+  #     --email=admin@shs.school --password=Demo1234! --school_code=SHS-DEMO
+  # Output lands in scripts/screenshot/screenshots/ on the host.
+  playwright:
+    build:
+      context: ./scripts/screenshot
+    profiles: ["tools"]
+    volumes:
+      - ./scripts/screenshot/screenshots:/work/screenshots
+    depends_on:
+      - frontend
+      - api
+
 volumes:
   postgres_data:
   redis_data:

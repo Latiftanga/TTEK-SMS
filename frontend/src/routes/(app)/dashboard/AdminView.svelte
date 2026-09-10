@@ -69,9 +69,9 @@
     label="Present Today"
     value="{attendancePct}%"
     iconPath={icons.attendance}
-    trend="{fmt(data.today_present)} of {fmt(data.today_total)}"
+    trend={data.today_is_markable ? `${fmt(data.today_present)} of ${fmt(data.today_total)}` : 'Not a school day'}
     href="/attendance"
-    alert={data.attendance_pct < 80 && data.today_total > 0}
+    alert={data.today_is_markable && data.attendance_pct < 80 && data.today_total > 0}
   />
   <StatCard
     label="Fees Collected"
@@ -112,8 +112,21 @@
           {@const low = cls.marked && pct < 70 && cls.total > 0}
           <!-- A class with zero records ("not marked yet") is distinct from
                one that was marked with a genuinely low presence rate — both
-               used to render as an identical 0% bar. -->
-          {#if !cls.marked}
+               used to render as an identical 0% bar. A third state — today
+               isn't even a markable day (term ended, holiday, no calendar
+               generated) — is distinct again: "Mark now" would just lead to
+               a dead end on /attendance, so it gets a calm, non-actionable
+               line instead of an amber nag. -->
+          {#if !cls.marked && !data.today_is_markable}
+            <div class="-mx-2 rounded-lg px-2 py-1">
+              <div class="mb-1.5 flex items-center justify-between gap-2">
+                <span class="text-[0.8125rem] font-medium text-[var(--fg)]">{cls.name}</span>
+                <span class="text-[11px] font-medium text-[var(--fg-muted)]">Not a school day</span>
+              </div>
+              <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"></div>
+              <p class="mt-1 text-[11px] text-[var(--fg-muted)]">{cls.total} students</p>
+            </div>
+          {:else if !cls.marked}
             <a href="/attendance"
                class="group -mx-2 block rounded-lg px-2 py-1 transition hover:bg-amber-50 dark:hover:bg-amber-950/30">
               <div class="mb-1.5 flex items-center justify-between gap-2">

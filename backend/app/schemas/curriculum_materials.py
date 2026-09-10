@@ -19,6 +19,8 @@ class CurriculumMaterialRead(BaseModel):
     created_at: datetime
     extraction_status: ExtractionStatus
     extraction_error: str | None
+    unit_extraction_status: ExtractionStatus
+    unit_extraction_error: str | None
     model_config = {"from_attributes": True}
 
 

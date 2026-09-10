@@ -14,6 +14,8 @@ export interface CurriculumMaterial {
   created_at: string;
   extraction_status: ExtractionStatus;
   extraction_error: string | null;
+  unit_extraction_status: ExtractionStatus;
+  unit_extraction_error: string | null;
 }
 
 export const listCurriculumMaterials = (classSubjectId: string): Promise<CurriculumMaterial[]> =>
@@ -32,3 +34,9 @@ export const uploadCurriculumMaterial = (
 
 export const deleteCurriculumMaterial = (materialId: string): Promise<void> =>
   api.delete(`/curriculum-materials/${materialId}`).then(r => r.data);
+
+// Admin-triggered, not automatic on upload — a large document can cost
+// 10-30 sequential AI calls, a conscious action rather than a surprise
+// side effect of every upload.
+export const extractCurriculumUnits = (materialId: string): Promise<CurriculumMaterial> =>
+  api.post(`/curriculum-materials/${materialId}/extract-units`).then(r => r.data);

@@ -18,6 +18,7 @@ from app.schemas.dashboard import (
     FinanceDashboard,
 )
 from app.services.academic_year import get_current_term
+from app.services.attendance_shared import _MARKABLE_TYPES
 from app.services.student_display import _class_display_name
 
 
@@ -86,7 +87,7 @@ async def admin_view(
             total_students=0, today_present=0, today_total=0,
             attendance_pct=0.0, term_collection_pct=0.0,
             term_collected=zero, term_expected=zero,
-            pending_approvals=0, class_attendance=[],
+            pending_approvals=0, class_attendance=[], today_is_markable=False,
         )
 
     total_students = await db.scalar(
@@ -116,6 +117,8 @@ async def admin_view(
         .order_by(Class.level, Class.year_group)
         .limit(12)
     )
+
+    today_is_markable = bool(today_cal and today_cal.day_type in _MARKABLE_TYPES)
 
     present_map: dict[uuid.UUID, int] = {}
     marked_map: dict[uuid.UUID, int] = {}
@@ -198,4 +201,5 @@ async def admin_view(
         term_collected=collected, term_expected=expected,
         pending_approvals=pending_approvals,
         class_attendance=class_lines,
+        today_is_markable=today_is_markable,
     )

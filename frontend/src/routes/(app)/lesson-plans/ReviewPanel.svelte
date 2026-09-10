@@ -13,7 +13,7 @@
 
   // Re-synced on every plan change below — this component is reused across
   // different week/class/subject selections, not remounted (same pattern as
-  // LessonPlanForm.svelte's own $effect re-sync).
+  // PlanDetailsPanel.svelte's own $effect re-sync).
   let notes = $state('');
   $effect(() => { notes = plan.review_notes ?? ''; });
 

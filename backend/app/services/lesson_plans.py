@@ -19,11 +19,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.teacher_scope import resolve_assessment_scope, year_for_term
-from app.models.academic import AcademicTerm, Class, SHSProgramme, Subject
+from app.models.academic import AcademicTerm, ClassSubject
+from app.models.curriculum_materials import CurriculumMaterial
+from app.models.curriculum_units import CurriculumUnit
 from app.models.lesson_plans import CurriculumStandard, LessonPlan
+from app.schemas.curriculum_units import CurriculumUnitRead
 from app.schemas.lesson_plans import LessonPlanCreate, LessonPlanRead, LessonPlanUpdate
-from app.services import ai_config
-from app.services.student_display import _class_display_name
 from app.services.subject_roster import class_subject_exists
 
 
@@ -73,6 +74,74 @@ async def _resolve_curriculum_standard(
     return cs
 
 
+async def _resolve_curriculum_unit(
+    curriculum_unit_id: uuid.UUID | None, class_id: uuid.UUID, subject_id: uuid.UUID,
+    school_id: uuid.UUID, db: AsyncSession,
+) -> CurriculumUnit | None:
+    """A second, independent optional autofill source — a specific
+    machine-extracted unit the teacher picked from a short list (never
+    auto-mapped from the calendar date, see models/curriculum_units.py).
+    Ownership check: the unit's parent CurriculumMaterial must be uploaded
+    against the exact (class, subject) being planned, not just any material
+    at this school."""
+    if curriculum_unit_id is None:
+        return None
+    unit = await db.scalar(
+        select(CurriculumUnit)
+        .join(CurriculumMaterial, CurriculumMaterial.id == CurriculumUnit.material_id)
+        .join(ClassSubject, ClassSubject.id == CurriculumMaterial.class_subject_id)
+        .where(
+            CurriculumUnit.id == curriculum_unit_id,
+            CurriculumUnit.school_id == school_id,
+            ClassSubject.class_id == class_id,
+            ClassSubject.subject_id == subject_id,
+        )
+    )
+    if not unit:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Curriculum unit not found.")
+    return unit
+
+
+def _reference_autofill_from(
+    cu: CurriculumUnit | None, cs: CurriculumStandard | None,
+) -> tuple[str | None, str | None, str | None]:
+    """content_standard/indicator/learning_objectives autofill precedence —
+    picked CurriculumUnit (the richer, document-cited source) over matched
+    CurriculumStandard — shared by create_lesson_plan and update_lesson_plan
+    so the precedence formula itself lives in exactly one place. Each caller
+    layers its own guard on top (create: only when the request didn't supply
+    the field itself; update: only when the field is still blank and wasn't
+    part of this request) rather than this helper, since those guards
+    genuinely differ between the two."""
+    content_standard = (cu.content_standard if cu else None) or (f"{cs.strand} — {cs.sub_strand}" if cs else None)
+    indicator = (cu.indicator if cu else None) or (cs.indicator_code if cs else None)
+    learning_objectives = (cu.learning_objectives if cu else None) or (cs.objective_text if cs else None)
+    return content_standard, indicator, learning_objectives
+
+
+async def list_curriculum_units_for_planning(
+    class_id: uuid.UUID, subject_id: uuid.UUID, academic_term_id: uuid.UUID,
+    school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
+) -> list[CurriculumUnitRead]:
+    """Powers the "pick a unit" flow on the lesson-plans page — gated on
+    lesson_plans.view + the caller's own SubjectTeacher scope (same as every
+    other read in this file), not documents.view, since an ordinary
+    TEACHER-position subject teacher (the exact audience for this feature)
+    doesn't hold that broader admin permission."""
+    await _check_scope(class_id, subject_id, academic_term_id, user_id, db)
+    rows = await db.scalars(
+        select(CurriculumUnit)
+        .join(CurriculumMaterial, CurriculumMaterial.id == CurriculumUnit.material_id)
+        .join(ClassSubject, ClassSubject.id == CurriculumMaterial.class_subject_id)
+        .where(
+            ClassSubject.class_id == class_id, ClassSubject.subject_id == subject_id,
+            CurriculumUnit.school_id == school_id,
+        )
+        .order_by(CurriculumMaterial.created_at.desc(), CurriculumUnit.sequence_number)
+    )
+    return [CurriculumUnitRead.model_validate(r) for r in rows]
+
+
 async def create_lesson_plan(
     req: LessonPlanCreate, school_id: uuid.UUID, user_id: uuid.UUID, staff_id: uuid.UUID, db: AsyncSession,
 ) -> LessonPlanRead:
@@ -89,9 +158,14 @@ async def create_lesson_plan(
         )
 
     cs = await _resolve_curriculum_standard(req.curriculum_standard_id, school_id, db)
-    content_standard = req.content_standard or (f"{cs.strand} — {cs.sub_strand}" if cs else None)
-    indicator = req.indicator or (cs.indicator_code if cs else None)
-    learning_objectives = req.learning_objectives or (cs.objective_text if cs else None)
+    cu = await _resolve_curriculum_unit(req.curriculum_unit_id, req.class_id, req.subject_id, school_id, db)
+    # Precedence: explicit request field > picked CurriculumUnit > matched
+    # CurriculumStandard — the unit is the richer, document-cited source
+    # when a teacher has one to pick from.
+    auto_content_standard, auto_indicator, auto_learning_objectives = _reference_autofill_from(cu, cs)
+    content_standard = req.content_standard or auto_content_standard
+    indicator = req.indicator or auto_indicator
+    learning_objectives = req.learning_objectives or auto_learning_objectives
 
     lp = LessonPlan(
         school_id=school_id,
@@ -103,6 +177,8 @@ async def create_lesson_plan(
         content_standard=content_standard,
         indicator=indicator,
         learning_objectives=learning_objectives,
+        strand=cu.strand if cu else None,
+        sub_strand=cu.sub_strand if cu else None,
         core_competencies=req.core_competencies,
         teaching_resources=req.teaching_resources,
         activities=req.activities,
@@ -110,6 +186,7 @@ async def create_lesson_plan(
         reflection_notes=req.reflection_notes,
         created_by_id=staff_id,
         curriculum_standard_id=cs.id if cs else None,
+        curriculum_unit_id=cu.id if cu else None,
     )
     db.add(lp)
     try:
@@ -170,10 +247,31 @@ async def update_lesson_plan(
 ) -> LessonPlanRead:
     lp = await get_lesson_plan(lesson_plan_id, school_id, user_id, db)
     fields = req.model_dump(exclude_unset=True)
+    cs = None
+    cu = None
     if "curriculum_standard_id" in fields and fields["curriculum_standard_id"] is not None:
-        await _resolve_curriculum_standard(fields["curriculum_standard_id"], school_id, db)
+        cs = await _resolve_curriculum_standard(fields["curriculum_standard_id"], school_id, db)
+    if "curriculum_unit_id" in fields and fields["curriculum_unit_id"] is not None:
+        cu = await _resolve_curriculum_unit(fields["curriculum_unit_id"], lp.class_id, lp.subject_id, school_id, db)
     for field, value in fields.items():
         setattr(lp, field, value.strip() if field == "topic" and value else value)
+    if cs or cu:
+        # Same autofill precedence as create_lesson_plan (see
+        # _reference_autofill_from) — only fills a field that's still blank
+        # after applying this request's own explicit values, never
+        # overwrites one the teacher set (here or in an earlier request).
+        auto_content_standard, auto_indicator, auto_learning_objectives = _reference_autofill_from(cu, cs)
+        if not lp.content_standard and "content_standard" not in fields:
+            lp.content_standard = auto_content_standard
+        if not lp.indicator and "indicator" not in fields:
+            lp.indicator = auto_indicator
+        if not lp.learning_objectives and "learning_objectives" not in fields:
+            lp.learning_objectives = auto_learning_objectives
+        if cu:
+            if not lp.strand:
+                lp.strand = cu.strand
+            if not lp.sub_strand:
+                lp.sub_strand = cu.sub_strand
     await db.flush()
     return _to_read(lp)
 
@@ -183,42 +281,3 @@ async def delete_lesson_plan(
 ) -> None:
     lp = await get_lesson_plan(lesson_plan_id, school_id, user_id, db)
     await db.delete(lp)
-
-
-_AI_SYSTEM_PROMPT = (
-    "You are an assistant helping a Ghanaian teacher draft a weekly lesson "
-    "plan aligned with the GES Standards-Based Curriculum. Write plain text "
-    "(no markdown headers or tables), organized under these labeled "
-    "sections: Learning Objectives, Core Competencies, Teaching Resources, "
-    "Activities, and Assessment Strategy. Keep it concise and practical — "
-    "this is a starting draft for the teacher to edit, not a finished plan."
-)
-
-
-async def draft_with_ai(
-    class_id: uuid.UUID, subject_id: uuid.UUID, topic: str,
-    school_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
-) -> str:
-    """Returns a single free-text draft — AiDriver.generate() returns plain
-    str with no structured-output contract, so this is shown to the teacher
-    as a suggestion to review/copy from, never auto-saved into the form's
-    individual fields. Falls back to the platform-default provider if this
-    school hasn't configured its own (see ai_config.py::
-    resolve_driver_for_generation)."""
-    driver, cfg = await ai_config.resolve_driver_for_generation(school_id, db)  # raises 503 if neither exists
-    await ai_config.check_daily_limit(school_id, user_id, cfg, db)  # raises 429 if exhausted
-
-    subject = await db.get(Subject, subject_id)
-    cls = await db.get(Class, class_id)
-    prog_name = None
-    if cls and cls.programme_id:
-        prog = await db.get(SHSProgramme, cls.programme_id)
-        prog_name = prog.name if prog else None
-    class_label = _class_display_name(cls.level, cls.year_group, prog_name, cls.stream) if cls else "the class"
-    subject_name = subject.name if subject else "the subject"
-
-    prompt = f"Draft a weekly lesson plan for {class_label}, subject: {subject_name}. Topic: {topic}."
-    draft_text = await driver.generate(prompt, _AI_SYSTEM_PROMPT)
-
-    await ai_config.increment_usage(school_id, user_id, cfg)
-    return draft_text

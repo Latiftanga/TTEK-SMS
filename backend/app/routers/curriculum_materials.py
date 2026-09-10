@@ -17,7 +17,9 @@ from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.core.redis import get_arq
 from app.schemas.curriculum_materials import CurriculumMaterialRead
+from app.schemas.curriculum_units import CurriculumUnitRead
 from app.services import curriculum_materials as cm_svc
+from app.services import curriculum_units as cu_svc
 from app.services.curriculum_materials import MAX_FILE_BYTES
 
 router = APIRouter(prefix="/curriculum-materials", tags=["curriculum-materials"])
@@ -40,11 +42,17 @@ async def upload_material(
     user_id, school_id = auth
     material = await cm_svc.upload_material(class_subject_id, document_type, file, school_id, user_id, db)
 
-    arq = await get_arq()
     try:
-        await arq.enqueue_job("extract_curriculum_material", material_id=str(material.id))
-    finally:
-        await arq.aclose()
+        arq = await get_arq()
+        try:
+            await arq.enqueue_job("extract_curriculum_material", material_id=str(material.id))
+        finally:
+            await arq.aclose()
+    except Exception as exc:
+        # The upload itself (DB row + file on disk) already succeeded — a
+        # queue hiccup shouldn't roll that back and orphan the file. Record
+        # it the same way a worker-side extraction failure would.
+        material = await cm_svc.mark_extraction_failed(material.id, school_id, str(exc), db)
 
     return material
 
@@ -67,3 +75,39 @@ async def delete_material(
 ):
     _, school_id = auth
     await cm_svc.delete_material(material_id, school_id, db)
+
+
+@router.post("/{material_id}/extract-units", response_model=CurriculumMaterialRead)
+async def extract_units(
+    material_id: uuid.UUID,
+    auth=Depends(require_permission("documents", "manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-triggered, not automatic on upload — a large document can cost
+    10-30 sequential AI calls, a conscious action rather than a surprise
+    side effect of every upload (see services/curriculum_unit_extraction.py)."""
+    user_id, school_id = auth
+    await cm_svc.get_material_or_404(material_id, school_id, db)
+
+    try:
+        arq = await get_arq()
+        try:
+            await arq.enqueue_job(
+                "extract_curriculum_units", material_id=str(material_id), triggered_by_user_id=str(user_id),
+            )
+        finally:
+            await arq.aclose()
+    except Exception as exc:
+        return await cm_svc.mark_unit_extraction_failed(material_id, school_id, str(exc), db)
+
+    return await cm_svc.mark_unit_extraction_pending(material_id, school_id, db)
+
+
+@router.get("/{material_id}/units", response_model=list[CurriculumUnitRead])
+async def list_units(
+    material_id: uuid.UUID,
+    auth=Depends(require_permission("documents", "view")),
+    db: AsyncSession = Depends(get_db),
+):
+    _, school_id = auth
+    return await cu_svc.list_units(material_id, school_id, db)
