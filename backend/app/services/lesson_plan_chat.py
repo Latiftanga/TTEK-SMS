@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.teacher_scope import year_for_term
-from app.models.lesson_plans import ChatMessageRole, LessonPlanChatMessage, LessonPlanGenerationStage
+from app.models.lesson_plans import ChatMessageRole, LessonPlan, LessonPlanChatMessage, LessonPlanGenerationStage
 from app.schemas.lesson_plans import ChatMessageRead, GeneratedLessonsResponse, LessonEntry, LessonPlanRead
 from app.services import ai_config
 from app.services.ai_driver import generate_json, generate_safe
@@ -66,6 +66,13 @@ async def send_chat_message(
     school_id: uuid.UUID, user_id: uuid.UUID, staff_id: uuid.UUID, db: AsyncSession,
 ) -> list[ChatMessageRead]:
     lp = await get_lesson_plan(lesson_plan_id, school_id, user_id, db)
+    # Serializes concurrent sends for the same plan: this lock is held for
+    # the rest of the transaction (released on commit, at the end of the
+    # request), so a second concurrent send for this plan blocks here until
+    # the first one commits. Without it, two requests racing on the very
+    # first turn can both read an empty history below and both fire the
+    # curriculum-reference proposal call.
+    await db.execute(select(LessonPlan.id).where(LessonPlan.id == lp.id).with_for_update())
     driver, cfg = await get_ready_driver(school_id, user_id, db)
 
     # On the very first turn of a conversation, also propose the content
@@ -76,7 +83,8 @@ async def send_chat_message(
     # own docstring. Deliberately fail-soft: this is a nice-to-have on top of
     # the conversation, not something that should break the actual chat
     # reply below if the model's response can't be parsed as JSON.
-    is_first_turn = not await _load_messages(lp.id, db)
+    prior_messages = await _load_messages(lp.id, db)
+    is_first_turn = not prior_messages
     proposed_reference = False
     # Resolved once and reused below for build_context()'s own excerpt
     # lookup — both target the same class+subject, so this avoids a
@@ -107,21 +115,28 @@ async def send_chat_message(
         await ai_config.check_daily_limit(school_id, user_id, cfg, db)
 
     now = datetime.now(timezone.utc)
-    db.add(LessonPlanChatMessage(
+    user_msg = LessonPlanChatMessage(
         school_id=school_id, lesson_plan_id=lp.id, role=ChatMessageRole.USER,
         content=message_text, created_at=now,
-    ))
+    )
+    db.add(user_msg)
     await db.flush()
 
     context = await build_context(lp, school_id, db, query_text=f"{lp.topic} {message_text}", cs_id=cs_id)
-    messages = await _load_messages(lp.id, db)
+    # The rows above (prior_messages) plus this request's own new ones are
+    # already the full, correctly-ordered history — id/created_at are both
+    # set client-side (UUIDPrimaryKey's default, and the explicit `now`
+    # above) before flush, so there's no need to re-query for either the
+    # transcript or the final response.
+    messages = [*prior_messages, user_msg]
     prompt = f"{context}\n\nConversation so far:\n{_transcript(messages)}\n\nAssistant:"
     reply_text = await generate_safe(driver, prompt, _CHAT_GUARDRAILS)
 
-    db.add(LessonPlanChatMessage(
+    assistant_msg = LessonPlanChatMessage(
         school_id=school_id, lesson_plan_id=lp.id, role=ChatMessageRole.ASSISTANT,
         content=reply_text, created_at=datetime.now(timezone.utc),
-    ))
+    )
+    db.add(assistant_msg)
     await log_generation(
         school_id, lp.id, LessonPlanGenerationStage.CHAT, prompt,
         cfg.provider.value, cfg.model or "default", staff_id, db,
@@ -129,7 +144,7 @@ async def send_chat_message(
     await ai_config.increment_usage(school_id, user_id, cfg)
     await db.flush()
 
-    return [_to_message_read(m) for m in await _load_messages(lp.id, db)]
+    return [_to_message_read(m) for m in (*prior_messages, user_msg, assistant_msg)]
 
 
 async def list_chat_messages(

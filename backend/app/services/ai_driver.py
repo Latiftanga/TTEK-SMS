@@ -47,7 +47,7 @@ class AiDriver(ABC):
         return await self.generate("Reply with the single word OK and nothing else.")
 
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*\}|\[.*\])\s*```", re.DOTALL)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
 def _extract_json(text: str) -> str:

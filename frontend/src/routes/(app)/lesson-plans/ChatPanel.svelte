@@ -60,7 +60,7 @@
   });
 
   function handleSend() {
-    if (!draft.trim() || $sendMut.isPending) return;
+    if (!draft.trim() || $sendMut.isPending || !$isOnline) return;
     $sendMut.mutate(draft.trim());
   }
 </script>
