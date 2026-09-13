@@ -8,6 +8,23 @@ export interface TimetableSlot {
   teacher_name: string | null;
 }
 
+export interface ImportRowResult {
+  row: number;
+  ref: string | null;
+  status: string;
+  error: string | null;
+  warning: string | null;
+}
+
+export interface ImportBatchResult {
+  batch_id: string;
+  total_rows: number;
+  created: number;
+  failed: number;
+  errors: ImportRowResult[];
+  warnings: ImportRowResult[];
+}
+
 export interface ScheduleEntry {
   day_of_week: DayOfWeek;
   start_time: string;
@@ -36,3 +53,13 @@ export const deleteTimetableSlot = (classId: string, periodId: string, yearId: s
 // Omit yearId to let the backend default to the school's current academic year.
 export const getMySchedule = (yearId?: string): Promise<ScheduleEntry[]> =>
   client.get('/timetable/my-schedule', { params: yearId ? { year_id: yearId } : undefined }).then(r => r.data);
+
+// Bulk-creates/updates a whole school's TimetableSlot rows for one academic
+// year from a FET (Free Timetabling Software) CSV export.
+export const bulkImportTimetable = (file: File, yearId: string): Promise<ImportBatchResult> => {
+  const form = new FormData();
+  form.append('file', file);
+  return client
+    .post<ImportBatchResult>('/academic/timetable/import', form, { params: { year_id: yearId } })
+    .then(r => r.data);
+};

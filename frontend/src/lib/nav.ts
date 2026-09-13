@@ -154,6 +154,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { href: '/admin/academic/years',      label: 'Years & Terms', roles: ['admin'] },
           { href: '/admin/academic/classes',    label: 'Classes',       roles: ['admin'] },
           { href: '/admin/academic/subjects',   label: 'Subjects',      roles: ['admin'] },
+          { href: '/admin/academic/timetable',  label: 'Timetable',     roles: ['admin'] },
           { href: '/admin/academic/programmes', label: 'Programmes',    roles: ['admin'],
             schoolTypes: ['SHS', 'TECHNICAL', 'VOCATIONAL'] },
         ],
