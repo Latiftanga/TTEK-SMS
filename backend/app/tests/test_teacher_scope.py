@@ -120,7 +120,7 @@ async def test_resolve_assessment_scope_exact_pairs_for_subject_teacher(
     cat = SubjectCatalogue(name="Test Subject", code="SCOPE_UNIT", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="SCOPE_UNIT", name="Test Subject", is_active=True)
+    subj = Subject(school_id=school.id, code="SCOPE_UNIT", name="Test Subject", is_active=True)
     db_session.add(subj)
     await db_session.flush()
 

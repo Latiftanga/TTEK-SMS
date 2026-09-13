@@ -7,7 +7,7 @@
   } from '$lib/api/students';
   import { listClassSubjects, listSubjects, listAllTerms, listSubjectTeachers, type Subject } from '$lib/api/academic';
   import { toast } from '$lib/stores/toast';
-  import { school } from '$lib/stores/school';
+  import { school, hasProgrammeTracks } from '$lib/stores/school';
   import OverrideReasonModal from '$lib/components/OverrideReasonModal.svelte';
 
   interface Props {
@@ -16,12 +16,12 @@
   }
   const { enrollment, compact = false }: Props = $props();
 
-  // Core/Elective is an SHS-programme concept — Basic schools follow a fixed
-  // GES curriculum with no per-student subject choice, so the toggle and
-  // badge would just be confusing jargon. Every registration still defaults
-  // to CORE under the hood; this only hides the UI, same gate as
-  // SubjectsTab.svelte's Core/Elective toggle.
-  const showElectiveConcept = $derived($school?.schoolType !== 'BASIC');
+  // Core/Elective is a programme-track concept — schools with no programme
+  // tracks follow a fixed GES curriculum with no per-student subject
+  // choice, so the toggle and badge would just be confusing jargon. Every
+  // registration still defaults to CORE under the hood; this only hides
+  // the UI, same gate as SubjectsTab.svelte's Core/Elective toggle.
+  const showElectiveConcept = $derived(hasProgrammeTracks($school?.schoolType ?? 'BASIC'));
 
   const qc = useQueryClient();
   let showAddForm = $state(false);

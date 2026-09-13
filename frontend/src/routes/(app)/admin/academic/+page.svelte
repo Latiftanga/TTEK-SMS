@@ -3,11 +3,14 @@
   import { listYears, listClasses } from '$lib/api/academic';
   import { setPageTitle } from '$lib/stores/title';
   import { findCurrentYear, findCurrentTerm } from '$lib/academicPeriod';
+  import { school, hasProgrammeTracks } from '$lib/stores/school';
 
   setPageTitle('Academic');
 
   const yearsQ   = createQuery({ queryKey: ['academic-years'], queryFn: listYears,   staleTime: 5 * 60_000 });
   const classesQ = createQuery({ queryKey: ['classes'],        queryFn: listClasses, staleTime: 2 * 60_000 });
+
+  const showProgrammes = $derived(hasProgrammeTracks($school?.schoolType ?? 'BASIC'));
 
   const currentYear   = $derived(findCurrentYear($yearsQ.data ?? []) ?? null);
   const currentTerm   = $derived(currentYear ? findCurrentTerm(currentYear.terms) ?? null : null);
@@ -158,23 +161,25 @@
       </p>
     </a>
 
-    <!-- Programmes -->
-    <a href="/admin/academic/programmes"
-      class="group flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5
-             transition hover:border-[var(--brand)]/40 hover:shadow-sm">
-      <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600 text-white">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>
-        </svg>
-      </div>
-      <p class="font-semibold text-[var(--fg)]">Programmes</p>
-      <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
-        Configure SHS programmes — Science, Arts, Business, etc. Used when placing students into specialised tracks.
-      </p>
-      <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
-        Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
-      </p>
-    </a>
+    <!-- Programmes — only for schools that actually have programme tracks -->
+    {#if showProgrammes}
+      <a href="/admin/academic/programmes"
+        class="group flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5
+               transition hover:border-[var(--brand)]/40 hover:shadow-sm">
+        <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600 text-white">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>
+          </svg>
+        </div>
+        <p class="font-semibold text-[var(--fg)]">Programmes</p>
+        <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
+          Configure SHS programmes — Science, Arts, Business, etc. Used when placing students into specialised tracks.
+        </p>
+        <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
+          Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+        </p>
+      </a>
+    {/if}
 
     <!-- Promotion -->
     <a href="/admin/academic/promote"

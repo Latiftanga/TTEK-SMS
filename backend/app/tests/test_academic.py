@@ -4,6 +4,7 @@ Run inside Docker: docker compose exec api pytest app/tests/test_academic.py -v
 
 Fixtures (school, school_admin, auth) are defined in conftest.py.
 """
+import io
 import uuid
 from datetime import date
 
@@ -15,9 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password
 from app.models.auth import LoginType, User
-from app.models.academic import (
-    AcademicTerm, AcademicYear, SchoolLevel, SHSProgramme, SubjectCatalogue, SubjectType,
-)
+from app.models.academic import AcademicTerm, AcademicYear, SHSProgramme
 from app.models.school import GhanaDistrict, GhanaRegion, School, SchoolType
 
 
@@ -438,6 +437,43 @@ async def test_duplicate_class_rejected_at_db_level(
         await db_session.flush()
 
 
+@pytest.mark.asyncio
+async def test_update_class_clears_stream_with_explicit_null(client: AsyncClient, auth: dict):
+    """Sending an explicit null must actually clear the field — distinct
+    from omitting it, which leaves the value unchanged. Regression: an
+    earlier fix distinguishing these two cases via model_fields_set called
+    .strip() unconditionally and crashed (500) on the genuine-null case."""
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.patch(f"/academic/classes/{class_id}", json={"stream": None}, headers=auth)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["stream"] is None
+
+    # Omitting the field entirely must leave it unchanged.
+    resp = await client.patch(f"/academic/classes/{class_id}", json={"capacity": 30}, headers=auth)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["stream"] is None
+    assert resp.json()["capacity"] == 30
+
+
+@pytest.mark.asyncio
+async def test_update_class_rejects_collision_with_422_not_500(
+    client: AsyncClient, auth: dict,
+):
+    await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)
+    class_b = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "B",
+    }, headers=auth)).json()["id"]
+
+    resp = await client.patch(f"/academic/classes/{class_b}", json={"stream": "A"}, headers=auth)
+    assert resp.status_code == 422
+    assert "already exists" in resp.json()["detail"]
+
+
 async def _second_shs_school_auth(client: AsyncClient, db_session: AsyncSession) -> dict:
     """Create a second SHS school + superadmin and return their auth headers."""
     region = await db_session.scalar(select(GhanaRegion).limit(1))
@@ -608,6 +644,36 @@ async def test_list_classes_by_year(client: AsyncClient, auth: dict):
     assert len(resp.json()) == 2
 
 
+@pytest.mark.asyncio
+async def test_class_read_reports_active_student_count(
+    client: AsyncClient, auth: dict, academic_year,
+):
+    """Powers the deactivate-class confirmation's "N students are still
+    enrolled" warning — must reflect real active StudentClassAssignment rows,
+    not enrolled-ever."""
+    class_id = (await client.post("/academic/classes", json={
+        "level": "JHS", "year_group": 1, "stream": "A",
+    }, headers=auth)).json()["id"]
+
+    empty = await client.get(f"/academic/classes/{class_id}", headers=auth)
+    assert empty.json()["active_student_count"] == 0
+
+    student_id = (await client.post("/students", json={
+        "admission_number": "CNT001", "first_name": "Ama", "last_name": "Owusu",
+    }, headers=auth)).json()["id"]
+    assign = await client.post("/students/class-assignments", json={
+        "student_id": student_id, "class_id": class_id, "academic_year_id": str(academic_year.id),
+    }, headers=auth)
+    assert assign.status_code == 201, assign.text
+
+    resp = await client.get(f"/academic/classes/{class_id}", headers=auth)
+    assert resp.json()["active_student_count"] == 1
+
+    listed = await client.get("/academic/classes", headers=auth)
+    row = next(c for c in listed.json() if c["id"] == class_id)
+    assert row["active_student_count"] == 1
+
+
 # ── Subjects ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -624,15 +690,6 @@ async def test_create_and_list_subjects(client: AsyncClient, auth: dict):
     assert len(resp.json()) == 2
 
 
-@pytest.mark.asyncio
-async def test_create_subject_rejects_bogus_catalogue_id(client: AsyncClient, auth: dict):
-    """A nonexistent catalogue_id previously skipped the electives/SHS guard
-    silently and fell through to an unhandled IntegrityError (500) on
-    insert — must be a clean 404 instead."""
-    resp = await client.post("/academic/subjects", json={
-        "catalogue_id": str(uuid.uuid4()), "code": "BOGUS", "name": "Bogus Catalogue Link",
-    }, headers=auth)
-    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -688,6 +745,82 @@ async def test_assign_subject_rejects_other_schools_subject(
         "subject_ids": [other_subject_id],
     }, headers=auth)
     assert resp.status_code == 404
+
+
+# ── Removing a class subject is a soft-delete ───────────────────────────────────
+# A hard delete here would cascade to any uploaded CurriculumMaterial for this
+# class+subject (permanently, with no warning) and orphan SubjectTeacher/
+# TimetableSlot/Assessment rows. remove_class_subject() must only deactivate.
+
+@pytest.mark.asyncio
+async def test_remove_class_subject_hides_it_but_keeps_the_row(
+    client: AsyncClient, auth: dict,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+
+    resp = await client.delete(f"/academic/classes/{class_id}/subjects/{subject_id}", headers=auth)
+    assert resp.status_code == 204
+
+    listed = await client.get(f"/academic/classes/{class_id}/subjects", headers=auth)
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+    # Removing an already-removed subject 404s the same way a truly
+    # never-assigned one would — the row is soft-deleted, not gone.
+    resp = await client.delete(f"/academic/classes/{class_id}/subjects/{subject_id}", headers=auth)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_remove_then_readd_class_subject_reactivates_same_row_and_keeps_materials(
+    client: AsyncClient, auth: dict, db_session: AsyncSession,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+    rows_before = (await client.get(f"/academic/classes/{class_id}/subjects", headers=auth)).json()
+    class_subject_id = rows_before[0]["id"]
+
+    material = await client.post(
+        f"/curriculum-materials/{class_subject_id}", params={"document_type": "TEXTBOOK"}, headers=auth,
+        files={"file": ("x.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")},
+    )
+    assert material.status_code == 201, material.text
+
+    resp = await client.delete(f"/academic/classes/{class_id}/subjects/{subject_id}", headers=auth)
+    assert resp.status_code == 204
+
+    # The CurriculumMaterial row must survive the removal — only Class Subject
+    # deactivates, nothing cascades.
+    from app.models.curriculum_materials import CurriculumMaterial
+    still_there = await db_session.get(CurriculumMaterial, uuid.UUID(material.json()["id"]))
+    assert still_there is not None
+
+    resp = await client.post(f"/academic/classes/{class_id}/subjects", json={
+        "subject_ids": [subject_id],
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()[0]["id"] == class_subject_id  # same row reactivated, not a new one
+
+    materials = await client.get(f"/curriculum-materials/{class_subject_id}", headers=auth)
+    assert materials.status_code == 200
+    assert len(materials.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_then_readd_class_subject_preserves_elective_flag(
+    client: AsyncClient, auth: dict,
+):
+    class_id, subject_id = await _class_with_subject(client, auth)
+    patch = await client.patch(
+        f"/academic/classes/{class_id}/subjects/{subject_id}", json={"is_elective": True}, headers=auth,
+    )
+    assert patch.status_code == 200
+
+    await client.delete(f"/academic/classes/{class_id}/subjects/{subject_id}", headers=auth)
+    resp = await client.post(f"/academic/classes/{class_id}/subjects", json={
+        "subject_ids": [subject_id],
+    }, headers=auth)
+    assert resp.status_code == 201
+    assert resp.json()[0]["is_elective"] is True
 
 
 # ── Inactive class blocks new structural writes ─────────────────────────────────
@@ -1172,35 +1305,3 @@ async def test_basic_school_list_programmes_returns_empty(
     assert resp.json() == []
 
 
-@pytest.mark.asyncio
-async def test_basic_school_cannot_create_elective_subject(
-    client: AsyncClient, db_session: AsyncSession
-):
-    basic_auth = await _basic_school_auth(client, db_session)
-    cat = SubjectCatalogue(
-        code="ELEC001", name="Elective Maths",
-        subject_type=SubjectType.ELECTIVE, level=SchoolLevel.SHS, is_active=True,
-    )
-    db_session.add(cat)
-    await db_session.flush()
-    resp = await client.post("/academic/subjects", json={
-        "catalogue_id": str(cat.id), "code": "ELEC001", "name": "Elective Maths",
-    }, headers=basic_auth)
-    assert resp.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_shs_school_can_create_elective_subject(
-    client: AsyncClient, auth: dict, db_session: AsyncSession
-):
-    """The SHS school fixture can freely create elective subjects."""
-    cat = SubjectCatalogue(
-        code="ELEC002", name="Physics",
-        subject_type=SubjectType.ELECTIVE, level=SchoolLevel.SHS, is_active=True,
-    )
-    db_session.add(cat)
-    await db_session.flush()
-    resp = await client.post("/academic/subjects", json={
-        "catalogue_id": str(cat.id), "code": "ELEC002", "name": "Physics",
-    }, headers=auth)
-    assert resp.status_code == 201

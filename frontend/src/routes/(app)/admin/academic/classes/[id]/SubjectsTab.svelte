@@ -3,13 +3,13 @@
   import { writable } from 'svelte/store';
   import {
     listClassSubjects, listSubjects, removeClassSubject, updateClassSubject,
-    listYears, listSubjectTeachers, type ClassSubject,
+    listYears, listSubjectTeachers, removeSubjectTeacher, type ClassSubject,
   } from '$lib/api/academic';
   import { listStaff } from '$lib/api/staff';
   import { findCurrentYear, findCurrentTerm, flattenTerms } from '$lib/academicPeriod';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
-  import { school } from '$lib/stores/school';
+  import { school, hasProgrammeTracks } from '$lib/stores/school';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import BulkRegisterCoreSubjectsButton from './BulkRegisterCoreSubjectsButton.svelte';
   import AddClassSubjectForm from './AddClassSubjectForm.svelte';
@@ -18,12 +18,13 @@
   interface Props { classId: string; classActive: boolean; }
   const { classId, classActive }: Props = $props();
 
-  // Elective subjects are an SHS-programme concept (e.g. French vs
-  // Literature-in-French) — Basic schools follow a fixed GES curriculum with
-  // no per-student subject choice, so the Core/Elective toggle would just be
-  // confusing noise for them. Every subject already defaults to non-elective,
-  // so hiding the control changes nothing functionally for Basic schools.
-  const showElectiveToggle = $derived($school?.schoolType !== 'BASIC');
+  // Elective subjects are a programme-track concept (e.g. French vs
+  // Literature-in-French) — schools with no programme tracks follow a fixed
+  // GES curriculum with no per-student subject choice, so the Core/Elective
+  // toggle would just be confusing noise for them. Every subject already
+  // defaults to non-elective, so hiding the control changes nothing
+  // functionally for those schools.
+  const showElectiveToggle = $derived(hasProgrammeTracks($school?.schoolType ?? 'BASIC'));
 
   const qc = useQueryClient();
 
@@ -41,13 +42,14 @@
     const cur = findCurrentYear($yearsQ.data ?? []);
     if (cur) yearId = cur.id;
   });
-  // Passed to SubjectClassManagementPanel purely so it can invalidate the
-  // catalogue page's ['subject-summary', subjectId, termId] cache when a
-  // roster changes here — '' (no current term) is harmless, it just won't
-  // match any cached key.
+  // Used to invalidate the catalogue page's ['subject-summary', subjectId,
+  // termId] cache when a teacher is unassigned here — '' (no current term)
+  // is harmless, it just won't match any cached key.
   const currentTermId = $derived(findCurrentTerm(flattenTerms($yearsQ.data ?? []))?.id ?? '');
 
-  // Which subject row is expanded for inline teacher + roster management.
+  // Which subject row is expanded for inline student roster + curriculum
+  // materials management (teacher assignment lives on the Timetable tab now
+  // — see the Unassign action inline in the row instead).
   let expandedSubjectId = $state<string | null>(null);
 
   // Writable store pattern — avoids TanStack's queryKey validation on mount
@@ -84,6 +86,22 @@
       toast.success('Subject removed.');
     },
     onError: (e) => toast.error(apiError(e, 'Failed to remove subject.')),
+  });
+
+  // ── Unassign teacher ─────────────────────────────────────────────────────────
+  // The only place a teacher gets picked/changed is the Timetable tab now;
+  // Unassign stays here since it's a rarer, cross-slot-affecting action
+  // rather than part of the everyday scheduling flow.
+  let confirmUnassign = $state<{ subjectId: string; teacherName: string } | null>(null);
+  const unassignMut = createMutation({
+    mutationFn: (subjectId: string) => removeSubjectTeacher(classId, subjectId, yearId),
+    onSuccess: (_data, subjectId) => {
+      qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
+      qc.invalidateQueries({ queryKey: ['class-timetable', classId, yearId] });
+      qc.invalidateQueries({ queryKey: ['subject-summary', subjectId, currentTermId] });
+      toast.success('Teacher unassigned.');
+    },
+    onError: (e) => toast.error(apiError(e, 'Failed to unassign teacher.')),
   });
 
   // ── Elective toggle ───────────────────────────────────────────────────────────
@@ -212,6 +230,10 @@
                 </div>
                 <span class="max-w-[120px] truncate text-xs font-medium text-[var(--fg-muted)]">{teacher.display_name}</span>
               </div>
+              <button onclick={() => confirmUnassign = { subjectId: cs.subject_id, teacherName: teacher.display_name }}
+                class="flex min-h-[44px] shrink-0 items-center px-1 text-xs font-medium text-[var(--fg-subtle)] transition hover:text-red-500">
+                Unassign
+              </button>
             {:else}
               <span class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">No teacher</span>
             {/if}
@@ -219,7 +241,7 @@
             <!-- Actions -->
             <button onclick={() => expandedSubjectId = expandedSubjectId === cs.subject_id ? null : cs.subject_id}
               class="flex min-h-[44px] shrink-0 items-center px-2 text-xs font-medium transition hover:underline" style="color:var(--brand)">
-              {expandedSubjectId === cs.subject_id ? 'Hide' : 'Manage teacher & students'}
+              {expandedSubjectId === cs.subject_id ? 'Hide' : 'Students & materials'}
             </button>
             <button onclick={() => confirmRemoveId = cs.subject_id} disabled={$removeMut.isPending}
               class="flex min-h-[44px] shrink-0 items-center px-2 text-xs text-[var(--fg-subtle)] transition hover:text-red-500 disabled:opacity-40">
@@ -227,7 +249,7 @@
             </button>
           </div>
           {#if expandedSubjectId === cs.subject_id}
-            <SubjectClassManagementPanel subjectId={cs.subject_id} {classId} {yearId} termId={currentTermId} classSubjectId={cs.id} />
+            <SubjectClassManagementPanel subjectId={cs.subject_id} {classId} classSubjectId={cs.id} />
           {/if}
         </div>
       {/snippet}
@@ -269,9 +291,19 @@
 <ConfirmModal
   open={!!confirmRemoveId}
   title="Remove subject?"
-  message="This subject and its teacher assignment will be removed from the class. The subject itself is not deleted."
+  message="This subject will be hidden from the class. Its timetable slots, teacher assignment, and any uploaded curriculum materials are kept and reappear automatically if you add it back."
   confirmLabel="Remove"
   isPending={$removeMut.isPending}
   onConfirm={() => { $removeMut.mutate(confirmRemoveId!); confirmRemoveId = null; }}
   onCancel={() => confirmRemoveId = null}
+/>
+
+<ConfirmModal
+  open={!!confirmUnassign}
+  title="Unassign teacher?"
+  message="{confirmUnassign?.teacherName ?? 'This teacher'} will no longer be shown as the teacher for this subject in this class — this also clears the teacher shown on every period this subject appears on the class timetable. To assign someone new, use the Timetable tab."
+  confirmLabel="Unassign"
+  isPending={$unassignMut.isPending}
+  onConfirm={() => { $unassignMut.mutate(confirmUnassign!.subjectId); confirmUnassign = null; }}
+  onCancel={() => confirmUnassign = null}
 />

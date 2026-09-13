@@ -35,7 +35,7 @@ async def subject(db_session: AsyncSession, school: School):
     cat = SubjectCatalogue(name="English", code="ENG_SYNC", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="ENG", name="English", is_active=True)
+    subj = Subject(school_id=school.id, code="ENG", name="English", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     return subj
@@ -261,7 +261,7 @@ async def test_outbox_rejects_cross_school_assessment_id(
     cat = SubjectCatalogue(name="Foreign Subj", code="FOR_SYNC", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add_all([term, cls, cat])
     await db_session.flush()
-    subj = Subject(school_id=other.id, catalogue_id=cat.id, code="FORSUB", name="Foreign Subj", is_active=True)
+    subj = Subject(school_id=other.id, code="FORSUB", name="Foreign Subj", is_active=True)
     atype = AssessmentType(school_id=other.id, name="Foreign Test", code="FT_SYNC", weight=Decimal("30.00"))
     db_session.add_all([subj, atype])
     await db_session.flush()

@@ -11,16 +11,22 @@
   let termForm = $state({ term_number: 1, name: '', start_date: '', end_date: '' });
   let termError = $state('');
 
+  // Default to the next term number this year doesn't already have, so
+  // adding terms 2 and 3 doesn't require manually re-picking each time.
+  const usedTermNumbers = $derived(new Set(year.terms.map(t => t.term_number)));
+  const nextTermNumber = $derived(([1, 2, 3] as const).find(n => !usedTermNumbers.has(n)) ?? 1);
+
   let editingTermId = $state<string | null>(null);
   let editTermForm = $state({ name: '', start_date: '', end_date: '' });
+  let editTermOriginalDates = $state({ start_date: '', end_date: '' });
   let editTermError = $state('');
+  let confirmDateChange = $state<{ id: string; req: typeof editTermForm } | null>(null);
 
   const createTermMut = createMutation({
     mutationFn: (req: typeof termForm) => createTerm(year.id, req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['academic-years'] });
       showTermForm = false;
-      termForm = { term_number: 1, name: '', start_date: '', end_date: '' };
       termError = '';
     },
     onError: (e: unknown) => {
@@ -65,6 +71,14 @@
     }
     $createTermMut.mutate(termForm);
   }
+
+  function submitTermEdit(id: string) {
+    editTermError = '';
+    const datesChanged = editTermForm.start_date !== editTermOriginalDates.start_date
+      || editTermForm.end_date !== editTermOriginalDates.end_date;
+    if (datesChanged) { confirmDateChange = { id, req: editTermForm }; return; }
+    $updateTermMut.mutate({ id, req: editTermForm });
+  }
 </script>
 
 <div class="border-t border-[var(--border)] px-4 py-3 space-y-3">
@@ -90,7 +104,7 @@
         </div>
         {#if editTermError}<p class="text-xs text-red-500">{editTermError}</p>{/if}
         <div class="flex gap-2">
-          <button onclick={() => $updateTermMut.mutate({ id: term.id, req: editTermForm })}
+          <button onclick={() => submitTermEdit(term.id)}
             disabled={$updateTermMut.isPending}
             class="rounded-lg px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             style="background-color: var(--brand)">
@@ -153,7 +167,12 @@
             Fee gate
           </button>
           <button
-            onclick={() => { editingTermId = term.id; editTermForm = { name: term.name, start_date: term.start_date, end_date: term.end_date }; editTermError = ''; }}
+            onclick={() => {
+              editingTermId = term.id;
+              editTermForm = { name: term.name, start_date: term.start_date, end_date: term.end_date };
+              editTermOriginalDates = { start_date: term.start_date, end_date: term.end_date };
+              editTermError = '';
+            }}
             aria-label="Edit {term.name}"
             class="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--fg-muted)] transition hover:bg-[var(--card)] hover:text-[var(--fg)]">
             <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
@@ -169,7 +188,7 @@
       <h3 class="text-xs font-semibold text-[var(--fg)]">Add term to {year.name}</h3>
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
-          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Session</label>
+          <label class="mb-1 block text-xs font-medium text-[var(--fg-muted)]">Term number</label>
           <select bind:value={termForm.term_number}
             class="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none">
             <option value={1}>1</option>
@@ -207,7 +226,7 @@
       </div>
     </div>
   {:else}
-    <button onclick={() => { showTermForm = true; termError = ''; }}
+    <button onclick={() => { showTermForm = true; termError = ''; termForm = { ...termForm, term_number: nextTermNumber }; }}
       class="flex w-full items-center gap-2 rounded-xl border border-dashed border-[var(--border)] px-4 py-2.5 text-xs font-medium text-[var(--fg-muted)] transition hover:border-[var(--brand)] hover:text-[var(--brand)]">
       <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
@@ -226,4 +245,15 @@
   isPending={$setCurrentTermMut.isPending}
   onConfirm={() => { $setCurrentTermMut.mutate(confirmTermId!); confirmTermId = null; }}
   onCancel={() => confirmTermId = null}
+/>
+
+<ConfirmModal
+  open={!!confirmDateChange}
+  title="Change this term's dates?"
+  message="If the school calendar has already been generated for this term, changing its dates won't move the already-generated days — regenerate the calendar afterward from the Attendance Schedule page to keep attendance statistics accurate."
+  confirmLabel="Change dates"
+  variant="warning"
+  isPending={$updateTermMut.isPending}
+  onConfirm={() => { $updateTermMut.mutate(confirmDateChange!); confirmDateChange = null; }}
+  onCancel={() => confirmDateChange = null}
 />

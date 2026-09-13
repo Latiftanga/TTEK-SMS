@@ -6,7 +6,7 @@ Programmes, subject catalogue, and school subjects live in academic_subjects.py.
 from __future__ import annotations
 import uuid
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.academic import (
@@ -15,6 +15,7 @@ from app.models.academic import (
     SHSProgramme,
     Subject,
 )
+from app.models.students import StudentClassAssignment
 from app.schemas.academic import (
     ClassCreate,
     ClassRead,
@@ -25,7 +26,7 @@ from app.schemas.academic import (
 from app.services.student_display import _class_display_name
 
 
-def _to_class_read(cls: Class, programme_name: str | None) -> ClassRead:
+def _to_class_read(cls: Class, programme_name: str | None, active_student_count: int = 0) -> ClassRead:
     return ClassRead(
         id=cls.id,
         school_id=cls.school_id,
@@ -37,7 +38,28 @@ def _to_class_read(cls: Class, programme_name: str | None) -> ClassRead:
         capacity=cls.capacity,
         is_active=cls.is_active,
         display_name=_class_display_name(cls.level, cls.year_group, programme_name, cls.stream),
+        active_student_count=active_student_count,
     )
+
+
+async def _active_student_counts(
+    class_ids: list[uuid.UUID], school_id: uuid.UUID, db: AsyncSession,
+) -> dict[uuid.UUID, int]:
+    """One grouped query for however many classes are being read at once —
+    powers the deactivate-class confirmation's "N students are still
+    enrolled" warning without an N+1 per class."""
+    if not class_ids:
+        return {}
+    rows = await db.execute(
+        select(StudentClassAssignment.class_id, func.count())
+        .where(
+            StudentClassAssignment.class_id.in_(class_ids),
+            StudentClassAssignment.school_id == school_id,
+            StudentClassAssignment.is_active.is_(True),
+        )
+        .group_by(StudentClassAssignment.class_id)
+    )
+    return {class_id: count for class_id, count in rows}
 
 
 async def create_class(
@@ -125,11 +147,12 @@ async def list_classes(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[ClassRead]:
-    result = await db.execute(
+    result = list(await db.execute(
         _classes_query([Class.school_id == school_id])
         .order_by(Class.level, Class.year_group, Class.stream)
-    )
-    return [_to_class_read(cls, prog_name) for cls, prog_name in result]
+    ))
+    counts = await _active_student_counts([cls.id for cls, _ in result], school_id, db)
+    return [_to_class_read(cls, prog_name, counts.get(cls.id, 0)) for cls, prog_name in result]
 
 
 async def get_class(
@@ -144,7 +167,8 @@ async def get_class(
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Class not found.")
     cls, prog_name = row
-    return _to_class_read(cls, prog_name)
+    counts = await _active_student_counts([cls.id], school_id, db)
+    return _to_class_read(cls, prog_name, counts.get(cls.id, 0))
 
 
 async def update_class(
@@ -158,7 +182,16 @@ async def update_class(
     )
     if not cls:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Class not found.")
-    if req.programme_id is not None:
+
+    # "in model_fields_set" (not "is not None") — stream/programme_id are
+    # legitimately nullable fields a caller may want to CLEAR by sending an
+    # explicit null, which is indistinguishable from "omitted, leave
+    # unchanged" under a plain None-check.
+    fields = req.model_fields_set
+    new_programme_id = req.programme_id if "programme_id" in fields else cls.programme_id
+    new_stream = ((req.stream.strip() or None) if req.stream else None) if "stream" in fields else cls.stream
+
+    if "programme_id" in fields and req.programme_id is not None:
         prog = await db.scalar(
             select(SHSProgramme).where(
                 SHSProgramme.id == req.programme_id, SHSProgramme.school_id == school_id,
@@ -166,16 +199,39 @@ async def update_class(
         )
         if not prog:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Programme not found.")
-        cls.programme_id = req.programme_id
-    if req.stream is not None:
-        cls.stream = req.stream.strip() or None
-    if req.capacity is not None:
+
+    if "programme_id" in fields or "stream" in fields:
+        # Same duplicate check create_class already does — without it, a
+        # colliding stream/programme change hits the DB's unique index
+        # directly and surfaces as a bare 500 instead of a clean 422.
+        prog_clause = Class.programme_id == new_programme_id if new_programme_id else Class.programme_id.is_(None)
+        stream_clause = Class.stream == new_stream if new_stream else Class.stream.is_(None)
+        duplicate = await db.scalar(
+            select(Class).where(
+                Class.id != class_id,
+                Class.school_id == school_id,
+                Class.level == cls.level,
+                Class.year_group == cls.year_group,
+                prog_clause,
+                stream_clause,
+            )
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A class with this name already exists.",
+            )
+        cls.programme_id = new_programme_id
+        cls.stream = new_stream
+
+    if "capacity" in fields:
         cls.capacity = req.capacity
-    if req.is_active is not None:
+    if "is_active" in fields and req.is_active is not None:
         cls.is_active = req.is_active
     await db.flush()
     prog = await db.get(SHSProgramme, cls.programme_id) if cls.programme_id else None
-    return _to_class_read(cls, prog.name if prog else None)
+    counts = await _active_student_counts([cls.id], school_id, db)
+    return _to_class_read(cls, prog.name if prog else None, counts.get(cls.id, 0))
 
 
 async def list_class_subjects(
@@ -190,6 +246,7 @@ async def list_class_subjects(
         select(ClassSubject).where(
             ClassSubject.class_id == class_id,
             ClassSubject.school_id == school_id,
+            ClassSubject.is_active.is_(True),
         )
     )
     return list(rows)
@@ -206,7 +263,7 @@ async def assign_subjects(
     existing_rows = await db.scalars(
         select(ClassSubject).where(ClassSubject.class_id == class_id)
     )
-    existing_ids = {cs.subject_id for cs in existing_rows}
+    existing_by_subject = {cs.subject_id: cs for cs in existing_rows}
 
     # Every subject_id must be one of this school's own subjects — Subject
     # rows are school-private (unlike the shared SubjectCatalogue), and
@@ -223,10 +280,18 @@ async def assign_subjects(
 
     added = []
     for subj_id in req.subject_ids:
-        if subj_id not in existing_ids:
+        existing = existing_by_subject.get(subj_id)
+        if existing is None:
             cs = ClassSubject(school_id=school_id, class_id=class_id, subject_id=subj_id, is_active=True)
             db.add(cs)
             added.append(cs)
+        elif not existing.is_active:
+            # A previously-removed subject — reactivate the same row rather
+            # than inserting a new one, so its teacher assignment, timetable
+            # slots, and uploaded curriculum materials (all keyed off this
+            # row's id) reconnect instantly instead of being orphaned.
+            existing.is_active = True
+            added.append(existing)
     await db.flush()
     return added
 
@@ -237,11 +302,18 @@ async def remove_class_subject(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> None:
+    """Soft-delete only — see ClassSubject's model docstring. A hard delete
+    here would cascade to every CurriculumMaterial (and its extracted
+    CurriculumUnit/chunks) uploaded for this class+subject, permanently and
+    without warning, while leaving SubjectTeacher/TimetableSlot/Assessment
+    rows dangling. Deactivating keeps everything intact and reversible —
+    re-adding the subject (assign_subjects) reactivates this exact row."""
     cs = await db.scalar(
         select(ClassSubject).where(
             ClassSubject.class_id == class_id,
             ClassSubject.subject_id == subject_id,
             ClassSubject.school_id == school_id,
+            ClassSubject.is_active.is_(True),
         )
     )
     if not cs:
@@ -249,7 +321,7 @@ async def remove_class_subject(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Subject not assigned to this class.",
         )
-    await db.delete(cs)
+    cs.is_active = False
     await db.flush()
 
 

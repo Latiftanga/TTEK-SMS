@@ -5,8 +5,11 @@ Tables in this group:
   academic_year     — e.g. "2024/2025"; one is marked is_current per school
   academic_term     — Term 1/2/3 within a year; one is marked is_current per school
   shs_programme     — GES programmes (General Science, Business, etc.); nullable school_id
-  subject_catalogue — GES national subject list; nullable school_id (system-wide defaults)
-  subject           — school's instance of a subject (may reference catalogue or be custom)
+  subject_catalogue — referenced only by lesson_plans.CurriculumStandard now; Subject
+                      itself no longer links here — the "adopt a subject from the GES
+                      national list" UI was dead code (nothing ever populated this
+                      table for that purpose) and was removed
+  subject           — a school's own subject, always custom (code + name)
   class             — a class group (e.g. SHS 2 Science A); name is NEVER stored
   class_subject     — which subjects are taught in a class
   class_teacher     — which staff member is the form teacher per term
@@ -136,9 +139,6 @@ class SubjectCatalogue(Base, UUIDPrimaryKey, TimestampMixin):
 class Subject(Base, UUIDPrimaryKey, TimestampMixin, SchoolScopedMixin):
     __tablename__ = "subject"
 
-    catalogue_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("subject_catalogue.id"), nullable=True
-    )
     code: Mapped[str] = mapped_column(String(20), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

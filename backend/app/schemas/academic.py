@@ -5,8 +5,6 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.academic import SchoolLevel, SubjectType
-
 
 class AcademicYearCreate(BaseModel):
     name: str = Field(max_length=20)  # "2024/2025"
@@ -98,19 +96,7 @@ class ProgrammeAdopt(BaseModel):
     catalogue_programme_id: uuid.UUID
 
 
-class CatalogueRead(BaseModel):
-    id: uuid.UUID
-    code: str
-    name: str
-    subject_type: SubjectType
-    level: SchoolLevel
-    is_active: bool
-
-    model_config = {"from_attributes": True}
-
-
 class SubjectCreate(BaseModel):
-    catalogue_id: uuid.UUID | None = None   # link to national catalogue or None for custom
     code: str = Field(max_length=20)
     name: str = Field(max_length=100)
 
@@ -124,7 +110,6 @@ class SubjectUpdate(BaseModel):
 class SubjectRead(BaseModel):
     id: uuid.UUID
     school_id: uuid.UUID
-    catalogue_id: uuid.UUID | None
     code: str
     name: str
     is_active: bool
@@ -158,6 +143,7 @@ class ClassRead(BaseModel):
     capacity: int | None
     is_active: bool
     display_name: str             # computed: never stored, assembled on read
+    active_student_count: int     # for the deactivate-class confirmation warning
 
 
 class ClassSubjectAssign(BaseModel):

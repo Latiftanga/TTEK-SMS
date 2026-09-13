@@ -89,7 +89,7 @@ async def subject(db_session: AsyncSession, school, school_class: Class) -> Subj
     cat = SubjectCatalogue(name="Core Maths", code="MATH_TR", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="MATH_TR", name="Core Maths", is_active=True)
+    subj = Subject(school_id=school.id, code="MATH_TR", name="Core Maths", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))

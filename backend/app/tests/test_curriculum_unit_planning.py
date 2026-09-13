@@ -33,7 +33,7 @@ async def other_class_subject(db_session: AsyncSession, school: School, school_c
     cat = SubjectCatalogue(name="Physics", code="PHY_CUP", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="PHY_CUP", name="Physics", is_active=True)
+    subj = Subject(school_id=school.id, code="PHY_CUP", name="Physics", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     cs = ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True)

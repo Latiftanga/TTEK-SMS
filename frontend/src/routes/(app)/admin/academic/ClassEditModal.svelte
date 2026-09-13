@@ -3,15 +3,17 @@
   import { updateClass, type SchoolClass } from '$lib/api/academic';
   import { portal } from '$lib/actions/portal';
   import { toast } from '$lib/stores/toast';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   interface Props { cls: SchoolClass; onClose: () => void; }
   const { cls, onClose }: Props = $props();
 
   const qc = useQueryClient();
 
-  let stream   = $state(cls.stream   ?? '');
-  let capacity = $state(cls.capacity?.toString() ?? '');
-  let error    = $state('');
+  let stream        = $state(cls.stream   ?? '');
+  let capacity      = $state(cls.capacity?.toString() ?? '');
+  let error         = $state('');
+  let confirmRename = $state(false);
 
   const saveMut = createMutation({
     mutationFn: () => updateClass(cls.id, {
@@ -27,6 +29,15 @@
       error = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to update class.';
     },
   });
+
+  function handleSave() {
+    // Changing the stream renames the class everywhere its computed
+    // display name appears — past report cards, attendance, fee records —
+    // not just from this point forward. Capacity-only changes are harmless.
+    const newStream = stream.trim() || null;
+    if (newStream !== (cls.stream ?? null)) { confirmRename = true; return; }
+    $saveMut.mutate();
+  }
 </script>
 
 <div use:portal class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -58,10 +69,21 @@
 
     <div class="flex justify-end gap-3 border-t border-[var(--border)] px-6 py-4">
       <button onclick={onClose} class="btn-ghost">Cancel</button>
-      <button onclick={() => $saveMut.mutate()} disabled={$saveMut.isPending} class="btn-primary">
+      <button onclick={handleSave} disabled={$saveMut.isPending} class="btn-primary">
         {$saveMut.isPending ? 'Saving…' : 'Save'}
       </button>
     </div>
 
   </div>
 </div>
+
+<ConfirmModal
+  open={confirmRename}
+  title="Rename this class?"
+  message="This class's name appears on report cards, attendance records, and fee records — changing the stream will show the new name on all of them, past and present, not just going forward."
+  confirmLabel="Rename"
+  variant="warning"
+  isPending={$saveMut.isPending}
+  onConfirm={() => { confirmRename = false; $saveMut.mutate(); }}
+  onCancel={() => confirmRename = false}
+/>

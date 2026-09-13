@@ -181,7 +181,7 @@ async def test_view_scope_excludes_subject_teacher_only_students(
     cat = SubjectCatalogue(name="Physics", code="PHY-SCOPE", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subject = Subject(school_id=school.id, catalogue_id=cat.id, code="PHY-SCOPE", name="Physics", is_active=True)
+    subject = Subject(school_id=school.id, code="PHY-SCOPE", name="Physics", is_active=True)
     db_session.add(subject)
     await db_session.flush()
     db_session.add(SubjectTeacher(
@@ -223,7 +223,7 @@ async def test_view_scope_dual_role_excludes_subject_taught_class(
     cat = SubjectCatalogue(name="Chemistry", code="CHEM-SCOPE", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add_all([other_class, other_student, cat])
     await db_session.flush()
-    subject = Subject(school_id=school.id, catalogue_id=cat.id, code="CHEM-SCOPE", name="Chemistry", is_active=True)
+    subject = Subject(school_id=school.id, code="CHEM-SCOPE", name="Chemistry", is_active=True)
     db_session.add(subject)
     await db_session.flush()
     db_session.add(SubjectTeacher(
@@ -290,7 +290,7 @@ async def test_subject_teacher_scope_exact_pairs(
     cat = SubjectCatalogue(name="Test Subject", code="SCOPE_UNIT2", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="SCOPE_UNIT2", name="Test Subject", is_active=True)
+    subj = Subject(school_id=school.id, code="SCOPE_UNIT2", name="Test Subject", is_active=True)
     db_session.add(subj)
     await db_session.flush()
 
@@ -336,7 +336,7 @@ async def test_term_enrollment_scope_exact_set_for_subject_teacher_only(
     cat = SubjectCatalogue(name="Test Subject", code="TERM_SCOPE1", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="TERM_SCOPE1", name="Test Subject", is_active=True)
+    subj = Subject(school_id=school.id, code="TERM_SCOPE1", name="Test Subject", is_active=True)
     db_session.add(subj)
     await db_session.flush()
 
@@ -365,7 +365,7 @@ async def test_term_enrollment_scope_union_when_both(
     cat = SubjectCatalogue(name="Test Subject", code="TERM_SCOPE2", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="TERM_SCOPE2", name="Test Subject", is_active=True)
+    subj = Subject(school_id=school.id, code="TERM_SCOPE2", name="Test Subject", is_active=True)
     db_session.add(subj)
     await db_session.flush()
 

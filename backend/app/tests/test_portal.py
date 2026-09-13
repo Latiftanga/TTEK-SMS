@@ -74,8 +74,7 @@ async def _publish_assessment(
     db.add(catalogue)
     await db.flush()
     subject = Subject(
-        school_id=school.id, catalogue_id=catalogue.id,
-        code="MATH", name="Mathematics", is_active=True,
+        school_id=school.id, code="MATH", name="Mathematics", is_active=True,
     )
     at = AssessmentType(
         school_id=school.id, name="End of Term", code="EOT",

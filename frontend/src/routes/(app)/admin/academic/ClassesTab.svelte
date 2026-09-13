@@ -9,9 +9,11 @@
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import TimetableImportModal from './TimetableImportModal.svelte';
+  import { hasProgrammeTracks, type SchoolType } from '$lib/stores/school';
 
-  const { schoolType }: { schoolType: string } = $props();
+  const { schoolType }: { schoolType: SchoolType } = $props();
   const qc = useQueryClient();
+  const hasTracks = $derived(hasProgrammeTracks(schoolType));
 
   let showAddForm       = $state(false);
   let editModal         = $state<SchoolClass | null>(null);
@@ -19,7 +21,7 @@
   let importOpen        = $state(false);
 
   const classesQuery    = createQuery({ queryKey: ['classes'],    queryFn: listClasses,    staleTime: 2 * 60_000 });
-  const programmesQuery = createQuery({ queryKey: ['programmes'], queryFn: listProgrammes, enabled: schoolType === 'SHS', staleTime: 5 * 60_000 });
+  const programmesQuery = createQuery({ queryKey: ['programmes'], queryFn: listProgrammes, enabled: hasTracks, staleTime: 5 * 60_000 });
 
   // ── Filters from URL ──────────────────────────────────────────────────────────
   const search          = $derived($page.url.searchParams.get('q')      ?? '');
@@ -55,7 +57,7 @@
       if (q && !c.display_name.toLowerCase().includes(q) && !(c.programme_name ?? '').toLowerCase().includes(q)) return false;
       if (statusFilter === 'active'   && !c.is_active) return false;
       if (statusFilter === 'inactive' &&  c.is_active) return false;
-      if (schoolType === 'SHS') {
+      if (hasTracks) {
         if (filterYear      && c.year_group !== Number(filterYear)) return false;
         if (filterProgramme && c.programme_id !== filterProgramme)  return false;
       } else {
@@ -77,9 +79,11 @@
   });
 
   // Level colours for avatars
+  // Keys must match the exact level strings ClassCreateForm.svelte creates
+  // classes with (Creche/Nursery/KG/Basic/SHS) — not GES's own level names.
   const LEVEL_COLOR: Record<string, string> = {
-    SHS: '#7c3aed', JHS: '#2563eb', PRIMARY: '#0d9488',
-    KINDERGARTEN: '#d97706', NURSERY: '#f59e0b',
+    SHS: '#7c3aed', Basic: '#2563eb', Creche: '#0d9488',
+    KG: '#d97706', Nursery: '#f59e0b',
   };
   function levelBg(level: string) { return LEVEL_COLOR[level] ?? '#6366f1'; }
 
@@ -102,7 +106,7 @@
         {/each}
       </div>
       {#if !$classesQuery.isPending && all.length > 0}
-        {#if schoolType === 'SHS'}
+        {#if hasTracks}
           <select value={filterYear} onchange={(e) => setParam('year', (e.target as HTMLSelectElement).value)} class={SEL}>
             <option value="">All years</option>
             {#each availableYears as yr}<option value={String(yr)}>Year {yr}</option>{/each}
@@ -257,7 +261,9 @@
 <ConfirmModal
   open={!!confirmDeactivate}
   title="Deactivate {confirmDeactivate?.display_name ?? 'class'}?"
-  message="Students will no longer be enrollable in this class. You can reactivate it at any time."
+  message={confirmDeactivate && confirmDeactivate.active_student_count > 0
+    ? `${confirmDeactivate.active_student_count} student${confirmDeactivate.active_student_count !== 1 ? 's are' : ' is'} still actively enrolled in this class — they'll no longer be markable for attendance or assessments until reassigned or this class is reactivated.`
+    : 'Students will no longer be enrollable in this class. You can reactivate it at any time.'}
   confirmLabel="Deactivate"
   isPending={$toggleMut.isPending}
   onConfirm={() => { $toggleMut.mutate({ id: confirmDeactivate!.id, is_active: false }); confirmDeactivate = null; }}

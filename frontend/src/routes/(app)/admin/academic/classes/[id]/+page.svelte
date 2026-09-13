@@ -72,9 +72,11 @@
     },
   });
 
+  // Keys must match the exact level strings ClassCreateForm.svelte creates
+  // classes with (Creche/Nursery/KG/Basic/SHS) — not GES's own level names.
   const LEVEL_COLOR: Record<string, string> = {
-    SHS: '#7c3aed', JHS: '#2563eb', PRIMARY: '#0d9488',
-    KINDERGARTEN: '#d97706', NURSERY: '#f59e0b',
+    SHS: '#7c3aed', Basic: '#2563eb', Creche: '#0d9488',
+    KG: '#d97706', Nursery: '#f59e0b',
   };
   function levelBg(level: string) { return LEVEL_COLOR[level] ?? '#6366f1'; }
 
@@ -82,7 +84,7 @@
 
   // ── Tab navigation ────────────────────────────────────────────────────────────
   type Tab = 'students' | 'subjects' | 'timetable';
-  const VALID_TABS: Tab[] = ['subjects', 'timetable'];
+  const VALID_TABS: Tab[] = ['students', 'subjects', 'timetable'];
   const initialTab = $page.url.searchParams.get('tab');
   let activeTab = $state<Tab>(VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : 'students');
 </script>
@@ -217,12 +219,12 @@
         <span class="tab-badge {activeTab === 'students' ? 'tab-badge-active' : ''}">{studentCount}</span>
       {/if}
     </button>
-    <button onclick={() => activeTab = 'subjects'} title="Subjects & Teachers"
+    <button onclick={() => activeTab = 'subjects'} title="Subjects"
       class="tab {activeTab === 'subjects' ? 'tab-active' : ''}">
       <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
       </svg>
-      <span class="hidden sm:inline">Subjects & Teachers</span>
+      <span class="hidden sm:inline">Subjects</span>
       {#if subjectCount !== null}
         <span class="tab-badge {activeTab === 'subjects' ? 'tab-badge-active' : ''}">{subjectCount}</span>
       {/if}

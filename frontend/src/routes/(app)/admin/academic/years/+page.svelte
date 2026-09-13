@@ -2,7 +2,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import YearsTab from '../YearsTab.svelte';
   import { setPageTitle } from '$lib/stores/title';
-  setPageTitle('Calendar');
+  setPageTitle('Years & Terms');
 </script>
-<PageHeader title="Calendar" description="Set up academic years, terms, and the school calendar." />
+<PageHeader title="Years & Terms" description="Set up academic years, terms, and the school calendar." />
 <YearsTab />

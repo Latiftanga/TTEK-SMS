@@ -38,18 +38,8 @@ export interface Programme {
 export interface Subject {
   id: string;
   school_id: string;
-  catalogue_id: string | null;
   code: string;
   name: string;
-  is_active: boolean;
-}
-
-export interface CatalogueEntry {
-  id: string;
-  code: string;
-  name: string;
-  subject_type: 'CORE' | 'ELECTIVE';
-  level: 'BASIC' | 'SHS';
   is_active: boolean;
 }
 
@@ -64,6 +54,7 @@ export interface SchoolClass {
   capacity: number | null;
   is_active: boolean;
   display_name: string;
+  active_student_count: number;
 }
 
 export interface ClassSubject {
@@ -179,17 +170,9 @@ export async function getSubjectSummary(subjectId: string, academicTermId: strin
   return data;
 }
 
-export async function listCatalogue(level?: 'BASIC' | 'SHS'): Promise<CatalogueEntry[]> {
-  const { data } = await client.get<CatalogueEntry[]>('/academic/catalogue', {
-    params: level ? { level } : undefined,
-  });
-  return data;
-}
-
 export async function createSubject(req: {
   code: string;
   name: string;
-  catalogue_id?: string;
 }): Promise<Subject> {
   const { data } = await client.post<Subject>('/academic/subjects', req);
   return data;

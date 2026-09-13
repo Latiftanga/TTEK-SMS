@@ -472,7 +472,7 @@ async def subject(db_session: AsyncSession, school, school_class: Class):
     )
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code="MATH", name="Mathematics", is_active=True)
+    subj = Subject(school_id=school.id, code="MATH", name="Mathematics", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     # Assessments require subject_id to be an active ClassSubject on class_id
@@ -809,7 +809,7 @@ async def test_unpublish_hides_report_when_it_was_the_only_publish(
     cat = SubjectCatalogue(name="Unpublish Test Subject", code="UNPUB_SUBJ", subject_type=SubjectType.CORE, level=SchoolLevel.SHS)
     db_session.add(cat)
     await db_session.flush()
-    subj = SubjectModel(school_id=school.id, catalogue_id=cat.id, code="UNPUB_SUBJ", name="Unpublish Test Subject", is_active=True)
+    subj = SubjectModel(school_id=school.id, code="UNPUB_SUBJ", name="Unpublish Test Subject", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))

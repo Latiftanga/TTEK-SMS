@@ -28,7 +28,7 @@ async def _subject(db: AsyncSession, school: School, code: str, name: str) -> Su
     cat = SubjectCatalogue(name=name, code=code, subject_type=SubjectType.ELECTIVE, level=SchoolLevel.SHS)
     db.add(cat)
     await db.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code=code, name=name, is_active=True)
+    subj = Subject(school_id=school.id, code=code, name=name, is_active=True)
     db.add(subj)
     await db.flush()
     return subj

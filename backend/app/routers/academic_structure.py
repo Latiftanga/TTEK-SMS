@@ -17,9 +17,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_auth, require_permission
 from app.core.permissions import invalidate_permissions
 from app.models.academic import ClassTeacher
-from app.models.academic import SchoolLevel
 from app.schemas.academic import (
-    CatalogueRead,
     ClassCreate,
     ClassRead,
     ClassSubjectAssign,
@@ -99,18 +97,6 @@ async def update_programme(
     _, school_id = ids
     prog = await subj_svc.update_programme(programme_id, req, school_id, db)
     return ProgrammeRead.model_validate(prog)
-
-
-# ── Subject catalogue ─────────────────────────────────────────────────────────
-
-@router.get("/catalogue", response_model=list[CatalogueRead])
-async def list_catalogue(
-    level: SchoolLevel | None = Query(None),
-    ids=Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-):
-    items = await subj_svc.list_catalogue(level, db)
-    return [CatalogueRead.model_validate(i) for i in items]
 
 
 # ── Subjects ──────────────────────────────────────────────────────────────────

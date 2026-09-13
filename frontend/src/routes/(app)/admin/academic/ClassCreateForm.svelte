@@ -1,14 +1,16 @@
 <script lang="ts">
   import { createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { createClass, type Programme } from '$lib/api/academic';
+  import { hasProgrammeTracks, type SchoolType } from '$lib/stores/school';
 
   const { schoolType, programmes, onClose }: {
-    schoolType: string;
+    schoolType: SchoolType;
     programmes: Programme[];
     onClose: () => void;
   } = $props();
 
   const qc = useQueryClient();
+  const hasTracks = $derived(hasProgrammeTracks(schoolType));
 
   const YEAR_OPTIONS: Record<string, number[]> = {
     Creche:  [1],
@@ -19,10 +21,10 @@
   };
 
   const CLASS_LEVELS = $derived(
-    schoolType === 'SHS' ? ['SHS'] : ['Creche', 'Nursery', 'KG', 'Basic']
+    hasTracks ? ['SHS'] : ['Creche', 'Nursery', 'KG', 'Basic']
   );
 
-  let form = $state({ level: schoolType === 'SHS' ? 'SHS' : '', year_group: 1, programme_id: '', stream: '', capacity: '' });
+  let form = $state({ level: hasTracks ? 'SHS' : '', year_group: 1, programme_id: '', stream: '', capacity: '' });
   let formError = $state('');
   const yearOptions = $derived(YEAR_OPTIONS[form.level] ?? [1]);
 
@@ -30,7 +32,7 @@
     mutationFn: createClass,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['classes'] });
-      form = { level: schoolType === 'SHS' ? 'SHS' : '', year_group: 1, programme_id: '', stream: '', capacity: '' };
+      form = { level: hasTracks ? 'SHS' : '', year_group: 1, programme_id: '', stream: '', capacity: '' };
       formError = '';
       onClose();
     },
@@ -41,8 +43,8 @@
 
   function submit() {
     formError = '';
-    if (schoolType !== 'SHS' && !form.level) { formError = 'Level is required.'; return; }
-    if (schoolType === 'SHS' && !form.programme_id) { formError = 'Programme is required for SHS classes.'; return; }
+    if (!hasTracks && !form.level) { formError = 'Level is required.'; return; }
+    if (hasTracks && !form.programme_id) { formError = 'Programme is required for this class type.'; return; }
     $createClassMut.mutate({
       level: form.level,
       year_group: Number(form.year_group),

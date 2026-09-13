@@ -1,26 +1,25 @@
-"""SHS programmes, subject catalogue, and school subjects.
+"""SHS programmes and school subjects.
 
 SHS GUARD
 ---------
-Programmes and elective subjects only make sense for SHS schools:
+Programmes only make sense for SHS schools:
   - list_programmes  returns [] for non-SHS (graceful, no 422)
   - create_programme raises 422 for non-SHS
-  - create_subject   raises 422 when the linked catalogue entry is ELECTIVE
-    and the school is not SHS; core/custom subjects are unrestricted
+Subjects have no such gate — a school's own subject catalogue (Subject rows)
+is unrestricted; only ClassSubject.is_elective (per-class curriculum, see
+academic_class.py) carries an elective concept, not Subject itself.
 
 PROGRAMME CATALOGUE
 --------------------
 Which programmes a school runs depends on its own resources — one SHS school
 may offer only Business, another may run all of them. Nothing is offered
 automatically: the standard GES programmes (school_id=NULL) are a read-only
-catalogue, exactly like SubjectCatalogue is for subjects, except there's no
-separate table for it — the shared rows serve as the catalogue directly.
-list_programmes returns only a school's own adopted/custom rows;
+catalogue — the shared rows serve as the catalogue directly, no separate
+table. list_programmes returns only a school's own adopted/custom rows;
 list_programme_catalogue returns the shared rows not yet adopted (matched by
-code, since SHSProgramme has no catalogue_id FK the way Subject does);
-adopt_programme copies one in as a new school-owned row. The shared rows
-themselves are never editable (update_programme only matches a school's own
-rows) — adopt first, then edit your own copy.
+code); adopt_programme copies one in as a new school-owned row. The shared
+rows themselves are never editable (update_programme only matches a school's
+own rows) — adopt first, then edit your own copy.
 """
 from __future__ import annotations
 import uuid
@@ -29,7 +28,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.academic import SchoolLevel, SHSProgramme, Subject, SubjectCatalogue, SubjectType
+from app.models.academic import SHSProgramme, Subject
 from app.models.school import School, SchoolType
 from app.schemas.academic import ProgrammeCreate, ProgrammeUpdate, SubjectCreate, SubjectUpdate
 
@@ -164,14 +163,6 @@ async def update_subject(
     return subj
 
 
-async def list_catalogue(level: SchoolLevel | None, db: AsyncSession) -> list[SubjectCatalogue]:
-    q = select(SubjectCatalogue).where(SubjectCatalogue.is_active == True)
-    if level:
-        q = q.where(SubjectCatalogue.level == level)
-    rows = await db.scalars(q.order_by(SubjectCatalogue.name))
-    return list(rows)
-
-
 async def list_subjects(school_id: uuid.UUID, db: AsyncSession) -> list[Subject]:
     """Includes inactive subjects so the admin UI's status filter can find
     and reactivate a deactivated one — a hardcoded active-only filter here
@@ -189,15 +180,8 @@ async def create_subject(
     school_id: uuid.UUID,
     db: AsyncSession,
 ) -> Subject:
-    if req.catalogue_id:
-        cat = await db.get(SubjectCatalogue, req.catalogue_id)
-        if not cat:
-            raise HTTPException(404, "Catalogue subject not found.")
-        if cat.subject_type == SubjectType.ELECTIVE:
-            await _require_shs(school_id, db)
     subj = Subject(
         school_id=school_id,
-        catalogue_id=req.catalogue_id,
         code=req.code.upper().strip(),
         name=req.name.strip(),
         is_active=True,

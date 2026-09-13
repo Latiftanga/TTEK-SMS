@@ -8,9 +8,6 @@
   import AddSubjectPanel from './AddSubjectPanel.svelte';
   import SubjectSummaryPanel from './SubjectSummaryPanel.svelte';
 
-  interface Props { schoolType: string; }
-  const { schoolType }: Props = $props();
-
   let expandedSummaryId = $state<string | null>(null);
 
   const qc = useQueryClient();
@@ -106,8 +103,6 @@
 
   {#if showForm}
     <AddSubjectPanel
-      {schoolType}
-      existingSubjects={all}
       onDone={() => { showForm = false; }}
       onClose={() => { showForm = false; }}
     />

@@ -90,7 +90,7 @@ async def test_curriculum_standard_autofills_lesson_plan(
     from app.models.academic import ClassSubject, SubjectTeacher, Subject
     from app.tests.test_lesson_plans import _login_as_position
 
-    subj = Subject(school_id=school.id, catalogue_id=catalogue.id, code="MATH_CS", name="Mathematics", is_active=True)
+    subj = Subject(school_id=school.id, code="MATH_CS", name="Mathematics", is_active=True)
     db_session.add(subj)
     await db_session.flush()
     db_session.add(ClassSubject(school_id=school.id, class_id=school_class.id, subject_id=subj.id, is_active=True))

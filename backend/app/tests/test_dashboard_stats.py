@@ -99,7 +99,7 @@ async def _unapproved_score(
     )
     db_session.add(cat)
     await db_session.flush()
-    subj = Subject(school_id=school.id, catalogue_id=cat.id, code=f"SUB_{suffix}", name=f"Subject {suffix}", is_active=True)
+    subj = Subject(school_id=school.id, code=f"SUB_{suffix}", name=f"Subject {suffix}", is_active=True)
     db_session.add(subj)
     await db_session.flush()
 
