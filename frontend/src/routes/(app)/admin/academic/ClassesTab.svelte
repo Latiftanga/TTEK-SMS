@@ -8,6 +8,7 @@
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import TimetableImportModal from './TimetableImportModal.svelte';
 
   const { schoolType }: { schoolType: string } = $props();
   const qc = useQueryClient();
@@ -15,6 +16,7 @@
   let showAddForm       = $state(false);
   let editModal         = $state<SchoolClass | null>(null);
   let confirmDeactivate = $state<SchoolClass | null>(null);
+  let importOpen        = $state(false);
 
   const classesQuery    = createQuery({ queryKey: ['classes'],    queryFn: listClasses,    staleTime: 2 * 60_000 });
   const programmesQuery = createQuery({ queryKey: ['programmes'], queryFn: listProgrammes, enabled: schoolType === 'SHS', staleTime: 5 * 60_000 });
@@ -124,15 +126,26 @@
         <button onclick={clearFilters} class="text-xs text-[var(--fg-muted)] underline transition hover:text-[var(--fg)]">Clear</button>
       {/if}
     </div>
-    <button onclick={() => showAddForm = !showAddForm} class="btn-primary">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-      Add class
-    </button>
+    <div class="flex items-center gap-2">
+      <button onclick={() => importOpen = true}
+        class="flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2 text-sm font-medium text-[var(--fg-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--fg)]">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>
+        Import Timetable
+      </button>
+      <button onclick={() => showAddForm = !showAddForm} class="btn-primary">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Add class
+      </button>
+    </div>
   </div>
 
   {#if showAddForm}
     <ClassCreateForm {schoolType} programmes={$programmesQuery.data ?? []} onClose={() => showAddForm = false} />
   {/if}
+
+  <TimetableImportModal open={importOpen} onClose={() => importOpen = false} />
 
   {#if $classesQuery.isPending}
     <div class="space-y-2">{#each [1,2,3,4] as _}<div class="skeleton h-16"></div>{/each}</div>

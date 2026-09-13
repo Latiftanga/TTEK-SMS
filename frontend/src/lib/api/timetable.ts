@@ -5,6 +5,7 @@ export interface TimetableSlot {
   period_id: string;
   subject_id: string;
   subject_name: string;
+  staff_member_id: string | null;
   teacher_name: string | null;
 }
 
@@ -38,12 +39,16 @@ export interface ScheduleEntry {
 export const getClassTimetable = (classId: string, yearId: string): Promise<TimetableSlot[]> =>
   client.get(`/academic/classes/${classId}/timetable`, { params: { year_id: yearId } }).then(r => r.data);
 
+// staffMemberId omitted keeps whatever SubjectTeacher is already assigned;
+// this is a year-level assignment (see SubjectTeacher's model docstring), so
+// passing one here also updates every other period this subject occupies on
+// this class's timetable, not just this slot.
 export const upsertTimetableSlot = (
-  classId: string, periodId: string, yearId: string, subjectId: string,
+  classId: string, periodId: string, yearId: string, subjectId: string, staffMemberId?: string,
 ): Promise<TimetableSlot> =>
   client.put(
     `/academic/classes/${classId}/timetable/${periodId}`,
-    { subject_id: subjectId },
+    { subject_id: subjectId, staff_member_id: staffMemberId },
     { params: { year_id: yearId } },
   ).then(r => r.data);
 

@@ -132,7 +132,8 @@
       </div>
       <p class="font-semibold text-[var(--fg)]">Classes</p>
       <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
-        Create and manage classes, assign class teachers, and view enrolled students.
+        Create and manage classes, assign class teachers, view enrolled students, and
+        bulk-import the whole school's timetable from a CSV file.
       </p>
       <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
         Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
@@ -154,25 +155,6 @@
       </p>
       <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
         Manage <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
-      </p>
-    </a>
-
-    <!-- Timetable -->
-    <a href="/admin/academic/timetable"
-      class="group flex flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5
-             transition hover:border-[var(--brand)]/40 hover:shadow-sm">
-      <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5"/>
-        </svg>
-      </div>
-      <p class="font-semibold text-[var(--fg)]">Timetable</p>
-      <p class="mt-1 flex-1 text-xs text-[var(--fg-muted)]">
-        Bulk-import the whole school's weekly timetable from a CSV file in our own format,
-        instead of building it one class at a time.
-      </p>
-      <p class="mt-4 flex items-center gap-1 text-xs font-semibold transition group-hover:gap-2" style="color: var(--brand)">
-        Import <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
       </p>
     </a>
 

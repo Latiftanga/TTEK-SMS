@@ -21,7 +21,7 @@ from app.schemas.dashboard import AbsentStudent, ClassSnapshot, StaffDashboard, 
 from app.services.academic_year import get_current_term
 from app.services.dashboard_housing import my_houses as _my_houses
 from app.services.student_display import _class_display_name
-from app.services.timetable import get_my_schedule
+from app.services.my_schedule import get_my_schedule
 
 _NON_SCHOOL_DAY_TYPES = {DayType.WEEKEND, DayType.PUBLIC_HOLIDAY, DayType.SCHOOL_HOLIDAY}
 _DAYS_IN_ORDER = list(DayOfWeek)

@@ -290,14 +290,6 @@ export async function assignClassTeacher(
   return data;
 }
 
-export async function assignSubjectTeacher(
-  classId: string,
-  req: { subject_id: string; staff_member_id: string; academic_year_id: string }
-): Promise<unknown> {
-  const { data } = await client.post(`/academic/classes/${classId}/subject-teachers`, req);
-  return data;
-}
-
 export async function removeClassTeacher(classId: string, yearId: string): Promise<void> {
   await client.delete(`/academic/classes/${classId}/class-teacher`, { params: { year_id: yearId } });
 }

@@ -1,10 +1,11 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { reactiveQuery } from '$lib/query.svelte';
-  import { listSubjectTeachers, assignSubjectTeacher, type SubjectTeacher } from '$lib/api/academic';
+  import { listSubjectTeachers, removeSubjectTeacher, type SubjectTeacher } from '$lib/api/academic';
   import { listStaff } from '$lib/api/staff';
   import { apiError } from '$lib/utils';
   import { toast } from '$lib/stores/toast';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import SubjectRosterPanel from '$lib/components/SubjectRosterPanel.svelte';
   import CurriculumMaterialsPanel from './CurriculumMaterialsPanel.svelte';
 
@@ -21,30 +22,20 @@
   }));
   const staffQ = createQuery({ queryKey: ['staff'], queryFn: () => listStaff({ limit: 200, active_only: true }), staleTime: 5 * 60_000 });
 
-  const teachingStaff = $derived(($staffQ.data ?? []).filter(s => s.staff_type === 'TEACHING'));
   const staffMap       = $derived(new Map(($staffQ.data ?? []).map(s => [s.id, s])));
   const currentTeacherId = $derived(($subjTeachersQ.data ?? []).find(st => st.subject_id === subjectId)?.staff_member_id ?? null);
   const currentTeacher   = $derived(currentTeacherId ? staffMap.get(currentTeacherId) : null);
 
-  let editing       = $state(false);
-  let changeStaffId = $state('');
-  let changeError   = $state('');
-
-  function startChange() {
-    changeStaffId = currentTeacherId ?? '';
-    changeError = '';
-    editing = true;
-  }
-
-  const changeMut = createMutation({
-    mutationFn: () => assignSubjectTeacher(classId, { subject_id: subjectId, staff_member_id: changeStaffId, academic_year_id: yearId }),
+  let confirmUnassign = $state(false);
+  const unassignMut = createMutation({
+    mutationFn: () => removeSubjectTeacher(classId, subjectId, yearId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['subject-teachers', classId, yearId] });
+      qc.invalidateQueries({ queryKey: ['class-timetable', classId, yearId] });
       qc.invalidateQueries({ queryKey: ['subject-summary', subjectId, termId] });
-      editing = false; changeStaffId = ''; changeError = '';
-      toast.success('Teacher updated.');
+      toast.success('Teacher unassigned.');
     },
-    onError: (e) => { changeError = apiError(e, 'Failed to assign teacher.'); },
+    onError: (e) => toast.error(apiError(e, 'Failed to unassign teacher.')),
   });
 
   const COLORS = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#ec4899','#14b8a6','#f97316'];
@@ -56,8 +47,6 @@
     const p = name.trim().split(/\s+/);
     return (p[0][0] + (p[1]?.[0] ?? '')).toUpperCase();
   }
-
-  const sel = 'w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none transition';
 </script>
 
 <div class="border-t border-[var(--border)] bg-[var(--hover)]/40 px-4 py-3 space-y-3">
@@ -77,30 +66,26 @@
     {:else}
       <span class="rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">No teacher</span>
     {/if}
-    {#if yearId && !editing}
-      <button onclick={startChange} class="flex min-h-[44px] items-center px-1 text-xs font-medium transition hover:underline" style="color:var(--brand)">
-        {currentTeacher ? 'Change' : 'Assign'}
-      </button>
+    {#if yearId}
+      {#if currentTeacher}
+        <button onclick={() => confirmUnassign = true} class="flex min-h-[44px] items-center px-1 text-xs font-medium text-[var(--fg-subtle)] transition hover:text-red-500">
+          Unassign
+        </button>
+      {:else}
+        <span class="text-xs text-[var(--fg-subtle)]">Assign a teacher from the Timetable tab.</span>
+      {/if}
     {/if}
   </div>
 
-  {#if editing}
-    <div class="space-y-2 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
-      <select bind:value={changeStaffId} class={sel}>
-        <option value="">Select teacher…</option>
-        {#each teachingStaff as s (s.id)}<option value={s.id}>{s.display_name}</option>{/each}
-      </select>
-      {#if changeError}<p class="text-xs text-red-500">{changeError}</p>{/if}
-      <div class="flex gap-2">
-        <button onclick={() => { changeError = ''; if (!changeStaffId) { changeError = 'Select a teacher.'; return; } $changeMut.mutate(); }}
-          disabled={$changeMut.isPending}
-          class="rounded-xl px-4 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-          style="background:var(--brand)">{$changeMut.isPending ? 'Saving…' : 'Confirm'}</button>
-        <button onclick={() => { editing = false; changeError = ''; }}
-          class="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--fg-muted)] transition hover:bg-[var(--hover)]">Cancel</button>
-      </div>
-    </div>
-  {/if}
+  <ConfirmModal
+    open={confirmUnassign}
+    title="Unassign teacher?"
+    message="{currentTeacher?.display_name ?? 'This teacher'} will no longer be shown as the teacher for this subject in this class — this also clears the teacher shown on every period this subject appears on the class timetable. To assign someone new, use the Timetable tab."
+    confirmLabel="Unassign"
+    isPending={$unassignMut.isPending}
+    onConfirm={() => { $unassignMut.mutate(); confirmUnassign = false; }}
+    onCancel={() => confirmUnassign = false}
+  />
 
   <!-- Students -->
   <div>

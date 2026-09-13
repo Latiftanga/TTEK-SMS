@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.schemas.documents import ImportBatchResult
 from app.schemas.timetable import ScheduleEntry, TimetableSlotRead, TimetableSlotUpsert
+from app.services import my_schedule as schedule_svc
 from app.services import timetable as tt_svc
 from app.services import timetable_import as tt_import_svc
 
@@ -90,4 +91,4 @@ async def get_my_schedule(
     timetable is a recurring structure. Defaults to the school's current
     academic year when year_id is omitted."""
     user_id, school_id = ids
-    return await tt_svc.resolve_my_schedule(user_id, year_id, school_id, db)
+    return await schedule_svc.resolve_my_schedule(user_id, year_id, school_id, db)

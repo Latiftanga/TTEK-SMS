@@ -62,6 +62,46 @@ async def assign_class_teacher(
     return ct
 
 
+async def _upsert_subject_teacher_row(
+    class_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    staff_member_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    school_id: uuid.UUID,
+    db: AsyncSession,
+) -> SubjectTeacher:
+    """Upsert on the unique (class_id, subject_id, academic_year_id) key — a
+    mid-year teacher change is an update to the same row (see
+    SubjectTeacher's model docstring), never a new row. Callers are
+    responsible for their own ownership/curriculum checks first (see
+    assign_subject_teacher below and services/timetable.py::upsert_timetable_slot,
+    both of which already do these before calling this)."""
+    existing = await db.scalar(
+        select(SubjectTeacher).where(
+            SubjectTeacher.class_id == class_id,
+            SubjectTeacher.subject_id == subject_id,
+            SubjectTeacher.academic_year_id == academic_year_id,
+        )
+    )
+    if existing:
+        existing.staff_member_id = staff_member_id
+        existing.is_active = True
+        await db.flush()
+        return existing
+
+    st = SubjectTeacher(
+        school_id=school_id,
+        class_id=class_id,
+        subject_id=subject_id,
+        staff_member_id=staff_member_id,
+        academic_year_id=academic_year_id,
+        is_active=True,
+    )
+    db.add(st)
+    await db.flush()
+    return st
+
+
 async def assign_subject_teacher(
     class_id: uuid.UUID,
     req: SubjectTeacherAssign,
@@ -79,30 +119,9 @@ async def assign_subject_teacher(
     if not await class_subject_exists(class_id, req.subject_id, school_id, db):
         raise HTTPException(404, "That subject is not on this class's curriculum.")
 
-    existing = await db.scalar(
-        select(SubjectTeacher).where(
-            SubjectTeacher.class_id == class_id,
-            SubjectTeacher.subject_id == req.subject_id,
-            SubjectTeacher.academic_year_id == req.academic_year_id,
-        )
+    return await _upsert_subject_teacher_row(
+        class_id, req.subject_id, req.staff_member_id, req.academic_year_id, school_id, db,
     )
-    if existing:
-        existing.staff_member_id = req.staff_member_id
-        existing.is_active = True
-        await db.flush()
-        return existing
-
-    st = SubjectTeacher(
-        school_id=school_id,
-        class_id=class_id,
-        subject_id=req.subject_id,
-        staff_member_id=req.staff_member_id,
-        academic_year_id=req.academic_year_id,
-        is_active=True,
-    )
-    db.add(st)
-    await db.flush()
-    return st
 
 
 async def remove_class_teacher(
