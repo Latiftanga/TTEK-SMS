@@ -1,9 +1,9 @@
 """
-FET CSV timetable bulk-import orchestration — DB-aware counterpart to
-services/timetable_import_parser.py (pure parsing, no DB). Mirrors
-staff_import.py's per-row savepoint / best-effort pattern: valid rows are
-created, invalid/conflicting rows are skipped and reported, one bad row
-never aborts the batch.
+TTEK-SMS's own generic CSV timetable bulk-import orchestration — DB-aware
+counterpart to services/timetable_import_parser.py (pure parsing, no DB).
+Mirrors staff_import.py's per-row savepoint / best-effort pattern: valid
+rows are created, invalid/conflicting rows are skipped and reported, one
+bad row never aborts the batch.
 
 Reuses the exact validation the one-at-a-time timetable write path already
 enforces (services/timetable.py::upsert_timetable_slot): the subject must
@@ -28,9 +28,10 @@ from app.models.academic import Class, SHSProgramme, Subject, SubjectTeacher, Ti
 from app.models.attendance import SchoolPeriod
 from app.models.documents import ImportBatch, ImportRow, ImportStatus
 from app.schemas.documents import ImportBatchResult, ImportRowResult
+from app.services.academic_teachers import _assert_year_owned
 from app.services.student_display import _class_display_name
 from app.services.subject_roster import class_subject_exists
-from app.services.timetable_import_parser import ParsedTimetableRow, parse_fet_csv
+from app.services.timetable_import_parser import ParsedTimetableRow, parse_timetable_csv
 
 
 def _utcnow() -> datetime:
@@ -38,7 +39,7 @@ def _utcnow() -> datetime:
 
 
 def _ref(row: ParsedTimetableRow) -> str:
-    return f"{row.day_raw or '?'} {row.hour_token or '?'} — {row.class_label}"
+    return f"{row.day_raw or '?'} {row.period_token or '?'} — {row.class_label}"
 
 
 async def _load_class_maps(
@@ -91,27 +92,33 @@ async def _load_teacher_map(
 
 async def _load_booked(
     school_id: uuid.UUID, academic_year_id: uuid.UUID, db: AsyncSession,
-) -> dict[tuple[uuid.UUID, uuid.UUID], tuple[uuid.UUID, int | None]]:
-    """(period_id, staff_member_id) -> (class_id, source_row_number),
-    seeded from every already-committed slot this year (source_row_number
-    None — always a real conflict, it wasn't part of this CSV) and extended
-    in-memory as this batch's own rows commit, tagged with the CSV line
-    that created them. A CSV that double-books a teacher across two
-    DIFFERENT lines is caught; a single line listing multiple classes for
-    the same teacher/period (one shared/combined activity — see
-    parser.py's class-token expansion) is not treated as a conflict against
-    its own sibling rows, only against a genuinely different line."""
+) -> dict[tuple[uuid.UUID, uuid.UUID], list[uuid.UUID]]:
+    """(period_id, staff_member_id) -> [class_id, ...], seeded from every
+    already-committed slot this year and extended in-memory as this
+    batch's own rows commit. A list (not a single entry) because one
+    teacher can legitimately be booked into more than one class for the
+    same period — a shared/combined activity — whether that booking was
+    made by a previous import or by this one; each such class needs its
+    own entry or it would look like a conflict on re-import. Whether a
+    given class in this list is a genuine conflict for the row being
+    processed is decided by the caller against that row's sibling classes
+    (see `process_import`'s `sibling_classes_by_row`), not by anything
+    tracked here."""
     rows = await db.execute(
         select(TimetableSlot.period_id, SubjectTeacher.staff_member_id, TimetableSlot.class_id)
         .join(
             SubjectTeacher,
             (SubjectTeacher.class_id == TimetableSlot.class_id)
             & (SubjectTeacher.subject_id == TimetableSlot.subject_id)
-            & (SubjectTeacher.academic_year_id == TimetableSlot.academic_year_id),
+            & (SubjectTeacher.academic_year_id == TimetableSlot.academic_year_id)
+            & (SubjectTeacher.is_active.is_(True)),
         )
         .where(TimetableSlot.school_id == school_id, TimetableSlot.academic_year_id == academic_year_id)
     )
-    return {(period_id, staff_id): (class_id, None) for period_id, staff_id, class_id in rows}
+    booked: dict[tuple[uuid.UUID, uuid.UUID], list[uuid.UUID]] = {}
+    for period_id, staff_id, class_id in rows:
+        booked.setdefault((period_id, staff_id), []).append(class_id)
+    return booked
 
 
 def _resolve_period(
@@ -122,11 +129,20 @@ def _resolve_period(
     if row.day_code is None:
         return None
     try:
-        return by_number.get((row.day_code, int(row.hour_token)))
+        return by_number.get((row.day_code, int(row.period_token)))
     except ValueError:
         pass
     try:
-        h, m = (int(p) for p in row.hour_token.split(":")[:2])
+        # Excel/Sheets often auto-formats a whole-number Period cell as a
+        # decimal (e.g. "1" saved out as "1.0") — accept that without
+        # silently truncating an actually-fractional value like "1.5".
+        as_float = float(row.period_token)
+        if as_float.is_integer():
+            return by_number.get((row.day_code, int(as_float)))
+    except ValueError:
+        pass
+    try:
+        h, m = (int(p) for p in row.period_token.split(":")[:2])
         return by_start.get((row.day_code, time(h, m)))
     except (ValueError, IndexError):
         return None
@@ -143,7 +159,8 @@ def _fail(
 async def process_import(
     file_bytes: bytes, school_id: uuid.UUID, academic_year_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession,
 ) -> ImportBatchResult:
-    parsed_rows = parse_fet_csv(file_bytes)
+    await _assert_year_owned(academic_year_id, school_id, db)
+    parsed_rows = parse_timetable_csv(file_bytes)
 
     batch = ImportBatch(
         school_id=school_id, import_type="timetable", status=ImportStatus.PROCESSING,
@@ -159,9 +176,23 @@ async def process_import(
     teacher_by_class_subject = await _load_teacher_map(school_id, academic_year_id, db)
     booked = await _load_booked(school_id, academic_year_id, db)
 
+    # Classes sharing a source CSV line (the `;`-separated multi-class
+    # expansion) are a deliberate combined activity, never a conflict
+    # against each other — regardless of whether the other class's
+    # booking already existed before this import or is created by this
+    # same run. Computed once up front so the conflict check below can
+    # tell "this row's own sibling class" apart from a genuinely
+    # different line/teacher double-booking.
+    sibling_classes_by_row: dict[int, set[uuid.UUID]] = {}
+    for r in parsed_rows:
+        cid = class_by_label.get(r.class_label.strip().lower())
+        if cid is not None:
+            sibling_classes_by_row.setdefault(r.row_number, set()).add(cid)
+
     results: list[ImportRowResult] = []
     warnings: list[ImportRowResult] = []
     created = failed = 0
+    slot_seen: dict[tuple[uuid.UUID, uuid.UUID], int] = {}
 
     for row in parsed_rows:
         if row.day_code is None:
@@ -198,7 +229,7 @@ async def process_import(
         if period_id is None:
             _fail(
                 db, batch.id, school_id, row,
-                f"No period configured for {row.day_raw} hour {row.hour_token} — set up School Periods first.",
+                f"No period configured for {row.day_raw} period {row.period_token} — set up School Periods first.",
                 results,
             )
             failed += 1
@@ -214,25 +245,35 @@ async def process_import(
             failed += 1
             continue
 
-        existing_booking = booked.get((period_id, teacher_id))
-        if existing_booking is not None:
-            conflict_class_id, conflict_row_number = existing_booking
-            # Same class: fine (re-upserting the same slot). A different
-            # class from the SAME source CSV line is a deliberate shared/
-            # combined activity (see _load_booked's docstring), not a
-            # conflict — only a different class from a DIFFERENT line, or
-            # from data that already existed before this import, is real.
-            same_source_line = conflict_row_number is not None and conflict_row_number == row.row_number
-            if conflict_class_id != class_id and not same_source_line:
-                other_label = label_by_class_id.get(conflict_class_id, "another class")
-                _fail(
-                    db, batch.id, school_id, row,
-                    f"The teacher for '{row.subject_name}' is already scheduled to teach "
-                    f"{other_label} at this same period.",
-                    results,
-                )
-                failed += 1
-                continue
+        row_siblings = sibling_classes_by_row.get(row.row_number, set())
+        conflict = next(
+            (
+                c for c in booked.get((period_id, teacher_id), [])
+                if c != class_id and c not in row_siblings
+            ),
+            None,
+        )
+        if conflict is not None:
+            other_label = label_by_class_id.get(conflict, "another class")
+            _fail(
+                db, batch.id, school_id, row,
+                f"The teacher for '{row.subject_name}' is already scheduled to teach "
+                f"{other_label} at this same period.",
+                results,
+            )
+            failed += 1
+            continue
+
+        prior_slot_row = slot_seen.get((class_id, period_id))
+        if prior_slot_row is not None:
+            _fail(
+                db, batch.id, school_id, row,
+                f"{row.class_label} already has a subject in this period from an earlier row "
+                f"(row {prior_slot_row}) in this file.",
+                results,
+            )
+            failed += 1
+            continue
 
         try:
             async with db.begin_nested():
@@ -262,15 +303,11 @@ async def process_import(
             failed += 1
             continue
 
-        booked[(period_id, teacher_id)] = (class_id, row.row_number)
+        slot_seen[(class_id, period_id)] = row.row_number
+        booked.setdefault((period_id, teacher_id), []).append(class_id)
         _log_row(db, batch.id, school_id, row, "success", None, slot.id)
         results.append(ImportRowResult(row=row.row_number, ref=_ref(row), status="created", error=None))
         created += 1
-        if row.extra_teacher_names:
-            warnings.append(ImportRowResult(
-                row=row.row_number, ref=_ref(row), status="created", error=None,
-                warning=f"Multiple teachers listed ({', '.join(row.extra_teacher_names)}); only the first was used.",
-            ))
 
     batch.total_rows = created + failed
     batch.processed_rows = created + failed

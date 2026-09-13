@@ -12,7 +12,7 @@
     <div>
       <h1 class="text-xl font-bold text-[var(--fg)]">Timetable</h1>
       <p class="mt-0.5 text-sm text-[var(--fg-muted)]">
-        Bulk-import the whole school's weekly timetable from a FET (Free Timetabling Software) CSV export.
+        Bulk-import the whole school's weekly timetable from a CSV file in TTEK-SMS's own format.
       </p>
     </div>
     <button onclick={() => importOpen = true}
@@ -26,9 +26,10 @@
 
   <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
     <p class="text-sm text-[var(--fg)]">
-      Set up a full timetable one class at a time is tedious once you already have a solved
-      timetable in FET — export it as CSV and upload it here instead. This creates or updates
-      every class's timetable slots for the academic year you choose in one pass.
+      Setting up a full timetable one class at a time is tedious once you have the whole
+      school's schedule worked out elsewhere — fill in the CSV template shown in the import
+      dialog and upload it here instead. This creates or updates every class's timetable
+      slots for the academic year you choose in one pass.
     </p>
     <p class="mt-3 text-sm text-[var(--fg-muted)]">
       Before importing: each class's subjects must already be on its curriculum, and a teacher

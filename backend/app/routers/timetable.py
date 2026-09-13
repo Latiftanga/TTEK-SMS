@@ -68,8 +68,9 @@ async def import_timetable(
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-create/update a school's TimetableSlot rows for one academic
-    year from a FET (Free Timetabling Software) CSV export — whole-school
-    in one pass, since FET solves and exports the entire timetable at once.
+    year from TTEK-SMS's own generic timetable CSV format (Day, Period,
+    Subject, Classes — a Classes cell may list several `;`-separated
+    classes for one shared/combined period) — whole-school in one pass.
     Best-effort like /staff/import: valid rows are created, invalid or
     conflicting rows are reported per-row rather than aborting the batch."""
     if not file.filename or not file.filename.lower().endswith(".csv"):

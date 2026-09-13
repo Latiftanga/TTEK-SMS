@@ -55,7 +55,8 @@ export const getMySchedule = (yearId?: string): Promise<ScheduleEntry[]> =>
   client.get('/timetable/my-schedule', { params: yearId ? { year_id: yearId } : undefined }).then(r => r.data);
 
 // Bulk-creates/updates a whole school's TimetableSlot rows for one academic
-// year from a FET (Free Timetabling Software) CSV export.
+// year from TTEK-SMS's own generic timetable CSV format (see
+// TimetableImportModal.svelte for the column reference shown to admins).
 export const bulkImportTimetable = (file: File, yearId: string): Promise<ImportBatchResult> => {
   const form = new FormData();
   form.append('file', file);

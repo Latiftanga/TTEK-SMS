@@ -12,7 +12,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from app.services.ai_driver import generate_safe
+from app.services.ai_driver import _extract_json, generate_safe
 
 
 class _StatusErrorDriver:
@@ -77,3 +77,26 @@ async def test_transient_request_error_still_fails_after_retry():
     assert exc_info.value.status_code == 502
     assert "ReadTimeout" in exc_info.value.detail
     assert driver.calls == 2  # tried, retried once, then gave up
+
+
+def test_extract_json_from_single_fence():
+    assert _extract_json('```json\n{"a": 1}\n```') == '{"a": 1}'
+
+
+def test_extract_json_no_fence_returns_raw_text():
+    assert _extract_json('{"a": 1}') == '{"a": 1}'
+
+
+def test_extract_json_stops_at_nearest_fence_not_the_last_one():
+    # Regression: a naive greedy match would span from the first ``` all
+    # the way to the LAST ``` in the response, swallowing the prose between
+    # two separate fenced blocks into the "JSON".
+    text = '```json\n{"a": 1}\n```\n\nSome trailing prose.\n\n```\nnot json\n```'
+    assert _extract_json(text) == '{"a": 1}'
+
+
+def test_extract_json_skips_earlier_non_json_fence():
+    # Regression: a model that shows a non-JSON example fence before its
+    # real JSON answer must not have the first (wrong) fence extracted.
+    text = '```\nfor example: not json\n```\n\nHere is the answer:\n\n```json\n{"a": 1}\n```'
+    assert _extract_json(text) == '{"a": 1}'

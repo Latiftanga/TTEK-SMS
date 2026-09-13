@@ -52,9 +52,18 @@ _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 def _extract_json(text: str) -> str:
     """Models routinely wrap JSON in a markdown code fence despite being
-    told not to — strip it before parsing rather than failing on it."""
-    m = _JSON_FENCE_RE.search(text)
-    return m.group(1) if m else text.strip()
+    told not to — strip it before parsing rather than failing on it. The
+    fence pattern itself is non-greedy so it stops at the nearest closing
+    fence rather than spanning to the last one in a multi-fence response,
+    but a reply can still legitimately contain an earlier non-JSON fence
+    (an example snippet) before the real answer — so scan every fence in
+    order and take the first one that's actually JSON-shaped, rather than
+    blindly grabbing the first fence found."""
+    for m in _JSON_FENCE_RE.finditer(text):
+        content = m.group(1).strip()
+        if content.startswith("{") or content.startswith("["):
+            return content
+    return text.strip()
 
 
 async def generate_safe(driver: AiDriver, prompt: str, system: str = "") -> str:

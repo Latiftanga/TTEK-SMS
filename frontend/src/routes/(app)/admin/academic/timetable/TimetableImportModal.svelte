@@ -73,11 +73,19 @@
           <div class="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
             <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--brand)_12%,transparent)] text-xs font-bold text-[var(--brand)]">1</div>
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-[var(--fg)]">Export your timetable from FET as CSV</p>
-              <p class="mt-0.5 text-xs text-[var(--fg-muted)]">
-                In FET: Timetable → Export → export the timetable to one CSV file. Class names in FET
-                must match the class names shown under Classes exactly (e.g. "2 General Science A", "Basic 5")
-                — subjects and teacher assignments must already exist here too.
+              <p class="text-sm font-medium text-[var(--fg)]">Fill in the CSV template</p>
+              <p class="mt-1 rounded-lg bg-[var(--card)] px-2 py-1 font-mono text-xs text-[var(--fg)]">
+                Day,Period,Subject,Classes
+              </p>
+              <ul class="mt-1.5 space-y-0.5 text-xs text-[var(--fg-muted)]">
+                <li><span class="font-medium text-[var(--fg)]">Day</span> — Monday–Sunday.</li>
+                <li><span class="font-medium text-[var(--fg)]">Period</span> — the period number or start time shown under School Periods.</li>
+                <li><span class="font-medium text-[var(--fg)]">Subject</span> — must match a subject name exactly.</li>
+                <li><span class="font-medium text-[var(--fg)]">Classes</span> — a class name, matching the names shown under Classes; list more than one separated by <code class="font-mono">;</code> when one teacher runs a shared period (assembly, games) for several classes at once, e.g. <code class="font-mono">2 A;2 B</code>.</li>
+              </ul>
+              <p class="mt-1.5 text-xs text-[var(--fg-muted)]">
+                Subjects and teacher assignments must already exist here first —
+                <a href="/sample-timetable-import.csv" download class="font-medium" style="color: var(--brand)">download a sample CSV</a> to see the format.
               </p>
             </div>
           </div>

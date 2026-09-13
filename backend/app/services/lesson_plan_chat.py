@@ -66,13 +66,23 @@ async def send_chat_message(
     school_id: uuid.UUID, user_id: uuid.UUID, staff_id: uuid.UUID, db: AsyncSession,
 ) -> list[ChatMessageRead]:
     lp = await get_lesson_plan(lesson_plan_id, school_id, user_id, db)
-    # Serializes concurrent sends for the same plan: this lock is held for
-    # the rest of the transaction (released on commit, at the end of the
-    # request), so a second concurrent send for this plan blocks here until
-    # the first one commits. Without it, two requests racing on the very
-    # first turn can both read an empty history below and both fire the
-    # curriculum-reference proposal call.
-    await db.execute(select(LessonPlan.id).where(LessonPlan.id == lp.id).with_for_update())
+    prior_messages = await _load_messages(lp.id, db)
+    is_first_turn = not prior_messages
+    if is_first_turn:
+        # Serializes only the racy first-turn case: two concurrent first
+        # sends could otherwise both observe an empty history and both fire
+        # the curriculum-reference proposal call below. This lock is held
+        # for the rest of the transaction (released on commit), so a second
+        # concurrent first-send blocks here until the first one commits —
+        # then re-checks prior_messages under the lock before deciding.
+        # Turn 2+ has prior messages already committed (deterministic, no
+        # race), so the lock — and the cost of holding it across this
+        # request's outbound LLM call — is skipped once the conversation is
+        # underway.
+        await db.execute(select(LessonPlan.id).where(LessonPlan.id == lp.id).with_for_update())
+        prior_messages = await _load_messages(lp.id, db)
+        is_first_turn = not prior_messages
+
     driver, cfg = await get_ready_driver(school_id, user_id, db)
 
     # On the very first turn of a conversation, also propose the content
@@ -83,8 +93,6 @@ async def send_chat_message(
     # own docstring. Deliberately fail-soft: this is a nice-to-have on top of
     # the conversation, not something that should break the actual chat
     # reply below if the model's response can't be parsed as JSON.
-    prior_messages = await _load_messages(lp.id, db)
-    is_first_turn = not prior_messages
     proposed_reference = False
     # Resolved once and reused below for build_context()'s own excerpt
     # lookup — both target the same class+subject, so this avoids a

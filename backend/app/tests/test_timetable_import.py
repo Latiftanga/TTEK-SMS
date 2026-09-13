@@ -1,5 +1,6 @@
 """
-FET CSV timetable bulk-import tests — POST /academic/timetable/import.
+TTEK-SMS's own generic CSV timetable bulk-import tests — POST
+/academic/timetable/import.
 
 Reuses school_class/academic_year/staff_member fixtures and the
 _make_subject/_put_on_curriculum/_assign_teacher/_make_period helpers from
@@ -13,13 +14,15 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from datetime import date
+
 from app.models.academic import AcademicYear, Class, Subject, SubjectTeacher, TimetableSlot
 from app.models.school import School
 from app.models.staff import StaffMember
 from app.tests.test_attendance import _login_as_position, _other_school_auth
 from app.tests.test_timetable import _assign_teacher, _make_period, _make_subject, _put_on_curriculum
 
-_HEADER = "Day,Hour,Subject,Teacher(s),Students/Class(es)\n"
+_HEADER = "Day,Period,Subject,Classes\n"
 
 
 def _csv(*lines: str) -> bytes:
@@ -30,7 +33,7 @@ async def _import(client: AsyncClient, auth: dict, year: AcademicYear, csv_bytes
     return await client.post(
         "/academic/timetable/import",
         params={"year_id": str(year.id)},
-        files={"file": ("fet.csv", csv_bytes, "text/csv")},
+        files={"file": ("timetable.csv", csv_bytes, "text/csv")},
         headers=auth,
     )
 
@@ -45,7 +48,7 @@ async def test_valid_import_creates_slot(
     await _assign_teacher(db_session, school, school_class, subject, academic_year, staff_member)
     await _make_period(db_session, school, day="MON", number=1)
 
-    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},Mr X,2 A"))
+    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},2 A"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["created"] == 1
@@ -61,6 +64,26 @@ async def test_valid_import_creates_slot(
 
 
 @pytest.mark.asyncio
+async def test_decimal_formatted_period_token_still_resolves(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, staff_member: StaffMember,
+):
+    """Excel/Sheets often auto-formats a whole-number Period cell as a
+    decimal (e.g. "1" saved out as "1.0") — that must still resolve to
+    period 1, not report a false "no period configured" error."""
+    subject = await _make_subject(db_session, school, "CHE")
+    await _put_on_curriculum(db_session, school, school_class, subject)
+    await _assign_teacher(db_session, school, school_class, subject, academic_year, staff_member)
+    await _make_period(db_session, school, day="MON", number=1)
+
+    resp = await _import(client, auth, academic_year, _csv(f"Monday,1.0,{subject.name},2 A"))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["created"] == 1
+    assert body["failed"] == 0
+
+
+@pytest.mark.asyncio
 async def test_unmatched_class_name_reports_error_others_still_import(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
     school_class: Class, academic_year: AcademicYear, staff_member: StaffMember,
@@ -72,8 +95,8 @@ async def test_unmatched_class_name_reports_error_others_still_import(
     await _make_period(db_session, school, day="MON", number=2, start="08:45:00", end="09:30:00")
 
     resp = await _import(client, auth, academic_year, _csv(
-        f"Monday,1,{subject.name},Mr X,2 A",
-        "Monday,2,Nonexistent Subject,Mr X,Nonexistent Class",
+        f"Monday,1,{subject.name},2 A",
+        "Monday,2,Nonexistent Subject,Nonexistent Class",
     ))
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -89,7 +112,7 @@ async def test_unmatched_subject_name_reports_error(
 ):
     await _make_period(db_session, school, day="MON", number=1)
 
-    resp = await _import(client, auth, academic_year, _csv("Monday,1,Nonexistent Subject,Mr X,2 A"))
+    resp = await _import(client, auth, academic_year, _csv("Monday,1,Nonexistent Subject,2 A"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["created"] == 0
@@ -106,12 +129,49 @@ async def test_missing_subject_teacher_reports_error(
     await _put_on_curriculum(db_session, school, school_class, subject)
     await _make_period(db_session, school, day="MON", number=1)
 
-    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},Mr X,2 A"))
+    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},2 A"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["created"] == 0
     assert body["failed"] == 1
     assert "no teacher assigned" in body["errors"][0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_teacher_column_removed_is_not_required_and_not_used_for_resolution(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, staff_member: StaffMember,
+):
+    """The new format has no Teacher(s) column at all — a slot's teacher is
+    resolved purely from an existing SubjectTeacher assignment, exactly like
+    the manual one-at-a-time path (timetable.py::upsert_timetable_slot)."""
+    subject = await _make_subject(db_session, school, "PHY")
+    await _put_on_curriculum(db_session, school, school_class, subject)
+    await _assign_teacher(db_session, school, school_class, subject, academic_year, staff_member)
+    await _make_period(db_session, school, day="MON", number=1)
+
+    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},2 A"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] == 1
+
+    teacher = await db_session.scalar(
+        select(SubjectTeacher).where(
+            SubjectTeacher.class_id == school_class.id, SubjectTeacher.subject_id == subject.id,
+        )
+    )
+    assert teacher.staff_member_id == staff_member.id
+
+
+@pytest.mark.asyncio
+async def test_extra_teacher_column_present_is_rejected(
+    client: AsyncClient, auth: dict, academic_year: AcademicYear,
+):
+    """An old FET-shaped file (still carrying a Teacher(s) column) must be
+    cleanly rejected end-to-end through the router, not partially parsed."""
+    csv_bytes = "Day,Period,Subject,Classes,Teacher(s)\nMonday,1,Math,2 A,Mr X\n".encode("utf-8")
+    resp = await _import(client, auth, academic_year, csv_bytes)
+    assert resp.status_code == 422
+    assert "Day, Period, Subject, Classes" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -136,8 +196,8 @@ async def test_teacher_double_booking_reports_error_on_second_row(
     # combined activity (see _load_booked's docstring), not a conflict, so
     # a genuine double-booking has to come from two distinct rows.
     resp = await _import(client, auth, academic_year, _csv(
-        f"Monday,1,{subject_a.name},Mr X,2 A",
-        f"Monday,1,{subject_b.name},Mr X,2 B",
+        f"Monday,1,{subject_a.name},2 A",
+        f"Monday,1,{subject_b.name},2 B",
     ))
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -152,7 +212,7 @@ async def test_malformed_header_csv_rejected_before_any_row_processed(
 ):
     resp = await _import(client, auth, academic_year, b"Foo,Bar\nMon,1\n")
     assert resp.status_code == 422
-    assert "Unexpected CSV columns" in resp.json()["detail"]
+    assert "Day, Period, Subject, Classes" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -175,8 +235,14 @@ async def test_cross_school_isolation(
     other_subject = Subject(school_id=other_school.id, code="FRE", name=subject.name, is_active=True)
     db_session.add(other_subject)
     await db_session.flush()
+    other_year = AcademicYear(
+        school_id=other_school.id, name="2024/2025",
+        start_date=date(2024, 9, 1), end_date=date(2025, 7, 31), is_current=True,
+    )
+    db_session.add(other_year)
+    await db_session.flush()
 
-    resp = await _import(client, other_auth, academic_year, _csv(f"Monday,1,{subject.name},Mr X,2 A"))
+    resp = await _import(client, other_auth, other_year, _csv(f"Monday,1,{subject.name},2 A"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # No matching period/curriculum/teacher assignment exists in the OTHER
@@ -196,6 +262,17 @@ async def test_cross_school_isolation(
 
 
 @pytest.mark.asyncio
+async def test_import_rejects_year_belonging_to_another_school(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School, academic_year: AcademicYear,
+):
+    other_auth = await _other_school_auth(client, db_session)
+    # academic_year belongs to `school`, not the OTHER school authenticating
+    # here — must be rejected outright, not scoped down to zero rows.
+    resp = await _import(client, other_auth, academic_year, _csv("Monday,1,Math,2 A"))
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_idempotent_reimport_updates_not_duplicates(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
     school_class: Class, academic_year: AcademicYear, staff_member: StaffMember,
@@ -205,7 +282,7 @@ async def test_idempotent_reimport_updates_not_duplicates(
     await _assign_teacher(db_session, school, school_class, subject, academic_year, staff_member)
     await _make_period(db_session, school, day="MON", number=1)
 
-    csv_bytes = _csv(f"Monday,1,{subject.name},Mr X,2 A")
+    csv_bytes = _csv(f"Monday,1,{subject.name},2 A")
     resp1 = await _import(client, auth, academic_year, csv_bytes)
     assert resp1.json()["created"] == 1
 
@@ -235,7 +312,7 @@ async def test_multi_class_row_expands_to_two_slots(
     await _assign_teacher(db_session, school, other_class, subject, academic_year, staff_member)
     await _make_period(db_session, school, day="MON", number=1)
 
-    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},Mr X,2 A;2 C"))
+    resp = await _import(client, auth, academic_year, _csv(f"Monday,1,{subject.name},2 A;2 C"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # Same teacher, same period, but DIFFERENT class per expanded row — this
@@ -250,10 +327,76 @@ async def test_multi_class_row_expands_to_two_slots(
 
 
 @pytest.mark.asyncio
+async def test_duplicate_class_period_in_same_file_reports_error_on_second_row(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, staff_member: StaffMember,
+):
+    subject_a = await _make_subject(db_session, school, "MATH")
+    subject_b = await _make_subject(db_session, school, "ENG")
+    await _put_on_curriculum(db_session, school, school_class, subject_a)
+    await _put_on_curriculum(db_session, school, school_class, subject_b)
+    await _assign_teacher(db_session, school, school_class, subject_a, academic_year, staff_member)
+    await _assign_teacher(db_session, school, school_class, subject_b, academic_year, staff_member)
+    await _make_period(db_session, school, day="MON", number=1)
+
+    # Two DIFFERENT source lines targeting the same class+period — the
+    # second must be rejected, not silently overwrite the first's subject.
+    resp = await _import(client, auth, academic_year, _csv(
+        f"Monday,1,{subject_a.name},2 A",
+        f"Monday,1,{subject_b.name},2 A",
+    ))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["created"] == 1
+    assert body["failed"] == 1
+    assert "earlier row" in body["errors"][0]["error"]
+
+    slots = list(await db_session.scalars(
+        select(TimetableSlot).where(TimetableSlot.class_id == school_class.id)
+    ))
+    assert len(slots) == 1
+    assert slots[0].subject_id == subject_a.id
+
+
+@pytest.mark.asyncio
+async def test_reimport_of_shared_period_does_not_false_flag_conflict(
+    client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
+    school_class: Class, academic_year: AcademicYear, staff_member: StaffMember,
+):
+    other_class = Class(school_id=school.id, level="SHS", year_group=2, stream="D", is_active=True)
+    db_session.add(other_class)
+    await db_session.flush()
+
+    subject = await _make_subject(db_session, school, "ICT")
+    await _put_on_curriculum(db_session, school, school_class, subject)
+    await _put_on_curriculum(db_session, school, other_class, subject)
+    await _assign_teacher(db_session, school, school_class, subject, academic_year, staff_member)
+    await _assign_teacher(db_session, school, other_class, subject, academic_year, staff_member)
+    await _make_period(db_session, school, day="MON", number=1)
+
+    csv_bytes = _csv(f"Monday,1,{subject.name},2 A;2 D")
+    resp1 = await _import(client, auth, academic_year, csv_bytes)
+    assert resp1.json()["created"] == 2
+
+    # Re-importing the same shared-teacher/shared-period file must not
+    # treat either pre-existing class as a "new" conflicting booking.
+    resp2 = await _import(client, auth, academic_year, csv_bytes)
+    assert resp2.status_code == 200, resp2.text
+    body2 = resp2.json()
+    assert body2["failed"] == 0
+    assert body2["created"] == 2
+
+    slots = list(await db_session.scalars(
+        select(TimetableSlot).where(TimetableSlot.academic_year_id == academic_year.id)
+    ))
+    assert {s.class_id for s in slots} == {school_class.id, other_class.id}
+
+
+@pytest.mark.asyncio
 async def test_permission_denied_without_academic_edit(
     client: AsyncClient, auth: dict, db_session: AsyncSession, school: School,
     academic_year: AcademicYear, redis_permissions: None,
 ):
     teacher_auth, _staff_id = await _login_as_position(client, auth, db_session, school, "TEACHER")
-    resp = await _import(client, teacher_auth, academic_year, _csv("Monday,1,Math,Mr X,2 A"))
+    resp = await _import(client, teacher_auth, academic_year, _csv("Monday,1,Math,2 A"))
     assert resp.status_code == 403
